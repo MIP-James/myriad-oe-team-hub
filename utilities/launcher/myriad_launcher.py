@@ -74,6 +74,7 @@ except ImportError as e:
 
 from config import CONFIG_PATH, load_config, save_config
 from autostart import install_autostart, uninstall_autostart, is_autostart_installed
+from tools_manager import ensure_installed, open_tools_folder, tools_root
 
 LAUNCHER_VERSION = "0.2.0"
 POLL_INTERVAL_SEC = 3.0
@@ -262,6 +263,70 @@ class Launcher:
     # ------------------------------------------------------------------
     # 작업 실행
     # ------------------------------------------------------------------
+    def _push_output(self, job_id: str, message: str):
+        """진행 상황을 launcher_jobs.output 에 append (최근 MAX_OUTPUT_CHARS 자 유지)."""
+        try:
+            current = (
+                self.client.table("launcher_jobs")
+                .select("output")
+                .eq("id", job_id)
+                .single()
+                .execute()
+            ).data or {}
+            existing = current.get("output") or ""
+            line = f"[{datetime.now().strftime('%H:%M:%S')}] {message}"
+            combined = (existing + ("\n" if existing else "") + line)[-MAX_OUTPUT_CHARS:]
+            self.client.table("launcher_jobs").update({"output": combined}).eq(
+                "id", job_id
+            ).execute()
+        except Exception as e:
+            logging.warning(f"Output update: {e}")
+
+    def _resolve_exe_for_job(self, job_id: str, slug: str, name: str) -> Path | None:
+        """우선순위: config.utility_paths (수동 override) → 자동 설치."""
+        # 1. 수동 경로 override
+        manual = self.config.get("utility_paths", {}).get(slug)
+        if manual and Path(manual).exists():
+            logging.info(f"[Job {job_id[:8]}] using manual path: {manual}")
+            return Path(manual)
+
+        # 2. DB 에서 utility 레코드 조회 (download_url / entry_exe / current_version)
+        try:
+            resp = (
+                self.client.table("utilities")
+                .select("slug,name,download_url,current_version,entry_exe")
+                .eq("slug", slug)
+                .single()
+                .execute()
+            )
+            utility = resp.data
+        except Exception as e:
+            self._fail_job(job_id, f"유틸 정보 조회 실패: {e}")
+            return None
+        if not utility:
+            self._fail_job(job_id, f"'{slug}' 유틸이 DB 에 없습니다.")
+            return None
+        if not utility.get("download_url"):
+            self._fail_job(
+                job_id,
+                f"'{name}' 의 다운로드 URL 이 웹 관리자 페이지에 등록되지 않았습니다.\n"
+                "관리자에게 등록을 요청하거나, 로컬에 이미 EXE 가 있다면 "
+                "런처 config.json 의 utility_paths 에 수동 경로를 지정하세요.",
+            )
+            return None
+
+        # 3. 자동 설치/업데이트
+        try:
+            self._push_output(job_id, "설치 상태 확인 중...")
+            exe = ensure_installed(
+                utility,
+                progress_cb=lambda msg: self._push_output(job_id, msg),
+            )
+            return exe
+        except Exception as e:
+            self._fail_job(job_id, f"자동 설치 실패: {e}")
+            return None
+
     def handle_job(self, job: dict):
         job_id = job["id"]
         slug = job["utility_slug"]
@@ -282,16 +347,9 @@ class Launcher:
             self._update_status("온라인 - 대기 중")
             return
 
-        exe_path = self.config.get("utility_paths", {}).get(slug)
-        if not exe_path:
-            self._fail_job(job_id, f"경로 미설정: {slug}")
-            self.last_job_info = f"{name}: 경로 미설정"
-            self._update_status("온라인 - 대기 중")
-            return
-        exe = Path(exe_path)
-        if not exe.exists():
-            self._fail_job(job_id, f"EXE 파일 없음: {exe_path}")
-            self.last_job_info = f"{name}: 파일 없음"
+        exe = self._resolve_exe_for_job(job_id, slug, name)
+        if exe is None:
+            self.last_job_info = f"{name}: 설치/경로 문제"
             self._update_status("온라인 - 대기 중")
             return
 
@@ -374,6 +432,12 @@ class Launcher:
         except Exception as e:
             logging.warning(f"Open log: {e}")
 
+    def menu_open_tools(self, icon, item):
+        try:
+            open_tools_folder()
+        except Exception as e:
+            logging.warning(f"Open tools: {e}")
+
     def menu_open_web(self, icon, item):
         try:
             import webbrowser
@@ -453,8 +517,9 @@ class Launcher:
             pystray.MenuItem(last_job_label, None, enabled=False),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("웹 대시보드 열기", self.menu_open_web),
+            pystray.MenuItem("설치된 유틸 폴더 열기", self.menu_open_tools),
             pystray.MenuItem("로그 보기", self.menu_view_log),
-            pystray.MenuItem("토큰 / 경로 재설정", self.menu_run_setup),
+            pystray.MenuItem("토큰 / 설정 재설정", self.menu_run_setup),
             pystray.MenuItem(
                 "Windows 시작 시 자동 실행",
                 self.menu_toggle_autostart,
