@@ -7,6 +7,8 @@ import Dashboard from './pages/Dashboard'
 import Memos from './pages/Memos'
 import Schedules from './pages/Schedules'
 import Utilities from './pages/Utilities'
+import Launcher from './pages/Launcher'
+import Jobs from './pages/Jobs'
 import Community from './pages/Community'
 import Admin from './pages/Admin'
 import AdminUtilities from './pages/AdminUtilities'
@@ -28,6 +30,8 @@ export default function App() {
         <Route path="memos" element={<Memos />} />
         <Route path="schedules" element={<Schedules />} />
         <Route path="utilities" element={<Utilities />} />
+        <Route path="launcher" element={<Launcher />} />
+        <Route path="jobs" element={<Jobs />} />
         <Route path="community" element={<Community />} />
         <Route path="admin" element={<AdminGate><Admin /></AdminGate>} />
         <Route path="admin/utilities" element={<AdminGate><AdminUtilities /></AdminGate>} />

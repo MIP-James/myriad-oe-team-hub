@@ -1,9 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Wrench, Download, Loader2, Search, Tag } from 'lucide-react'
+import {
+  Wrench, Download, Loader2, Search, Tag, Play, CheckCircle2, XCircle, Clock, Cpu
+} from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { useAuth } from '../contexts/AuthContext'
 
 export default function Utilities() {
+  const { user } = useAuth()
   const [items, setItems] = useState([])
+  const [devices, setDevices] = useState([])
+  const [recentJobs, setRecentJobs] = useState({})  // key: utility_id → latest job
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [query, setQuery] = useState('')
@@ -12,16 +19,44 @@ export default function Utilities() {
 
   useEffect(() => { load() }, [])
 
+  // 내 작업 실시간 구독
+  useEffect(() => {
+    if (!user?.id) return
+    const channel = supabase
+      .channel('jobs-utilities-' + user.id)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'launcher_jobs', filter: `user_id=eq.${user.id}` },
+        () => loadRecentJobs()
+      )
+      .subscribe()
+    return () => supabase.removeChannel(channel)
+  }, [user?.id])
+
   async function load() {
     setLoading(true)
-    const { data, error } = await supabase
-      .from('utilities')
-      .select('*')
-      .eq('is_active', true)
-      .order('sort_order', { ascending: true })
-    if (error) setError(error.message)
-    else setItems(data ?? [])
+    const [utilsRes, devicesRes] = await Promise.all([
+      supabase.from('utilities').select('*').eq('is_active', true).order('sort_order', { ascending: true }),
+      supabase.from('launcher_devices').select('*').eq('is_online', true)
+    ])
+    if (utilsRes.error) setError(utilsRes.error.message)
+    else setItems(utilsRes.data ?? [])
+    setDevices(devicesRes.data ?? [])
+    await loadRecentJobs()
     setLoading(false)
+  }
+
+  async function loadRecentJobs() {
+    const { data } = await supabase
+      .from('launcher_jobs')
+      .select('*')
+      .order('requested_at', { ascending: false })
+      .limit(20)
+    const map = {}
+    for (const j of data ?? []) {
+      if (!map[j.utility_id]) map[j.utility_id] = j
+    }
+    setRecentJobs(map)
   }
 
   const categories = useMemo(() => {
@@ -41,19 +76,36 @@ export default function Utilities() {
     })
   }, [items, query, categoryFilter])
 
+  const hasOnlineDevice = devices.length > 0
+
+  async function runUtility(utility) {
+    if (!hasOnlineDevice) {
+      setError('온라인 상태인 런처가 없습니다. "내 런처" 메뉴에서 런처를 연결하세요.')
+      return
+    }
+    const { error } = await supabase.from('launcher_jobs').insert({
+      user_id: user.id,
+      device_id: devices[0].id,
+      utility_id: utility.id,
+      utility_slug: utility.slug,
+      utility_name: utility.name,
+      status: 'pending'
+    })
+    if (error) setError(error.message)
+    else setError(null)
+  }
+
   return (
     <div className="p-8 max-w-6xl mx-auto">
       <header className="mb-6 flex items-center gap-3">
         <Wrench className="text-myriad-ink" />
         <h1 className="text-2xl font-bold text-slate-900">유틸리티</h1>
+        <div className="flex-1" />
+        <LauncherBadge count={devices.length} />
       </header>
 
       <p className="text-sm text-slate-500 mb-5">
-        팀이 사용하는 업무 자동화 도구 모음입니다. 각 유틸은 본인 PC에 다운로드해서 실행하세요.
-        <br />
-        <span className="text-xs text-slate-400">
-          🛠️ Phase 4에서 웹에서 직접 실행하는 기능이 추가될 예정입니다.
-        </span>
+        각 유틸은 본인 PC에 런처를 설치하면 "실행" 버튼 한 번으로 바로 동작합니다.
       </p>
 
       <div className="flex flex-col sm:flex-row gap-3 mb-5">
@@ -104,52 +156,133 @@ export default function Utilities() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {filtered.map((u) => (
-          <button
+          <UtilityCard
             key={u.id}
-            onClick={() => setSelected(u)}
-            className="text-left bg-white border border-slate-200 rounded-2xl p-5 hover:shadow-md hover:border-myriad-primary transition"
-          >
-            <div className="flex items-start gap-3">
-              <div className="w-12 h-12 rounded-xl bg-myriad-primary/10 flex items-center justify-center text-2xl shrink-0">
-                {u.icon || '🧰'}
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <h3 className="font-bold text-slate-900 truncate">{u.name}</h3>
-                  {u.current_version && (
-                    <span className="text-[10px] font-semibold bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">
-                      v{u.current_version}
-                    </span>
-                  )}
-                </div>
-                <p className="text-xs text-slate-500 mt-1 line-clamp-2">
-                  {u.description || '설명 없음'}
-                </p>
-                <div className="flex items-center gap-2 mt-3">
-                  {u.category && (
-                    <span className="text-[10px] text-slate-500 flex items-center gap-1">
-                      <Tag size={10} />
-                      {u.category}
-                    </span>
-                  )}
-                  {!u.download_url && (
-                    <span className="text-[10px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">
-                      다운로드 링크 미등록
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-          </button>
+            utility={u}
+            latestJob={recentJobs[u.id]}
+            canRun={hasOnlineDevice}
+            onRun={() => runUtility(u)}
+            onOpenDetail={() => setSelected(u)}
+          />
         ))}
       </div>
 
-      {selected && <UtilityDetail utility={selected} onClose={() => setSelected(null)} />}
+      {selected && (
+        <UtilityDetail
+          utility={selected}
+          latestJob={recentJobs[selected.id]}
+          canRun={hasOnlineDevice}
+          onRun={() => runUtility(selected)}
+          onClose={() => setSelected(null)}
+        />
+      )}
     </div>
   )
 }
 
-function UtilityDetail({ utility, onClose }) {
+function LauncherBadge({ count }) {
+  return (
+    <Link
+      to="/launcher"
+      className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs border transition ${
+        count > 0
+          ? 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'
+          : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'
+      }`}
+    >
+      <Cpu size={12} />
+      {count > 0 ? `${count}개 런처 온라인` : '런처 오프라인'}
+    </Link>
+  )
+}
+
+function UtilityCard({ utility, latestJob, canRun, onRun, onOpenDetail }) {
+  return (
+    <div className="bg-white border border-slate-200 rounded-2xl p-5 hover:shadow-md hover:border-myriad-primary transition flex flex-col">
+      <button onClick={onOpenDetail} className="text-left flex items-start gap-3 flex-1">
+        <div className="w-12 h-12 rounded-xl bg-myriad-primary/10 flex items-center justify-center text-2xl shrink-0">
+          {utility.icon || '🧰'}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <h3 className="font-bold text-slate-900 truncate">{utility.name}</h3>
+            {utility.current_version && (
+              <span className="text-[10px] font-semibold bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">
+                v{utility.current_version}
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-slate-500 mt-1 line-clamp-2">
+            {utility.description || '설명 없음'}
+          </p>
+          {utility.category && (
+            <span className="inline-flex items-center gap-1 text-[10px] text-slate-500 mt-2">
+              <Tag size={10} /> {utility.category}
+            </span>
+          )}
+        </div>
+      </button>
+      <div className="flex items-center gap-2 mt-4 pt-4 border-t border-slate-100">
+        {latestJob && <JobStatusChip job={latestJob} />}
+        <div className="flex-1" />
+        {utility.download_url && (
+          <a
+            href={utility.download_url}
+            target="_blank"
+            rel="noreferrer"
+            className="text-xs text-slate-500 hover:text-myriad-ink flex items-center gap-1"
+            title="수동 다운로드"
+          >
+            <Download size={12} />
+          </a>
+        )}
+        <button
+          onClick={onRun}
+          disabled={!canRun || latestJob?.status === 'running' || latestJob?.status === 'dispatched'}
+          className="flex items-center gap-1.5 bg-myriad-primary hover:bg-myriad-primaryDark disabled:bg-slate-100 disabled:text-slate-400 text-myriad-ink font-semibold px-3 py-1.5 rounded-lg text-sm disabled:cursor-not-allowed"
+          title={!canRun ? '온라인 런처가 없습니다' : '실행'}
+        >
+          <Play size={12} /> 실행
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function JobStatusChip({ job }) {
+  const s = job.status
+  if (s === 'pending' || s === 'dispatched') {
+    return (
+      <span className="text-[11px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full flex items-center gap-1">
+        <Clock size={10} /> 대기 중
+      </span>
+    )
+  }
+  if (s === 'running') {
+    return (
+      <span className="text-[11px] text-sky-700 bg-sky-50 px-2 py-0.5 rounded-full flex items-center gap-1">
+        <Loader2 size={10} className="animate-spin" /> 실행 중
+      </span>
+    )
+  }
+  if (s === 'done') {
+    return (
+      <span className="text-[11px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full flex items-center gap-1">
+        <CheckCircle2 size={10} /> 완료
+      </span>
+    )
+  }
+  if (s === 'error') {
+    return (
+      <span className="text-[11px] text-rose-700 bg-rose-50 px-2 py-0.5 rounded-full flex items-center gap-1">
+        <XCircle size={10} /> 오류
+      </span>
+    )
+  }
+  return null
+}
+
+function UtilityDetail({ utility, latestJob, canRun, onRun, onClose }) {
   return (
     <div
       className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
@@ -171,6 +304,7 @@ function UtilityDetail({ utility, onClose }) {
                   v{utility.current_version}
                 </span>
               )}
+              {latestJob && <JobStatusChip job={latestJob} />}
             </div>
             <p className="text-sm text-slate-600 mt-1">{utility.description}</p>
           </div>
@@ -211,23 +345,24 @@ function UtilityDetail({ utility, onClose }) {
           <button onClick={onClose} className="text-slate-600 hover:bg-slate-100 px-4 py-2 rounded-lg">
             닫기
           </button>
-          {utility.download_url ? (
+          {utility.download_url && (
             <a
               href={utility.download_url}
               target="_blank"
               rel="noreferrer"
-              className="flex items-center gap-2 bg-myriad-primary hover:bg-myriad-primaryDark text-myriad-ink font-semibold px-4 py-2 rounded-lg"
+              className="flex items-center gap-2 border border-slate-300 hover:bg-slate-50 text-slate-700 font-semibold px-4 py-2 rounded-lg"
             >
               <Download size={16} /> 다운로드
             </a>
-          ) : (
-            <button
-              disabled
-              className="flex items-center gap-2 bg-slate-100 text-slate-400 font-semibold px-4 py-2 rounded-lg cursor-not-allowed"
-            >
-              <Download size={16} /> 다운로드 링크 없음
-            </button>
           )}
+          <button
+            onClick={onRun}
+            disabled={!canRun || latestJob?.status === 'running' || latestJob?.status === 'dispatched'}
+            className="flex items-center gap-2 bg-myriad-primary hover:bg-myriad-primaryDark disabled:bg-slate-100 disabled:text-slate-400 text-myriad-ink font-semibold px-4 py-2 rounded-lg disabled:cursor-not-allowed"
+            title={!canRun ? '온라인 런처가 없습니다' : '실행'}
+          >
+            <Play size={16} /> 실행
+          </button>
         </div>
       </div>
     </div>
