@@ -11,13 +11,54 @@ MYRIAD Launcher 최초 설정 스크립트.
 import base64
 import getpass  # noqa: F401 (향후 사용)
 import json
+import os
 import sys
 from pathlib import Path
 
+
+def _setup_console_encoding():
+    """Windows 한글 콘솔에서 UTF-8 출력이 깨지지 않도록 보정."""
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        ctypes.windll.kernel32.SetConsoleOutputCP(65001)
+        ctypes.windll.kernel32.SetConsoleCP(65001)
+    except Exception:
+        pass
+    for stream in ("stdout", "stderr", "stdin"):
+        s = getattr(sys, stream, None)
+        if s is None:
+            continue
+        try:
+            s.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
+
+_setup_console_encoding()
+
+# 진단용: EXE 가 어디까지 진행됐는지 기록 (콘솔 출력이 깨져도 보이게)
+_DIAG = Path(sys.executable).parent / "setup_diag.log" if getattr(sys, "frozen", False) \
+    else Path(__file__).parent / "setup_diag.log"
+try:
+    with open(_DIAG, "w", encoding="utf-8") as f:
+        f.write("setup started OK\n")
+except Exception:
+    pass
+
 try:
     from supabase import create_client
-except ImportError:
-    print("[오류] supabase 패키지 설치 필요: pip install -r requirements.txt")
+except ImportError as e:
+    print("[치명적 오류] supabase 모듈을 찾을 수 없습니다.")
+    print(f"  원인: {e}")
+    print()
+    print("개발 모드:  pip install -r requirements.txt")
+    print("EXE 모드:   관리자에게 재빌드 요청 (launcher 폴더의 build.bat 재실행)")
+    try:
+        input("\n종료하려면 엔터...")
+    except Exception:
+        pass
     sys.exit(1)
 
 from config import CONFIG_PATH, load_config, save_config
@@ -178,3 +219,13 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\n취소됨.")
         sys.exit(0)
+    except Exception as e:
+        # EXE 로 빌드된 경우 콘솔이 순식간에 닫혀서 에러를 못 보는 문제 방지
+        print(f"\n[치명적 오류] {e}")
+        import traceback
+        traceback.print_exc()
+        try:
+            input("\n종료하려면 엔터...")
+        except Exception:
+            pass
+        sys.exit(1)
