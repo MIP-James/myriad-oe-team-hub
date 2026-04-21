@@ -10,7 +10,7 @@ export default function Memos() {
   const [memos, setMemos] = useState([])
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState(null)
-  const [draft, setDraft] = useState(EMPTY_DRAFT)
+  const [draft, setDraft] = useState(null)
   const [query, setQuery] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
@@ -50,6 +50,7 @@ export default function Memos() {
   }
 
   async function save() {
+    if (!draft) return
     if (!draft.title.trim() && !draft.body.trim()) {
       setError('제목이나 내용을 입력하세요.')
       return
@@ -76,6 +77,7 @@ export default function Memos() {
   }
 
   async function togglePin() {
+    if (!draft) return
     if (!draft.id) {
       setDraft((d) => ({ ...d, pinned: !d.pinned }))
       return
@@ -88,15 +90,15 @@ export default function Memos() {
   }
 
   async function remove() {
-    if (!draft.id) {
-      setDraft(EMPTY_DRAFT)
+    if (!draft?.id) {
+      setDraft(null)
       setSelected(null)
       return
     }
     if (!window.confirm('이 메모를 삭제할까요?')) return
     const { error } = await supabase.from('memos').delete().eq('id', draft.id)
     if (error) { setError(error.message); return }
-    setDraft(EMPTY_DRAFT)
+    setDraft(null)
     setSelected(null)
     await load()
   }
@@ -169,7 +171,7 @@ export default function Memos() {
       </aside>
 
       <section className="flex-1 flex flex-col bg-slate-50">
-        {draft.id === null && !draft.title && !draft.body ? (
+        {draft === null ? (
           <div className="flex-1 flex items-center justify-center text-slate-400">
             <div className="text-center">
               <StickyNote size={48} className="mx-auto mb-3 opacity-30" />
