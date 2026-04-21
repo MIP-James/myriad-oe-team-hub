@@ -13,6 +13,7 @@ const EMPTY = {
   description: '',
   category: '',
   download_url: '',
+  entry_exe: '',
   current_version: '',
   release_notes: '',
   install_guide: '',
@@ -54,6 +55,7 @@ export default function AdminUtilities() {
       description: editor.description?.trim() || null,
       category: editor.category?.trim() || null,
       download_url: editor.download_url?.trim() || null,
+      entry_exe: editor.entry_exe?.trim() || null,
       current_version: editor.current_version?.trim() || null,
       release_notes: editor.release_notes || null,
       install_guide: editor.install_guide || null,
@@ -296,7 +298,7 @@ function Editor({ editor, setEditor, onSave, onClose, onDelete, saving, error })
             </Field>
           </div>
 
-          <Field label="다운로드 URL">
+          <Field label="다운로드 URL (ZIP 권장)">
             <input
               type="url"
               value={editor.download_url}
@@ -304,6 +306,19 @@ function Editor({ editor, setEditor, onSave, onClose, onDelete, saving, error })
               placeholder="https://github.com/.../releases/download/v1.0/tool.zip"
               className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-myriad-primary/40 font-mono text-sm"
             />
+          </Field>
+
+          <Field label="ZIP 내부 실행 파일 경로 (entry_exe)">
+            <input
+              type="text"
+              value={editor.entry_exe}
+              onChange={(e) => setEditor({ ...editor, entry_exe: e.target.value })}
+              placeholder="예: Report_Generator/Report_Generator.exe"
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-myriad-primary/40 font-mono text-sm"
+            />
+            <p className="text-[11px] text-slate-500 mt-1">
+              ZIP 을 해제한 뒤 실행할 EXE 의 상대 경로. 단일 EXE 를 올린 경우 비워두면 됨.
+            </p>
           </Field>
 
           <Field label="이번 버전 변경사항 (release notes)">

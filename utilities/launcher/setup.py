@@ -139,7 +139,7 @@ def main():
             pass
 
     # 1. 토큰
-    print("\n[1/3] 웹 대시보드의 '내 런처' 메뉴에서 발급받은 연결 토큰을 붙여넣으세요.")
+    print("\n[1/2] 웹 대시보드의 '내 런처' 메뉴에서 발급받은 연결 토큰을 붙여넣으세요.")
     print("     (myriadlauncher_v1: 로 시작하는 긴 문자열)")
     token_raw = input("토큰: ").strip()
     try:
@@ -159,40 +159,18 @@ def main():
     print("  ✓ 검증 완료")
 
     # 2. 디바이스 이름
-    print("\n[2/3] 이 PC를 웹 대시보드에 어떻게 표시할지 이름을 지정하세요.")
+    print("\n[2/2] 이 PC를 웹 대시보드에 어떻게 표시할지 이름을 지정하세요.")
     default_name = existing.get("device_name") or f"{parsed['email'].split('@')[0]} PC"
     device_name = ask("디바이스 이름", default_name)
 
-    # 3. 유틸 경로
-    print("\n[3/3] 각 유틸리티의 로컬 EXE 경로를 입력하세요.")
-    print("     입력 안 하면 해당 유틸은 실행 요청 시 '경로 미설정' 오류로 표시됩니다.")
-    print("     나중에 config.json 을 직접 편집해서 추가할 수도 있습니다.")
-
-    utilities = []
-    try:
-        utilities = load_utilities(parsed)
-    except Exception as e:
-        print(f"[경고] 유틸 목록 조회 실패: {e}")
-
+    # 유틸 경로는 더 이상 물어보지 않음 — 런처가 DB에서 가져와 자동 다운로드.
+    # 단, 기존 설정에 수동 경로가 있었다면 그대로 유지 (power user override).
     utility_paths = dict(existing.get("utility_paths", {}))
-    if utilities:
-        for u in utilities:
-            slug = u["slug"]
-            name = u["name"]
-            icon = u.get("icon") or ""
-            current = utility_paths.get(slug, "")
-            print(f"\n  {icon} {name} ({slug})")
-            if current:
-                print(f"     현재: {current}")
-            path = ask("     EXE 경로 (없으면 엔터)", current)
-            if path:
-                if not Path(path).exists():
-                    print(f"     [경고] 파일을 찾을 수 없지만 일단 저장합니다: {path}")
-                utility_paths[slug] = path
-            elif slug in utility_paths:
-                del utility_paths[slug]
-    else:
-        print("  (등록된 유틸이 없어 스킵)")
+    if utility_paths:
+        print("\n(기존 수동 유틸 경로 설정 유지됨 — config.json 에서 직접 편집 가능)")
+
+    print("\n유틸리티 자동 다운로드: 실행 요청 시 런처가 최초 1회 자동 설치합니다.")
+    print("  (설치 경로: %LOCALAPPDATA%\\MyriadLauncher\\tools\\)")
 
     # 저장
     config = {
