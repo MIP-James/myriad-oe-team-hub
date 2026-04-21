@@ -16,15 +16,60 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+def _exe_dir() -> Path:
+    """빌드된 EXE 기준(혹은 스크립트 기준) 폴더 — 로그 쓰기에 쓸 것."""
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent
+
+
+def _setup_console_encoding():
+    """Windows 콘솔 인코딩을 UTF-8 로 (한글 출력 깨짐 방지)."""
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        ctypes.windll.kernel32.SetConsoleOutputCP(65001)
+        ctypes.windll.kernel32.SetConsoleCP(65001)
+    except Exception:
+        pass
+    for stream in ("stdout", "stderr"):
+        s = getattr(sys, stream, None)
+        if s is None:
+            continue
+        try:
+            s.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
+
+_setup_console_encoding()
+
+
 try:
     from supabase import create_client, Client
     import pystray
     from PIL import Image, ImageDraw, ImageFont
 except ImportError as e:
-    # 콘솔이 없을 수 있으므로 파일로 기록
-    err_log = Path(__file__).resolve().parent / "launcher_error.log"
-    with open(err_log, "a", encoding="utf-8") as f:
-        f.write(f"{datetime.now()}: import 실패 - {e}\n")
+    # 콘솔이 없을 수 있으므로 파일로 기록 + 메시지박스
+    try:
+        err_log = _exe_dir() / "launcher_error.log"
+        with open(err_log, "a", encoding="utf-8") as f:
+            f.write(f"{datetime.now()}: import 실패 - {e}\n")
+    except Exception:
+        pass
+    try:
+        import tkinter as tk
+        from tkinter import messagebox
+        root = tk.Tk(); root.withdraw()
+        messagebox.showerror(
+            "MYRIAD Launcher - 실행 불가",
+            f"필수 모듈을 찾을 수 없습니다:\n\n{e}\n\n"
+            "같은 폴더의 launcher_error.log 를 관리자에게 전달해주세요."
+        )
+        root.destroy()
+    except Exception:
+        pass
     raise
 
 from config import CONFIG_PATH, load_config, save_config
@@ -34,7 +79,7 @@ LAUNCHER_VERSION = "0.2.0"
 POLL_INTERVAL_SEC = 3.0
 HEARTBEAT_INTERVAL_SEC = 30.0
 MAX_OUTPUT_CHARS = 8000
-LOG_PATH = CONFIG_PATH.parent / "launcher.log"
+LOG_PATH = _exe_dir() / "launcher.log"
 
 
 def setup_logging():
@@ -348,12 +393,23 @@ class Launcher:
                     "MyriadSetup.exe 가 같은 폴더에 없습니다.\n"
                     "런처를 먼저 종료한 뒤 MyriadSetup.exe 를 직접 실행하세요.",
                 )
-        else:
-            script = Path(__file__).resolve().parent / "setup.py"
+            return
+
+        # 개발 모드: pythonw 로 런처를 돌리는 경우 sys.executable 이 pythonw.exe
+        # 가 되는데 이걸로는 콘솔이 안 뜸 → 같은 폴더의 python.exe 를 찾아서 사용.
+        python_exe = Path(sys.executable).parent / "python.exe"
+        if not python_exe.exists():
+            python_exe = Path(sys.executable)  # fallback
+        script = Path(__file__).resolve().parent / "setup.py"
+        try:
             subprocess.Popen(
-                [sys.executable, str(script)],
+                [str(python_exe), str(script)],
                 creationflags=subprocess.CREATE_NEW_CONSOLE,
+                cwd=str(script.parent),
             )
+        except Exception as e:
+            logging.warning(f"setup launch failed: {e}")
+            show_info("MYRIAD Launcher", f"setup.py 실행 실패:\n{e}")
 
     def menu_toggle_autostart(self, icon, item):
         try:

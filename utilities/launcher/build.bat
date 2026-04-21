@@ -1,57 +1,55 @@
 @echo off
-chcp 65001 > nul
 cd /d "%~dp0"
 
-echo ============================================================
-echo  MYRIAD Launcher - PyInstaller build
-echo ============================================================
-echo.
-
-echo [1/4] Installing PyInstaller if missing...
-python -m pip install --quiet pyinstaller
-if errorlevel 1 goto :error
-
-echo [2/4] Ensuring runtime dependencies are installed...
-python -m pip install --quiet -r requirements.txt
-if errorlevel 1 goto :error
-
-REM Optional: generate a basic .ico next to this script the first time
-python -c "from PIL import Image,ImageDraw,ImageFont; import os, sys; p='launcher.ico'; \
-img=Image.new('RGBA',(256,256),(0,0,0,0)); d=ImageDraw.Draw(img); d.ellipse([16,16,240,240], fill=(255,179,0,255)); \
-ft=ImageFont.truetype('arialbd.ttf',140) if os.path.exists('C:/Windows/Fonts/arialbd.ttf') else ImageFont.load_default(); \
-b=d.textbbox((0,0),'M',font=ft); w=b[2]-b[0]; h=b[3]-b[1]; d.text((128-w//2-b[0],128-h//2-b[1]-6),'M',fill=(17,17,17,255),font=ft); \
-img.save(p,sizes=[(16,16),(32,32),(48,48),(64,64),(128,128),(256,256)])" 2>nul
-
-set ICON_ARG=
-if exist launcher.ico set ICON_ARG=--icon=launcher.ico
-
-echo [3/4] Building MyriadLauncher.exe (tray, no console)...
-pyinstaller --onefile --windowed %ICON_ARG% --name MyriadLauncher ^
-  --collect-all supabase --collect-all gotrue --collect-all postgrest ^
-  --collect-all realtime --collect-all storage3 --collect-all supafunc ^
-  --clean myriad_launcher.py
-if errorlevel 1 goto :error
-
-echo [4/4] Building MyriadSetup.exe (console-based setup)...
-pyinstaller --onefile --console %ICON_ARG% --name MyriadSetup ^
-  --collect-all supabase --collect-all gotrue --collect-all postgrest ^
-  --collect-all realtime --collect-all storage3 --collect-all supafunc ^
-  --clean setup.py
-if errorlevel 1 goto :error
+echo =====================================
+echo  MYRIAD Launcher - Build
+echo =====================================
 
 echo.
-echo ============================================================
-echo  Build complete!
-echo ============================================================
-echo   dist\MyriadLauncher.exe  (tray launcher - run after setup)
-echo   dist\MyriadSetup.exe     (first-run setup / reconfigure)
+echo Step 1/5: Verify Python
+python -c "import sys; print('Python', sys.version); print('Exe:', sys.executable)"
+if errorlevel 1 goto err
+
 echo.
-echo  Distribute BOTH .exe files together to team members.
-echo ============================================================
+echo Step 2/5: Install runtime deps (same Python as above)
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+if errorlevel 1 goto err
+
+echo.
+echo Step 3/5: Install PyInstaller (into same Python)
+python -m pip install --upgrade pyinstaller
+if errorlevel 1 goto err
+
+echo.
+echo Step 4/5: Verify imports + supabase location
+python -c "import supabase, pystray; from PIL import Image; import os; print('supabase at:', os.path.dirname(supabase.__file__)); print('imports OK')"
+if errorlevel 1 goto err
+
+python make_icon.py
+
+echo.
+echo Step 5/5: Build using spec files (via python -m PyInstaller)
+
+echo   --^> MyriadLauncher.exe (tray, no console)
+python -m PyInstaller --clean --noconfirm MyriadLauncher.spec
+if errorlevel 1 goto err
+
+echo   --^> MyriadSetup.exe (console setup)
+python -m PyInstaller --clean --noconfirm MyriadSetup.spec
+if errorlevel 1 goto err
+
+echo.
+echo =====================================
+echo  Build complete
+echo =====================================
+echo  dist\MyriadLauncher.exe
+echo  dist\MyriadSetup.exe
+echo =====================================
 pause
 exit /b 0
 
-:error
+:err
 echo.
 echo [ERROR] Build failed. See output above.
 pause
