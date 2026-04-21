@@ -1,5 +1,8 @@
 config.json
 config.json.tmp
+launcher.log
+launcher_error.log
+launcher.ico
 __pycache__/
 *.pyc
 build/
