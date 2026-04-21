@@ -70,7 +70,12 @@ alter publication supabase_realtime add table public.launcher_jobs;
 alter publication supabase_realtime add table public.launcher_devices;
 
 -- 5) 오래된 pending job 자동 타임아웃 표시용 뷰 (추후 사용)
-create or replace view public.launcher_job_summary as
+-- ⚠️ security_invoker = true: 뷰를 호출자의 권한으로 실행시켜
+-- 원본 테이블(launcher_jobs/utilities/launcher_devices)의 RLS가 그대로 적용되게 함.
+-- 이거 없으면 뷰가 RLS를 우회해서 모든 팀원 데이터가 노출됨 (Supabase가 UNRESTRICTED 경고).
+create or replace view public.launcher_job_summary
+with (security_invoker = true)
+as
 select
   j.*,
   case

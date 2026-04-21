@@ -10,15 +10,31 @@ export function AuthProvider({ children }) {
   const [domainError, setDomainError] = useState(null)
 
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data }) => {
-      await handleSession(data.session)
-      setLoading(false)
-    })
+    let mounted = true
+
+    const init = async () => {
+      try {
+        const { data } = await supabase.auth.getSession()
+        await handleSession(data.session)
+      } catch (e) {
+        console.error('[Auth] init failed:', e)
+      } finally {
+        if (mounted) setLoading(false)
+      }
+    }
+    init()
 
     const { data: listener } = supabase.auth.onAuthStateChange(async (_event, s) => {
-      await handleSession(s)
+      try {
+        await handleSession(s)
+      } catch (e) {
+        console.error('[Auth] session change failed:', e)
+      }
     })
-    return () => listener.subscription.unsubscribe()
+    return () => {
+      mounted = false
+      listener.subscription.unsubscribe()
+    }
   }, [])
 
   async function handleSession(s) {
@@ -28,8 +44,13 @@ export function AuthProvider({ children }) {
       return
     }
     const email = s.user?.email ?? ''
-    if (ALLOWED_DOMAIN && !email.toLowerCase().endsWith('@' + ALLOWED_DOMAIN.toLowerCase())) {
-      setDomainError(`허용되지 않은 도메인입니다. (${ALLOWED_DOMAIN} 계정만 접근 가능)`)
+    if (
+      ALLOWED_DOMAIN &&
+      !email.toLowerCase().endsWith('@' + ALLOWED_DOMAIN.toLowerCase())
+    ) {
+      setDomainError(
+        `허용되지 않은 도메인입니다. (${ALLOWED_DOMAIN} 계정만 접근 가능)`
+      )
       await supabase.auth.signOut()
       setSession(null)
       setProfile(null)
@@ -37,21 +58,29 @@ export function AuthProvider({ children }) {
     }
     setDomainError(null)
     setSession(s)
-    await loadProfile(s.user.id)
+    // 프로필 로드는 실패해도 로그인 자체는 진행
+    loadProfile(s.user.id).catch((e) =>
+      console.warn('[Auth] loadProfile error:', e)
+    )
   }
 
   async function loadProfile(userId) {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .single()
-    if (error) {
-      console.warn('[Auth] profile load failed:', error.message)
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .maybeSingle()
+      if (error) {
+        console.warn('[Auth] profile load failed:', error.message)
+        setProfile(null)
+        return
+      }
+      setProfile(data)
+    } catch (e) {
+      console.warn('[Auth] profile load exception:', e)
       setProfile(null)
-      return
     }
-    setProfile(data)
   }
 
   async function signInWithGoogle() {
