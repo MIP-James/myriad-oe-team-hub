@@ -4,6 +4,7 @@ import ProtectedRoute from './components/ProtectedRoute'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Memos from './pages/Memos'
+import Schedules from './pages/Schedules'
 import Utilities from './pages/Utilities'
 import Community from './pages/Community'
 import Admin from './pages/Admin'
@@ -23,6 +24,7 @@ export default function App() {
       >
         <Route index element={<Dashboard />} />
         <Route path="memos" element={<Memos />} />
+        <Route path="schedules" element={<Schedules />} />
         <Route path="utilities" element={<Utilities />} />
         <Route path="community" element={<Community />} />
         <Route path="admin" element={<Admin />} />

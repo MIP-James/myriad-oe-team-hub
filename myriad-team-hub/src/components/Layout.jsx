@@ -1,10 +1,11 @@
 import { NavLink, Outlet } from 'react-router-dom'
-import { LayoutDashboard, StickyNote, Wrench, Users, ShieldCheck, LogOut } from 'lucide-react'
+import { LayoutDashboard, StickyNote, CalendarDays, Wrench, Users, ShieldCheck, LogOut } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 
 const NAV = [
   { to: '/', label: '대시보드', icon: LayoutDashboard, end: true },
   { to: '/memos', label: '메모', icon: StickyNote },
+  { to: '/schedules', label: '일정', icon: CalendarDays },
   { to: '/utilities', label: '유틸리티', icon: Wrench },
   { to: '/community', label: '팀 커뮤니티', icon: Users },
   { to: '/admin', label: '관리자', icon: ShieldCheck }
