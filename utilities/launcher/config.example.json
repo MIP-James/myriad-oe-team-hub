@@ -1,0 +1,17 @@
+{
+  "supabase": {
+    "url": "https://xxxxx.supabase.co",
+    "anon_key": "eyJhbGciOi...",
+    "access_token": "eyJhbGciOi...",
+    "refresh_token": "xxxxxxxx"
+  },
+  "device_id": null,
+  "device_name": "James Work PC",
+  "user_email": "james@myriadip.com",
+  "utility_paths": {
+    "myriad-enforcement-tools": "C:\\Users\\MIP James\\Downloads\\MYRIAD_Enforcement_Tools\\MYRIAD_Enforcement_Tools.exe",
+    "market-image-matcher": "C:\\Users\\MIP James\\Downloads\\Market_Image_Matcher\\MarketImageMatcher.exe",
+    "report-generator": "C:\\Users\\MIP James\\Downloads\\Report_Generator\\Report_Generator.exe",
+    "ip-report-editor": "C:\\Users\\MIP James\\Downloads\\IP_Report_Editor\\IP_Report_Editor.exe"
+  }
+}
