@@ -6,6 +6,12 @@ import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 
+const STALE_THRESHOLD_MS = 60 * 1000
+function isFresh(lastSeenAt) {
+  if (!lastSeenAt) return false
+  return Date.now() - new Date(lastSeenAt).getTime() < STALE_THRESHOLD_MS
+}
+
 export default function Utilities() {
   const { user } = useAuth()
   const [items, setItems] = useState([])
@@ -41,7 +47,9 @@ export default function Utilities() {
     ])
     if (utilsRes.error) setError(utilsRes.error.message)
     else setItems(utilsRes.data ?? [])
-    setDevices(devicesRes.data ?? [])
+    // 하트비트가 60초 이상 끊긴 디바이스는 오프라인으로 간주
+    const fresh = (devicesRes.data ?? []).filter((d) => isFresh(d.last_seen_at))
+    setDevices(fresh)
     await loadRecentJobs()
     setLoading(false)
   }
