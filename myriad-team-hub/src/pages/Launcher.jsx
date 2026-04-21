@@ -6,6 +6,12 @@ import {
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 
+const STALE_THRESHOLD_MS = 60 * 1000
+function isFresh(lastSeenAt) {
+  if (!lastSeenAt) return false
+  return Date.now() - new Date(lastSeenAt).getTime() < STALE_THRESHOLD_MS
+}
+
 export default function Launcher() {
   const { session, user } = useAuth()
   const [devices, setDevices] = useState([])
@@ -113,13 +119,15 @@ export default function Launcher() {
             </div>
           ) : (
             <ul className="divide-y divide-slate-100">
-              {devices.map((d) => (
+              {devices.map((d) => {
+                const online = d.is_online && isFresh(d.last_seen_at)
+                return (
                 <li key={d.id} className="px-5 py-4 flex items-center gap-4">
                   <div className="relative shrink-0">
                     <Monitor size={28} className="text-slate-400" />
                     <span
                       className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white ${
-                        d.is_online ? 'bg-emerald-500' : 'bg-slate-300'
+                        online ? 'bg-emerald-500' : 'bg-slate-300'
                       }`}
                     />
                   </div>
@@ -138,12 +146,12 @@ export default function Launcher() {
                   <div className="shrink-0">
                     <span
                       className={`text-xs px-2 py-1 rounded-full ${
-                        d.is_online
+                        online
                           ? 'bg-emerald-50 text-emerald-700'
                           : 'bg-slate-100 text-slate-500'
                       }`}
                     >
-                      {d.is_online ? '온라인' : '오프라인'}
+                      {online ? '온라인' : '오프라인'}
                     </span>
                   </div>
                   <button
@@ -153,7 +161,8 @@ export default function Launcher() {
                     삭제
                   </button>
                 </li>
-              ))}
+                )
+              })}
             </ul>
           )}
         </div>

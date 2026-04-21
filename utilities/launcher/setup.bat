@@ -1,14 +1,15 @@
 @echo off
-REM 최초 설정 + 의존성 설치
+chcp 65001 > nul
 cd /d "%~dp0"
-echo [1/2] Python 의존성 설치 중...
+echo [1/2] Installing Python dependencies...
 python -m pip install -r requirements.txt
 if errorlevel 1 (
-  echo [오류] pip install 실패. Python 설치/PATH 를 확인하세요.
+  echo.
+  echo [ERROR] pip install failed. Check Python installation / PATH.
   pause
   exit /b 1
 )
 echo.
-echo [2/2] 대화형 설정 시작...
+echo [2/2] Running interactive setup...
 python setup.py
 pause
