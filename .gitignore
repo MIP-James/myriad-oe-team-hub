@@ -8,3 +8,12 @@ dist-ssr
 .env.*.local
 .DS_Store
 .claude/
+
+# --- 민감 정보 (절대 커밋 금지) ---
+client_secret*.json
+*secret*.json
+*credentials*.json
+구글*클라이언트*.txt
+구글*클라우드*.txt
+*.pem
+*.key
