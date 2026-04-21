@@ -109,11 +109,13 @@ git remote set-url origin https://github.com/MIP-James/myriad-oe-team-hub.git
 
 ## Step 3. Pages 프로젝트 생성
 
-### 3-1. Workers & Pages 메뉴로 이동
+### 3-1. Compute 메뉴로 이동 (구 "Workers & Pages")
 
-1. Cloudflare 대시보드 왼쪽 사이드바에서 **Workers & Pages** 클릭
-2. 상단 탭 중 **Pages** 클릭 (기본값일 수도 있음)
-3. **Create application** → **Pages** 탭 → **Connect to Git**
+> 🆕 Cloudflare UI 개편 후 "Workers & Pages" 는 **Compute** 메뉴로 통합됐습니다.
+
+1. Cloudflare 대시보드 왼쪽 사이드바 **Build** 섹션 → **⚡ Compute** 클릭
+2. 화면에 탭이 있으면 **Pages** 선택 (또는 "Import an existing Git repository" 버튼)
+3. **Create** → **Pages** → **Connect to Git**
 
 ### 3-2. GitHub 연동
 
@@ -135,10 +137,12 @@ git remote set-url origin https://github.com/MIP-James/myriad-oe-team-hub.git
 |---|---|
 | **Project name** | `myriad-oe-team-hub` (기본값 그대로 OK) |
 | **Production branch** | `main` |
-| **Framework preset** | `Vite` 선택 (드롭다운에 있음) |
-| **Build command** | `npm run build` (Vite 선택 시 자동 입력됨) |
-| **Build output directory** | `dist` (Vite 선택 시 자동 입력됨) |
+| **Framework preset** | `None` (없음) — Vite 프리셋이 없어진 경우 직접 입력 |
+| **Build command** | `npm run build` |
+| **Build output directory** | `dist` |
 | **Root directory (advanced)** | `myriad-team-hub` ⚠️ 중요 (이건 **로컬 폴더 이름** 그대로) |
+
+> 💡 예전에는 Vite 프리셋이 있었지만 최근 제거됐습니다 (Cloudflare가 자동 감지). 프리셋을 "None"으로 두고 Build command/output directory만 직접 입력하면 됩니다. "VitePress"는 다른 도구이니 선택하지 마세요.
 
 > ⚠️ **Root directory가 제일 중요합니다.**
 > 우리 프로젝트는 저장소(`myriad-oe-team-hub`) 안에 `myriad-team-hub/` 하위 폴더로 앱이 있기 때문입니다.
