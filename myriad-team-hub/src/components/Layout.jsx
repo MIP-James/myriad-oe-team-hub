@@ -2,17 +2,18 @@ import { NavLink, Outlet } from 'react-router-dom'
 import { LayoutDashboard, StickyNote, CalendarDays, Wrench, Users, ShieldCheck, LogOut } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 
-const NAV = [
+const BASE_NAV = [
   { to: '/', label: '대시보드', icon: LayoutDashboard, end: true },
   { to: '/memos', label: '메모', icon: StickyNote },
   { to: '/schedules', label: '일정', icon: CalendarDays },
   { to: '/utilities', label: '유틸리티', icon: Wrench },
-  { to: '/community', label: '팀 커뮤니티', icon: Users },
-  { to: '/admin', label: '관리자', icon: ShieldCheck }
+  { to: '/community', label: '팀 커뮤니티', icon: Users }
 ]
+const ADMIN_NAV = { to: '/admin', label: '관리자', icon: ShieldCheck }
 
 export default function Layout() {
-  const { user, signOut } = useAuth()
+  const { user, signOut, isAdmin } = useAuth()
+  const nav = isAdmin ? [...BASE_NAV, ADMIN_NAV] : BASE_NAV
   return (
     <div className="h-full flex">
       <aside className="w-60 bg-white border-r border-slate-200 flex flex-col">
@@ -21,7 +22,7 @@ export default function Layout() {
           <span className="ml-2 text-xs text-slate-500">Team Hub</span>
         </div>
         <nav className="flex-1 p-3 space-y-1">
-          {NAV.map(({ to, label, icon: Icon, end }) => (
+          {nav.map(({ to, label, icon: Icon, end }) => (
             <NavLink
               key={to}
               to={to}

@@ -5,17 +5,18 @@ const AuthContext = createContext(null)
 
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(null)
+  const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
   const [domainError, setDomainError] = useState(null)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      handleSession(data.session)
+    supabase.auth.getSession().then(async ({ data }) => {
+      await handleSession(data.session)
       setLoading(false)
     })
 
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, s) => {
-      handleSession(s)
+    const { data: listener } = supabase.auth.onAuthStateChange(async (_event, s) => {
+      await handleSession(s)
     })
     return () => listener.subscription.unsubscribe()
   }, [])
@@ -23,6 +24,7 @@ export function AuthProvider({ children }) {
   async function handleSession(s) {
     if (!s) {
       setSession(null)
+      setProfile(null)
       return
     }
     const email = s.user?.email ?? ''
@@ -30,10 +32,26 @@ export function AuthProvider({ children }) {
       setDomainError(`허용되지 않은 도메인입니다. (${ALLOWED_DOMAIN} 계정만 접근 가능)`)
       await supabase.auth.signOut()
       setSession(null)
+      setProfile(null)
       return
     }
     setDomainError(null)
     setSession(s)
+    await loadProfile(s.user.id)
+  }
+
+  async function loadProfile(userId) {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .single()
+    if (error) {
+      console.warn('[Auth] profile load failed:', error.message)
+      setProfile(null)
+      return
+    }
+    setProfile(data)
   }
 
   async function signInWithGoogle() {
@@ -54,10 +72,13 @@ export function AuthProvider({ children }) {
   const value = {
     session,
     user: session?.user ?? null,
+    profile,
+    isAdmin: profile?.role === 'admin',
     loading,
     domainError,
     signInWithGoogle,
-    signOut
+    signOut,
+    reloadProfile: () => session?.user?.id && loadProfile(session.user.id)
   }
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
