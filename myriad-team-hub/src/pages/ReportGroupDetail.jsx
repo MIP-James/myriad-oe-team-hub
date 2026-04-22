@@ -25,7 +25,7 @@ const DEFAULT_TARGET_FOLDER_URL =
 function parseYearMonth(ym) {
   const [y, m] = String(ym).split('-')
   return {
-    yearFolderName: `${y}년`,              // "2026년"
+    yearFolderName: y,                     // "2026"  ← 팀 컨벤션: "년" 접미사 없음
     monthFolderName: `${parseInt(m, 10)}월` // "4월" (leading zero 제거)
   }
 }
