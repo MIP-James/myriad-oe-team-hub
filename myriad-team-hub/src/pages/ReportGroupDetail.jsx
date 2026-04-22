@@ -15,10 +15,19 @@ import {
   findOrCreateSubfolder, moveFile, extractFolderId, extractSheetId, folderIdToUrl
 } from '../lib/googleDrive'
 
-// 기본 Drive 저장 폴더 URL (관리자가 모달에서 변경 가능)
+// 기본 Drive 루트 폴더 URL (관리자가 모달에서 변경 가능)
+// 이 폴더 아래로 {YYYY}년 / {M}월 서브폴더를 자동 생성해서 시트를 이동
 const DEFAULT_TARGET_FOLDER_URL =
   import.meta.env.VITE_REPORTS_DRIVE_FOLDER_URL ||
-  'https://drive.google.com/drive/folders/1_rrhBSbgDDmV7VFnOESCajZPTwxYWoyG'
+  'https://drive.google.com/drive/folders/1NaTQooL7DC053_awAL-LrBI5meR9rahH'  // [BP] 월간 보고
+
+function parseYearMonth(ym) {
+  const [y, m] = String(ym).split('-')
+  return {
+    yearFolderName: `${y}년`,              // "2026년"
+    monthFolderName: `${parseInt(m, 10)}월` // "4월" (leading zero 제거)
+  }
+}
 import { useAuth } from '../contexts/AuthContext'
 
 function toEmbedUrl(url) {
@@ -123,22 +132,32 @@ export default function ReportGroupDetail() {
       alert('Google 연결이 필요합니다. 로그아웃 → 재로그인.')
       return
     }
-    const parentFolderId = extractFolderId(targetUrl)
-    if (!parentFolderId) {
+    const rootFolderId = extractFolderId(targetUrl)
+    if (!rootFolderId) {
       alert('유효한 Google Drive 폴더 URL 이 아닙니다.\n(예: https://drive.google.com/drive/folders/xxx)')
       return
     }
+
+    const { yearFolderName, monthFolderName } = parseYearMonth(group.year_month)
+
     setPublishing(true)
     setPublishResult(null)
     try {
-      // 1) {year_month} 이름의 서브폴더 생성 (이미 있으면 재사용)
-      const subfolder = await findOrCreateSubfolder(
+      // 1) 루트 폴더 아래 {YYYY}년 폴더 확보 (없으면 생성, 있으면 재사용)
+      const yearFolder = await findOrCreateSubfolder(
         googleAccessToken,
-        parentFolderId,
-        group.year_month
+        rootFolderId,
+        yearFolderName
       )
 
-      // 2) 각 Sheet 를 서브폴더로 이동
+      // 2) 그 안에 {M}월 폴더 확보
+      const monthFolder = await findOrCreateSubfolder(
+        googleAccessToken,
+        yearFolder.id,
+        monthFolderName
+      )
+
+      // 3) 각 Sheet 를 월 폴더로 이동
       const errors = []
       let movedCount = 0
       for (const r of reports) {
@@ -152,7 +171,7 @@ export default function ReportGroupDetail() {
           continue
         }
         try {
-          await moveFile(googleAccessToken, sheetId, subfolder.id)
+          await moveFile(googleAccessToken, sheetId, monthFolder.id)
           movedCount++
         } catch (e) {
           if (e instanceof GoogleAuthRequiredError) {
@@ -162,14 +181,14 @@ export default function ReportGroupDetail() {
         }
       }
 
-      // 3) 전부 성공했으면 그룹 상태 업데이트
-      const folderUrl = folderIdToUrl(subfolder.id)
+      // 4) 전부 성공했으면 그룹 상태 업데이트 (month 폴더 ID 저장)
+      const folderUrl = folderIdToUrl(monthFolder.id)
       if (errors.length === 0) {
         const { error: updErr } = await supabase
           .from('report_groups')
           .update({
             status: 'published',
-            google_drive_folder_id: subfolder.id
+            google_drive_folder_id: monthFolder.id
           })
           .eq('id', group.id)
         if (updErr) throw updErr
@@ -177,7 +196,7 @@ export default function ReportGroupDetail() {
 
       setPublishResult({
         folderUrl,
-        folderName: subfolder.name,
+        folderPath: `${yearFolderName} / ${monthFolderName}`,
         errors,
         movedCount,
         total: reports.length
@@ -410,7 +429,8 @@ export default function ReportGroupDetail() {
                 {publishResult.errors.length === 0 ? '발행 완료' : '일부 실패'}
               </div>
               <div className="text-xs text-slate-700 mt-1">
-                {publishResult.movedCount}/{publishResult.total}개 시트를 "{publishResult.folderName}" 폴더로 이동했습니다.
+                {publishResult.movedCount}/{publishResult.total}개 시트를{' '}
+                <code className="bg-white px-1 rounded">{publishResult.folderPath}</code> 폴더로 이동했습니다.
               </div>
               {publishResult.errors.length > 0 && (
                 <ul className="text-xs text-rose-700 mt-2 list-disc pl-4">
@@ -607,6 +627,7 @@ function PublishDialog({ group, reports, defaultTargetUrl, onCancel, onConfirm, 
 
   const sheetReports = reports.filter((r) => r.google_sheet_url)
   const missingSheets = reports.filter((r) => !r.google_sheet_url)
+  const { yearFolderName, monthFolderName } = parseYearMonth(group.year_month)
 
   return (
     <div
@@ -628,14 +649,14 @@ function PublishDialog({ group, reports, defaultTargetUrl, onCancel, onConfirm, 
 
         <div className="p-6 overflow-auto space-y-4">
           <p className="text-sm text-slate-700">
-            {group.year_month} 의 모든 Google Sheets 를 지정한 Drive 폴더 안에
-            <code className="mx-1 bg-slate-100 px-1 rounded text-xs">{group.year_month}</code>
-            서브폴더를 만들어서 이동합니다.
+            아래 루트 폴더 안에{' '}
+            <code className="bg-slate-100 px-1 rounded text-xs">{yearFolderName} / {monthFolderName}</code>
+            {' '}계층 폴더를 자동 생성/재사용하여 모든 Google Sheets 를 이동합니다.
           </p>
 
           <div>
             <label className="text-xs font-semibold text-slate-600 block mb-1">
-              대상 Drive 폴더 URL
+              루트 Drive 폴더 URL (기본: [BP] 월간 보고)
             </label>
             <input
               type="url"
@@ -645,8 +666,7 @@ function PublishDialog({ group, reports, defaultTargetUrl, onCancel, onConfirm, 
               className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-myriad-primary/40 text-xs font-mono"
             />
             <p className="text-[11px] text-slate-500 mt-1">
-              이 폴더 안에 <code>{group.year_month}</code> 하위 폴더가 (없으면) 자동 생성됩니다.
-              수정하려면 URL 교체.
+              최종 경로: <b>[지정 루트]</b> / <code>{yearFolderName}</code> / <code>{monthFolderName}</code> / 브랜드 시트들
             </p>
           </div>
 

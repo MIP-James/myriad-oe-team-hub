@@ -137,7 +137,9 @@ export function AuthProvider({ children }) {
       provider: 'google',
       options: {
         redirectTo: window.location.origin,
-        scopes: 'https://www.googleapis.com/auth/drive.file',
+        // 기존 폴더(사용자가 직접 만든) 에 접근하려면 'drive' 스코프 필요.
+        // 'drive.file' 은 앱이 만든 파일만 가능해서 기존 폴더 이동 불가.
+        scopes: 'https://www.googleapis.com/auth/drive',
         queryParams: {
           ...(ALLOWED_DOMAIN ? { hd: ALLOWED_DOMAIN } : {}),
           access_type: 'offline',
