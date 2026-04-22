@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   FileSpreadsheet, Loader2, Search, Tag, ExternalLink, Maximize2, X,
-  Download, RefreshCw
+  Download, RefreshCw, AlertTriangle, Zap
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 
@@ -91,12 +91,23 @@ export default function SharedSheets() {
             href={opened.google_url}
             target="_blank"
             rel="noreferrer"
-            className="flex items-center gap-1.5 text-xs text-slate-600 hover:text-slate-900 px-2 py-1 rounded hover:bg-slate-100"
-            title="Google Sheets 에서 새 탭으로 열기"
+            className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded border border-myriad-primary text-myriad-ink hover:bg-myriad-primary/10"
+            title="Google Sheets 에서 새 탭으로 열기 (Apps Script 사용 시 필수)"
           >
-            <ExternalLink size={14} /> 새 탭
+            <ExternalLink size={14} /> 새 탭에서 열기
           </a>
         </div>
+
+        {opened.uses_apps_script && (
+          <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 flex items-start gap-2 shrink-0">
+            <AlertTriangle size={14} className="text-amber-600 shrink-0 mt-0.5" />
+            <div className="text-xs text-amber-800">
+              이 시트는 <b>Apps Script 커스텀 메뉴/매크로</b>를 사용합니다.
+              매크로 실행 시 오류가 나면 우측 상단 <b>"새 탭에서 열기"</b> 로 실행하세요 — Google 보안 정책상 iframe 안에서는 Apps Script UI 가 차단됩니다.
+            </div>
+          </div>
+        )}
+
         <iframe
           src={toEmbedUrl(opened.google_url)}
           title={opened.title}
@@ -181,7 +192,17 @@ export default function SharedSheets() {
                 {s.icon || '📊'}
               </div>
               <div className="min-w-0 flex-1">
-                <h3 className="font-bold text-slate-900 truncate">{s.title}</h3>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="font-bold text-slate-900 truncate">{s.title}</h3>
+                  {s.uses_apps_script && (
+                    <span
+                      className="inline-flex items-center gap-0.5 text-[10px] font-semibold bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded"
+                      title="Apps Script 사용 - 새 탭에서 열어야 매크로 동작"
+                    >
+                      <Zap size={10} /> Apps Script
+                    </span>
+                  )}
+                </div>
                 {s.description && (
                   <p className="text-xs text-slate-500 mt-1 line-clamp-2">{s.description}</p>
                 )}
@@ -193,22 +214,48 @@ export default function SharedSheets() {
               </div>
             </div>
             <div className="flex items-center gap-2 mt-4 pt-4 border-t border-slate-100">
-              <a
-                href={s.google_url}
-                target="_blank"
-                rel="noreferrer"
-                className="text-xs text-slate-500 hover:text-myriad-ink flex items-center gap-1 px-2 py-1 rounded hover:bg-slate-100"
-                title="Google Sheets 에서 새 탭으로 열기"
-              >
-                <ExternalLink size={12} /> 새 탭
-              </a>
-              <div className="flex-1" />
-              <button
-                onClick={() => setOpened(s)}
-                className="flex items-center gap-1.5 bg-myriad-primary hover:bg-myriad-primaryDark text-myriad-ink font-semibold px-3 py-1.5 rounded-lg text-sm"
-              >
-                <Maximize2 size={12} /> 열기
-              </button>
+              {s.uses_apps_script ? (
+                <>
+                  {/* Apps Script 사용: 새 탭이 primary, 미리보기가 secondary */}
+                  <button
+                    onClick={() => setOpened(s)}
+                    className="text-xs text-slate-500 hover:text-myriad-ink flex items-center gap-1 px-2 py-1 rounded hover:bg-slate-100"
+                    title="웹 허브 내 미리보기 (매크로는 안 돌아감)"
+                  >
+                    <Maximize2 size={12} /> 미리보기
+                  </button>
+                  <div className="flex-1" />
+                  <a
+                    href={s.google_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center gap-1.5 bg-myriad-primary hover:bg-myriad-primaryDark text-myriad-ink font-semibold px-3 py-1.5 rounded-lg text-sm"
+                    title="Google Sheets 에서 새 탭으로 열기 (매크로 사용 가능)"
+                  >
+                    <ExternalLink size={12} /> 새 탭에서 열기
+                  </a>
+                </>
+              ) : (
+                <>
+                  {/* 일반 시트: 미리보기(iframe) 가 primary, 새 탭이 secondary */}
+                  <a
+                    href={s.google_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs text-slate-500 hover:text-myriad-ink flex items-center gap-1 px-2 py-1 rounded hover:bg-slate-100"
+                    title="Google Sheets 에서 새 탭으로 열기"
+                  >
+                    <ExternalLink size={12} /> 새 탭
+                  </a>
+                  <div className="flex-1" />
+                  <button
+                    onClick={() => setOpened(s)}
+                    className="flex items-center gap-1.5 bg-myriad-primary hover:bg-myriad-primaryDark text-myriad-ink font-semibold px-3 py-1.5 rounded-lg text-sm"
+                  >
+                    <Maximize2 size={12} /> 열기
+                  </button>
+                </>
+              )}
             </div>
           </div>
         ))}

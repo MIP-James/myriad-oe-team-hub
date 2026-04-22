@@ -13,6 +13,7 @@ const EMPTY = {
   icon: '📊',
   google_url: '',
   category: '',
+  uses_apps_script: false,
   is_active: true,
   sort_order: 0
 }
@@ -63,6 +64,7 @@ export default function AdminSharedSheets() {
       icon: editor.icon || null,
       google_url: editor.google_url.trim(),
       category: editor.category?.trim() || null,
+      uses_apps_script: !!editor.uses_apps_script,
       is_active: editor.is_active,
       sort_order: Number(editor.sort_order) || 0
     }
@@ -154,7 +156,17 @@ export default function AdminSharedSheets() {
                     <div className="flex items-center gap-2">
                       <span className="text-xl">{s.icon || '📊'}</span>
                       <div>
-                        <div className="font-semibold text-slate-900">{s.title}</div>
+                        <div className="font-semibold text-slate-900 flex items-center gap-1.5">
+                          {s.title}
+                          {s.uses_apps_script && (
+                            <span
+                              className="text-[9px] font-semibold bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded"
+                              title="Apps Script 사용"
+                            >
+                              SCRIPT
+                            </span>
+                          )}
+                        </div>
                         {s.description && (
                           <div className="text-[11px] text-slate-500 max-w-md truncate">
                             {s.description}
@@ -304,6 +316,23 @@ function Editor({ editor, setEditor, onSave, onClose, onDelete, saving, error })
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-myriad-primary/40"
               />
             </Field>
+          </div>
+
+          <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+            <input
+              type="checkbox"
+              id="ss_uses_apps_script"
+              checked={editor.uses_apps_script}
+              onChange={(e) => setEditor({ ...editor, uses_apps_script: e.target.checked })}
+              className="w-4 h-4 mt-0.5"
+            />
+            <label htmlFor="ss_uses_apps_script" className="text-sm text-slate-700 flex-1">
+              <b>이 시트는 Apps Script (커스텀 메뉴/매크로/다이얼로그) 를 사용합니다</b>
+              <p className="text-xs text-slate-500 mt-1">
+                체크하면 카드의 기본 버튼이 <b>"Google Sheets 에서 열기"</b> 로 바뀝니다.
+                iframe 안에서는 Apps Script UI 가 Google 보안 정책상 차단됩니다.
+              </p>
+            </label>
           </div>
 
           <div className="flex items-center gap-2">
