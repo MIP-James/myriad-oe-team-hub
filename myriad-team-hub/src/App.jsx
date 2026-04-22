@@ -10,6 +10,7 @@ import Utilities from './pages/Utilities'
 import Launcher from './pages/Launcher'
 import Jobs from './pages/Jobs'
 import SharedSheets from './pages/SharedSheets'
+import Reports from './pages/Reports'
 import Community from './pages/Community'
 import Admin from './pages/Admin'
 import AdminUtilities from './pages/AdminUtilities'
@@ -35,6 +36,7 @@ export default function App() {
         <Route path="launcher" element={<Launcher />} />
         <Route path="jobs" element={<Jobs />} />
         <Route path="sheets" element={<SharedSheets />} />
+        <Route path="reports" element={<Reports />} />
         <Route path="community" element={<Community />} />
         <Route path="admin" element={<AdminGate><Admin /></AdminGate>} />
         <Route path="admin/utilities" element={<AdminGate><AdminUtilities /></AdminGate>} />
