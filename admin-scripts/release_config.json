@@ -4,22 +4,42 @@
     "myriad-enforcement-tools": {
       "source_folder": "C:\\Users\\MIP James\\Downloads\\MYRIAD_Enforcement_Tools",
       "display_name": "MYRIAD Enforcement Tools",
-      "exe_name": "MYRIAD_Enforcement_Tools.exe"
+      "exe_name": "MYRIAD_Enforcement_Tools.exe",
+      "utility_type": "executable",
+      "icon": "🛡️",
+      "category": "automation"
     },
     "market-image-matcher": {
       "source_folder": "C:\\Users\\MIP James\\Downloads\\Market_Image_Matcher",
       "display_name": "Market Image Matcher",
-      "exe_name": "MarketImageMatcher.exe"
+      "exe_name": "MarketImageMatcher.exe",
+      "utility_type": "executable",
+      "icon": "🖼️",
+      "category": "image"
     },
     "report-generator": {
       "source_folder": "C:\\Users\\MIP James\\Downloads\\Report_Generator",
       "display_name": "Report Generator",
-      "exe_name": "Report_Generator.exe"
+      "exe_name": "Report_Generator.exe",
+      "utility_type": "executable",
+      "icon": "📊",
+      "category": "report"
     },
     "ip-report-editor": {
       "source_folder": "C:\\Users\\MIP James\\Downloads\\IP_Report_Editor",
       "display_name": "IP Report Editor",
-      "exe_name": "IP_Report_Editor.exe"
+      "exe_name": "IP_Report_Editor.exe",
+      "utility_type": "executable",
+      "icon": "📝",
+      "category": "editor"
+    },
+    "custom-preset-web-collector": {
+      "source_folder": "C:\\Users\\MIP James\\Downloads\\Custom_Preset_Web_Collector_v014",
+      "display_name": "Custom Preset Web Collector",
+      "utility_type": "download_only",
+      "icon": "🧩",
+      "category": "browser-extension",
+      "description": "크롬 확장 형태 웹 크롤러. 내려받은 폴더를 chrome://extensions 에 \"압축해제된 확장 프로그램 로드\" 로 등록해서 사용."
     }
   }
 }

@@ -248,9 +248,13 @@ function UtilityCard({ utility, latestJob, canRun, onRun, onOpenDetail }) {
           onClick={onRun}
           disabled={!canRun || latestJob?.status === 'running' || latestJob?.status === 'dispatched'}
           className="flex items-center gap-1.5 bg-myriad-primary hover:bg-myriad-primaryDark disabled:bg-slate-100 disabled:text-slate-400 text-myriad-ink font-semibold px-3 py-1.5 rounded-lg text-sm disabled:cursor-not-allowed"
-          title={!canRun ? '온라인 런처가 없습니다' : '실행'}
+          title={!canRun ? '온라인 런처가 없습니다' : (utility.utility_type === 'download_only' ? 'Downloads 폴더로 받기' : '실행')}
         >
-          <Play size={12} /> 실행
+          {utility.utility_type === 'download_only' ? (
+            <><Download size={12} /> 받기</>
+          ) : (
+            <><Play size={12} /> 실행</>
+          )}
         </button>
       </div>
     </div>
@@ -367,9 +371,13 @@ function UtilityDetail({ utility, latestJob, canRun, onRun, onClose }) {
             onClick={onRun}
             disabled={!canRun || latestJob?.status === 'running' || latestJob?.status === 'dispatched'}
             className="flex items-center gap-2 bg-myriad-primary hover:bg-myriad-primaryDark disabled:bg-slate-100 disabled:text-slate-400 text-myriad-ink font-semibold px-4 py-2 rounded-lg disabled:cursor-not-allowed"
-            title={!canRun ? '온라인 런처가 없습니다' : '실행'}
+            title={!canRun ? '온라인 런처가 없습니다' : (utility.utility_type === 'download_only' ? 'Downloads 폴더로 받기' : '실행')}
           >
-            <Play size={16} /> 실행
+            {utility.utility_type === 'download_only' ? (
+              <><Download size={16} /> 받기</>
+            ) : (
+              <><Play size={16} /> 실행</>
+            )}
           </button>
         </div>
       </div>

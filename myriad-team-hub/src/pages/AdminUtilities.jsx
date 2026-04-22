@@ -12,6 +12,7 @@ const EMPTY = {
   icon: '🧰',
   description: '',
   category: '',
+  utility_type: 'executable',
   download_url: '',
   entry_exe: '',
   current_version: '',
@@ -54,6 +55,7 @@ export default function AdminUtilities() {
       icon: editor.icon || null,
       description: editor.description?.trim() || null,
       category: editor.category?.trim() || null,
+      utility_type: editor.utility_type || 'executable',
       download_url: editor.download_url?.trim() || null,
       entry_exe: editor.entry_exe?.trim() || null,
       current_version: editor.current_version?.trim() || null,
@@ -267,6 +269,20 @@ function Editor({ editor, setEditor, onSave, onClose, onDelete, saving, error })
               placeholder="한 줄 설명"
               className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-myriad-primary/40"
             />
+          </Field>
+
+          <Field label="유틸 종류">
+            <select
+              value={editor.utility_type || 'executable'}
+              onChange={(e) => setEditor({ ...editor, utility_type: e.target.value })}
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-myriad-primary/40 bg-white"
+            >
+              <option value="executable">실행형 (EXE 자동 설치 + 실행)</option>
+              <option value="download_only">다운로드만 (Chrome 확장 등 — Downloads 폴더로 내려받음)</option>
+            </select>
+            <p className="text-[11px] text-slate-500 mt-1">
+              download_only 인 경우 entry_exe / 설치 가이드 필드는 무시됩니다.
+            </p>
           </Field>
 
           <div className="grid grid-cols-3 gap-3">

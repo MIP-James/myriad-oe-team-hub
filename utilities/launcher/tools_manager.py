@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 import os
 import shutil
+import subprocess
 import sys
 import urllib.request
 import zipfile
@@ -170,3 +171,106 @@ def open_tools_folder() -> None:
     d.mkdir(parents=True, exist_ok=True)
     if sys.platform == "win32":
         os.startfile(str(d))  # type: ignore[attr-defined]
+
+
+# ----------------------------------------------------------------
+# 'download_only' 유틸 (Chrome 확장 등) — 사용자 Downloads 폴더에 저장
+# ----------------------------------------------------------------
+
+def _user_downloads_dir() -> Path:
+    """사용자의 실제 Downloads 폴더를 반환."""
+    if sys.platform == "win32":
+        # Windows 는 SHGetKnownFolderPath 가 정확하지만, 대부분 UserProfile\Downloads 로 동작
+        profile = os.environ.get("USERPROFILE")
+        if profile:
+            d = Path(profile) / "Downloads"
+            if d.exists():
+                return d
+    return Path.home() / "Downloads"
+
+
+def _download_url(
+    url: str,
+    dest: Path,
+    label: str = "",
+    progress_cb: Optional[Callable[[str], None]] = None,
+) -> None:
+    """URL 에서 dest 로 파일 다운로드 (10% 단위 진행률 콜백)."""
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    with urllib.request.urlopen(url, timeout=60) as resp:
+        total = int(resp.headers.get("Content-Length") or 0)
+        downloaded = 0
+        last_pct = -10
+        chunk = 256 * 1024
+        with open(dest, "wb") as f:
+            while True:
+                data = resp.read(chunk)
+                if not data:
+                    break
+                f.write(data)
+                downloaded += len(data)
+                if progress_cb and total:
+                    pct = int(downloaded * 100 / total)
+                    if pct >= last_pct + 10:
+                        progress_cb(
+                            f"'{label}' 다운로드 {pct}% "
+                            f"({downloaded // 1024 // 1024}MB / {total // 1024 // 1024}MB)"
+                        )
+                        last_pct = pct
+
+
+def deliver_to_downloads(
+    utility: dict,
+    progress_cb: Optional[Callable[[str], None]] = None,
+) -> Path:
+    """utility.download_url 을 사용자 Downloads 폴더로 내려받고 Explorer 로 보여준다.
+
+    반환: 저장된 파일의 절대 경로.
+    """
+    slug = utility["slug"]
+    name = utility.get("name") or slug
+    url = utility.get("download_url")
+    if not url:
+        raise RuntimeError(
+            f"'{name}' 의 다운로드 URL 이 웹 관리자 페이지에 등록되지 않았습니다."
+        )
+
+    downloads = _user_downloads_dir()
+    downloads.mkdir(parents=True, exist_ok=True)
+
+    # URL 맨 뒤의 파일명 추출 (쿼리스트링 제거)
+    filename = url.rsplit("/", 1)[-1].split("?", 1)[0] or f"{slug}.zip"
+    dest = downloads / filename
+
+    # 이미 같은 파일 있으면 덮어씀
+    if dest.exists():
+        try:
+            dest.unlink()
+        except Exception:
+            # 잠금 중이면 파일명 변경
+            import time
+            dest = downloads / f"{dest.stem}_{int(time.time())}{dest.suffix}"
+
+    if progress_cb:
+        progress_cb(f"'{name}' 을 Downloads 폴더로 받는 중...")
+
+    try:
+        _download_url(url, dest, label=name, progress_cb=progress_cb)
+    except Exception as e:
+        raise RuntimeError(f"다운로드 실패: {e}")
+
+    if progress_cb:
+        progress_cb(f"✓ 저장 완료: {dest}")
+
+    # 탐색기에서 파일을 선택된 상태로 열어줌
+    try:
+        if sys.platform == "win32":
+            subprocess.Popen(["explorer", "/select,", str(dest)])
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", "-R", str(dest)])
+        else:
+            subprocess.Popen(["xdg-open", str(dest.parent)])
+    except Exception as e:
+        logging.warning(f"Open Explorer failed: {e}")
+
+    return dest

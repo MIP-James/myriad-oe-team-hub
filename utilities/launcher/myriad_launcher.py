@@ -74,7 +74,35 @@ except ImportError as e:
 
 from config import CONFIG_PATH, load_config, save_config
 from autostart import install_autostart, uninstall_autostart, is_autostart_installed
-from tools_manager import ensure_installed, open_tools_folder, tools_root
+from tools_manager import (
+    ensure_installed, deliver_to_downloads, open_tools_folder, tools_root
+)
+
+# Windows 토스트 알림 (실패해도 동작엔 지장 없음)
+try:
+    from winotify import Notification, audio as _wn_audio  # type: ignore
+    _HAS_TOAST = True
+except Exception:
+    _HAS_TOAST = False
+
+
+def notify(title: str, message: str, success: bool = True) -> None:
+    if not _HAS_TOAST:
+        return
+    try:
+        n = Notification(
+            app_id="MYRIAD Launcher",
+            title=title,
+            msg=message,
+            duration="short",
+        )
+        try:
+            n.set_audio(_wn_audio.Default, loop=False)
+        except Exception:
+            pass
+        n.show()
+    except Exception as e:
+        logging.warning(f"Toast failed: {e}")
 
 LAUNCHER_VERSION = "0.2.0"
 POLL_INTERVAL_SEC = 3.0
@@ -282,40 +310,38 @@ class Launcher:
         except Exception as e:
             logging.warning(f"Output update: {e}")
 
-    def _resolve_exe_for_job(self, job_id: str, slug: str, name: str) -> Path | None:
-        """우선순위: config.utility_paths (수동 override) → 자동 설치."""
-        # 1. 수동 경로 override
+    def _fetch_utility(self, slug: str) -> dict | None:
+        try:
+            resp = (
+                self.client.table("utilities")
+                .select("slug,name,download_url,current_version,entry_exe,utility_type")
+                .eq("slug", slug)
+                .single()
+                .execute()
+            )
+            return resp.data
+        except Exception as e:
+            logging.error(f"fetch utility '{slug}' failed: {e}")
+            return None
+
+    def _resolve_exe_for_job(
+        self, job_id: str, slug: str, name: str, utility: dict
+    ) -> Path | None:
+        """executable 타입 유틸의 실행 경로 결정.
+        우선순위: config.utility_paths (수동 override) → 자동 설치.
+        """
         manual = self.config.get("utility_paths", {}).get(slug)
         if manual and Path(manual).exists():
             logging.info(f"[Job {job_id[:8]}] using manual path: {manual}")
             return Path(manual)
 
-        # 2. DB 에서 utility 레코드 조회 (download_url / entry_exe / current_version)
-        try:
-            resp = (
-                self.client.table("utilities")
-                .select("slug,name,download_url,current_version,entry_exe")
-                .eq("slug", slug)
-                .single()
-                .execute()
-            )
-            utility = resp.data
-        except Exception as e:
-            self._fail_job(job_id, f"유틸 정보 조회 실패: {e}")
-            return None
-        if not utility:
-            self._fail_job(job_id, f"'{slug}' 유틸이 DB 에 없습니다.")
-            return None
         if not utility.get("download_url"):
             self._fail_job(
                 job_id,
-                f"'{name}' 의 다운로드 URL 이 웹 관리자 페이지에 등록되지 않았습니다.\n"
-                "관리자에게 등록을 요청하거나, 로컬에 이미 EXE 가 있다면 "
-                "런처 config.json 의 utility_paths 에 수동 경로를 지정하세요.",
+                f"'{name}' 의 다운로드 URL 이 웹 관리자 페이지에 등록되지 않았습니다.",
             )
             return None
 
-        # 3. 자동 설치/업데이트
         try:
             self._push_output(job_id, "설치 상태 확인 중...")
             exe = ensure_installed(
@@ -347,7 +373,56 @@ class Launcher:
             self._update_status("온라인 - 대기 중")
             return
 
-        exe = self._resolve_exe_for_job(job_id, slug, name)
+        utility = self._fetch_utility(slug)
+        if not utility:
+            self._fail_job(job_id, f"'{slug}' 유틸 레코드를 찾지 못했습니다.")
+            self.last_job_info = f"{name}: DB 조회 실패"
+            self._update_status("온라인 - 대기 중")
+            return
+
+        utype = utility.get("utility_type") or "executable"
+
+        # ─────────────────────────────────────────────
+        # download_only: Downloads 폴더로 내려주고 작업 종료
+        # ─────────────────────────────────────────────
+        if utype == "download_only":
+            try:
+                self.client.table("launcher_jobs").update(
+                    {"status": "running", "started_at": utcnow_iso()}
+                ).eq("id", job_id).execute()
+            except Exception as e:
+                logging.warning(f"Running mark: {e}")
+
+            try:
+                saved = deliver_to_downloads(
+                    utility,
+                    progress_cb=lambda msg: self._push_output(job_id, msg),
+                )
+                # 완료 처리
+                self.client.table("launcher_jobs").update(
+                    {
+                        "status": "done",
+                        "finished_at": utcnow_iso(),
+                        "exit_code": 0,
+                    }
+                ).eq("id", job_id).execute()
+                self.last_job_info = f"{name}: Downloads 에 저장"
+                notify(
+                    f"{name} 다운로드 완료",
+                    f"파일 위치: {saved}",
+                    success=True,
+                )
+            except Exception as e:
+                self._fail_job(job_id, f"다운로드 실패: {e}")
+                self.last_job_info = f"{name}: 오류"
+                notify(f"{name} 다운로드 실패", str(e), success=False)
+            self._update_status("온라인 - 대기 중")
+            return
+
+        # ─────────────────────────────────────────────
+        # executable: 기존 플로우 (자동 설치 + EXE 실행)
+        # ─────────────────────────────────────────────
+        exe = self._resolve_exe_for_job(job_id, slug, name, utility)
         if exe is None:
             self.last_job_info = f"{name}: 설치/경로 문제"
             self._update_status("온라인 - 대기 중")
@@ -392,12 +467,22 @@ class Launcher:
                 }
             ).eq("id", job_id).execute()
             self.last_job_info = f"{name}: {'완료' if status == 'done' else '오류'}"
+            if status == "done":
+                notify(f"{name} 완료", "실행이 정상 종료되었습니다.", success=True)
+            else:
+                notify(
+                    f"{name} 종료 (exit={exit_code})",
+                    stderr[-200:] if stderr else "오류와 함께 종료",
+                    success=False,
+                )
         except subprocess.TimeoutExpired:
             self._fail_job(job_id, "실행 타임아웃 (4시간)")
             self.last_job_info = f"{name}: 타임아웃"
+            notify(f"{name} 타임아웃", "4시간 내 종료되지 않음", success=False)
         except Exception as e:
             self._fail_job(job_id, f"실행 중 오류: {e}")
             self.last_job_info = f"{name}: 오류"
+            notify(f"{name} 오류", str(e), success=False)
 
         self._update_status("온라인 - 대기 중")
 
@@ -499,14 +584,14 @@ class Launcher:
 
     def build_menu(self):
         def status_label(_):
-            dot = "🟢" if self.online else "⚪"
-            return f"{dot} {self.status_text}"
+            prefix = "[ON]" if self.online else "[OFF]"
+            return f"{prefix}  {self.status_text}"
 
         def device_label(_):
-            return f"💻 {self.config.get('device_name', 'Unnamed')}"
+            return f"PC:  {self.config.get('device_name', 'Unnamed')}"
 
         def last_job_label(_):
-            return f"📌 최근: {self.last_job_info}"
+            return f"최근:  {self.last_job_info}"
 
         def autostart_checked(_):
             return is_autostart_installed()

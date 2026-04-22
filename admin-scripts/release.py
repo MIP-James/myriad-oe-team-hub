@@ -207,6 +207,7 @@ def _get_service_role_key() -> str | None:
 
 def update_supabase(
     slug: str,
+    util_cfg: dict,
     download_url: str,
     version: str,
     notes: str,
@@ -252,26 +253,45 @@ def update_supabase(
                 )
             raise
 
-    print(f"  Supabase 업데이트 중 (slug={slug})")
+    print(f"  Supabase upsert 중 (slug={slug})")
+
+    # 기존 행 존재 여부 확인
+    existing = client.table("utilities").select("id").eq("slug", slug).execute()
+
+    utype = util_cfg.get("utility_type", "executable")
     update_payload = {
         "download_url": download_url,
         "current_version": version,
         "release_notes": notes,
+        "utility_type": utype,
     }
     if entry_exe:
         update_payload["entry_exe"] = entry_exe
-    resp = (
-        client.table("utilities")
-        .update(update_payload)
-        .eq("slug", slug)
-        .execute()
-    )
-    if not resp.data:
-        raise SystemExit(
-            f"[오류] Supabase: slug '{slug}' 에 해당하는 utilities 행이 없습니다.\n"
-            "  웹 /admin/utilities 에서 먼저 생성하세요."
+    elif utype == "download_only":
+        # download_only 는 entry_exe null 로 명시 (이전 값 삭제)
+        update_payload["entry_exe"] = None
+
+    if existing.data:
+        # UPDATE
+        (
+            client.table("utilities")
+            .update(update_payload)
+            .eq("slug", slug)
+            .execute()
         )
-    print(f"  ✓ DB 반영: current_version={version}, entry_exe={entry_exe}")
+        print(f"  ✓ UPDATE: current_version={version}, type={utype}")
+    else:
+        # INSERT — 새 유틸 자동 등록
+        insert_payload = dict(update_payload)
+        insert_payload["slug"] = slug
+        insert_payload["name"] = util_cfg.get("display_name", slug)
+        insert_payload["icon"] = util_cfg.get("icon")
+        insert_payload["category"] = util_cfg.get("category")
+        insert_payload["description"] = util_cfg.get("description")
+        insert_payload["is_active"] = True
+        insert_payload["sort_order"] = util_cfg.get("sort_order", 100)
+        client.table("utilities").insert(insert_payload).execute()
+        print(f"  ✓ INSERT (신규 유틸 생성): slug={slug}, type={utype}")
 
     # 회전된 토큰을 launcher config 에 저장해서 다음 실행에 사용
     try:
@@ -384,7 +404,7 @@ def main() -> None:
     )
     print(f"  다운로드 URL: {download_url}")
 
-    update_supabase(args.slug, download_url, version, notes, entry_exe, launcher_cfg)
+    update_supabase(args.slug, util, download_url, version, notes, entry_exe, launcher_cfg)
 
     print()
     print("=" * 60)
