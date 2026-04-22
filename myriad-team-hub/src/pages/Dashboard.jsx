@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  CalendarDays, StickyNote, Activity, ChevronRight, Pin, Lock, Users as UsersIcon, Loader2
+  CalendarDays, StickyNote, Activity, ChevronRight, Pin, Lock, Users as UsersIcon,
+  Loader2, Megaphone, AlertCircle, AlertTriangle, Info
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
+import { listAnnouncements, getMyReadIds, listActivityEvents, getProfileShort } from '../lib/community'
 
 export default function Dashboard() {
   const { user } = useAuth()
@@ -12,9 +14,12 @@ export default function Dashboard() {
 
   const [todayItems, setTodayItems] = useState([])
   const [memos, setMemos] = useState([])
+  const [unreadAnns, setUnreadAnns] = useState([])
+  const [recentActivity, setRecentActivity] = useState([])
+  const [activityProfiles, setActivityProfiles] = useState({})
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { load() }, [user?.id])
 
   async function load() {
     const now = new Date()
@@ -22,7 +27,7 @@ export default function Dashboard() {
     const dayEnd = new Date(dayStart)
     dayEnd.setDate(dayEnd.getDate() + 1)
 
-    const [schedulesRes, memosRes] = await Promise.all([
+    const [schedulesRes, memosRes, anns, reads, actList] = await Promise.all([
       supabase
         .from('schedules')
         .select('*')
@@ -34,10 +39,23 @@ export default function Dashboard() {
         .select('*')
         .order('pinned', { ascending: false })
         .order('updated_at', { ascending: false })
-        .limit(5)
+        .limit(5),
+      listAnnouncements().catch(() => []),
+      getMyReadIds(user?.id).catch(() => new Set()),
+      listActivityEvents(5).catch(() => [])
     ])
     setTodayItems(schedulesRes.data ?? [])
     setMemos(memosRes.data ?? [])
+    // 읽지 않은 공지 (최대 3)
+    setUnreadAnns((anns ?? []).filter((a) => !reads.has(a.id)).slice(0, 3))
+    setRecentActivity(actList)
+
+    // 활동자 프로필 조회
+    const uniq = [...new Set(actList.map((e) => e.actor_id).filter(Boolean))]
+    const pmap = {}
+    await Promise.all(uniq.map(async (id) => { pmap[id] = await getProfileShort(id) }))
+    setActivityProfiles(pmap)
+
     setLoading(false)
   }
 
@@ -47,6 +65,44 @@ export default function Dashboard() {
         <p className="text-sm text-slate-500">안녕하세요,</p>
         <h1 className="text-2xl font-bold text-slate-900 mt-1">{name} 님 👋</h1>
       </header>
+
+      {unreadAnns.length > 0 && (
+        <section className="mb-4 bg-amber-50 border border-amber-200 rounded-2xl p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Megaphone size={16} className="text-amber-700" />
+            <h2 className="font-semibold text-amber-900">
+              읽지 않은 공지 {unreadAnns.length}건
+            </h2>
+            <div className="flex-1" />
+            <Link
+              to="/community"
+              className="text-xs text-amber-800 hover:underline font-semibold"
+            >
+              모두 보기 →
+            </Link>
+          </div>
+          <ul className="space-y-2">
+            {unreadAnns.map((a) => (
+              <li key={a.id}>
+                <Link
+                  to="/community"
+                  className="flex items-center gap-2 text-sm text-amber-900 hover:text-amber-700"
+                >
+                  <span className="shrink-0">
+                    {a.severity === 'urgent' ? <AlertCircle size={12} /> :
+                     a.severity === 'important' ? <AlertTriangle size={12} /> :
+                     <Info size={12} />}
+                  </span>
+                  <span className="font-semibold truncate">{a.title}</span>
+                  <span className="text-xs text-amber-700 shrink-0">
+                    {new Date(a.created_at).toLocaleDateString('ko-KR')}
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
         {/* 오늘의 일정 */}
@@ -122,6 +178,42 @@ export default function Dashboard() {
         </Widget>
       </div>
 
+      {/* 팀 최근 활동 */}
+      {recentActivity.length > 0 && (
+        <div className="bg-white border border-slate-200 rounded-2xl p-5 mb-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Activity size={16} className="text-myriad-ink" />
+              <h2 className="font-semibold text-slate-900">팀 최근 활동</h2>
+            </div>
+            <Link
+              to="/community"
+              className="text-xs text-slate-500 hover:text-myriad-ink flex items-center gap-0.5"
+            >
+              전체 보기 <ChevronRight size={12} />
+            </Link>
+          </div>
+          <ul className="space-y-1.5">
+            {recentActivity.map((ev) => {
+              const p = activityProfiles[ev.actor_id]
+              const actor = p?.full_name || p?.email?.split('@')[0] || '알 수 없음'
+              return (
+                <li key={ev.id} className="text-xs text-slate-700 flex items-start gap-2">
+                  <span className="text-slate-400 shrink-0">·</span>
+                  <span className="flex-1">
+                    <b>{actor}</b>{' '}
+                    <span className="text-slate-600">{eventBrief(ev)}</span>
+                  </span>
+                  <span className="text-[10px] text-slate-400 shrink-0">
+                    {relativeTime(ev.created_at)}
+                  </span>
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+      )}
+
       {/* 진행 상황 */}
       <div className="bg-white border border-slate-200 rounded-2xl p-6">
         <div className="flex items-center gap-2 mb-3">
@@ -138,6 +230,32 @@ export default function Dashboard() {
       </div>
     </div>
   )
+}
+
+function eventBrief(ev) {
+  const p = ev.payload || {}
+  switch (ev.event_type) {
+    case 'report_generated': return `${p.brand ?? ''} 보고서 생성`
+    case 'brand_report_status_changed':
+      return `${p.brand ?? ''} 상태 → ${p.to === 'done' ? '완료' : '수정 중'}`
+    case 'report_group_published': return `${p.year_month ?? ''} Drive 발행`
+    case 'announcement_posted': return `공지: ${p.title ?? ''}`
+    case 'utility_executed': return `${p.utility_name ?? '유틸'} 실행`
+    case 'shared_sheet_added': return `공용 시트 "${p.title ?? ''}" 등록`
+    default: return ev.event_type
+  }
+}
+
+function relativeTime(iso) {
+  const diff = Date.now() - new Date(iso).getTime()
+  const min = Math.floor(diff / 60000)
+  if (min < 1) return '방금'
+  if (min < 60) return `${min}분 전`
+  const hr = Math.floor(min / 60)
+  if (hr < 24) return `${hr}시간 전`
+  const day = Math.floor(hr / 24)
+  if (day < 7) return `${day}일 전`
+  return new Date(iso).toLocaleDateString('ko-KR')
 }
 
 function Widget({ icon: Icon, title, to, children, empty, loading }) {

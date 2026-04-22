@@ -5,6 +5,7 @@ import {
   ExternalLink
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { logActivity } from '../lib/community'
 
 const EMPTY = {
   id: null,
@@ -68,11 +69,18 @@ export default function AdminSharedSheets() {
       is_active: editor.is_active,
       sort_order: Number(editor.sort_order) || 0
     }
+    const isNew = !editor.id
     const { error } = editor.id
       ? await supabase.from('shared_sheets').update(payload).eq('id', editor.id)
       : await supabase.from('shared_sheets').insert(payload)
     setSaving(false)
     if (error) { setError(error.message); return }
+    if (isNew) {
+      logActivity('shared_sheet_added', {
+        target_type: 'shared_sheet',
+        payload: { title: payload.title, url: payload.google_url }
+      })
+    }
     setEditor(null)
     await load()
   }

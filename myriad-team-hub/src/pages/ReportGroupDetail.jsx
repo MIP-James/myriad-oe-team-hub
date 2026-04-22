@@ -15,6 +15,7 @@ import {
   findOrCreateSubfolder, moveFile, extractFolderId, extractSheetId, folderIdToUrl,
   probeFolder
 } from '../lib/googleDrive'
+import { logActivity } from '../lib/community'
 
 // 기본 Drive 루트 폴더 URL (관리자가 모달에서 변경 가능)
 // 이 폴더 아래로 {YYYY}년 / {M}월 서브폴더를 자동 생성해서 시트를 이동
@@ -103,7 +104,13 @@ export default function ReportGroupDetail() {
 
   async function toggleStatus(r) {
     try {
-      await updateBrandReportStatus(r.id, r.status === 'done' ? 'editing' : 'done')
+      const next = r.status === 'done' ? 'editing' : 'done'
+      await updateBrandReportStatus(r.id, next)
+      logActivity('brand_report_status_changed', {
+        target_type: 'brand_report',
+        target_id: r.id,
+        payload: { brand: r.brand_name, from: r.status, to: next, group_id: r.group_id }
+      })
     } catch (e) {
       alert('상태 변경 실패: ' + e.message)
     }
@@ -197,6 +204,16 @@ export default function ReportGroupDetail() {
           })
           .eq('id', group.id)
         if (updErr) throw updErr
+        logActivity('report_group_published', {
+          target_type: 'report_group',
+          target_id: group.id,
+          payload: {
+            year_month: group.year_month,
+            group_id: group.id,
+            folder_url: folderUrl,
+            moved_count: movedCount
+          }
+        })
       }
 
       setPublishResult({

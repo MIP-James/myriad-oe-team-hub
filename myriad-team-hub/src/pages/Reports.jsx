@@ -9,6 +9,7 @@ import {
   getOrCreateGroup, uploadBrandReport, listGroups, updateBrandReportGoogleSheet
 } from '../lib/reportStore'
 import { uploadExcelAsSheet, GoogleAuthRequiredError } from '../lib/googleDrive'
+import { logActivity } from '../lib/community'
 import { useAuth } from '../contexts/AuthContext'
 
 const DEFAULT_REPORT_MONTH = () => {
@@ -93,6 +94,11 @@ export default function Reports() {
           userId: user?.id
         })
         appendLog(`그룹 "${group.title}" 에 "${brand}" 보고서 저장 완료`)
+        logActivity('report_generated', {
+          target_type: 'brand_report',
+          target_id: savedReport.id,
+          payload: { brand, month: opt.reportMonth, group_id: group.id }
+        })
 
         // Google Drive 로 자동 업로드 (Sheets 변환)
         if (googleAccessToken) {

@@ -4,6 +4,7 @@ import {
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { logActivity } from '../lib/community'
 import { useAuth } from '../contexts/AuthContext'
 
 const STALE_THRESHOLD_MS = 60 * 1000
@@ -100,7 +101,14 @@ export default function Utilities() {
       status: 'pending'
     })
     if (error) setError(error.message)
-    else setError(null)
+    else {
+      setError(null)
+      logActivity('utility_executed', {
+        target_type: 'utility',
+        target_id: utility.id,
+        payload: { utility_name: utility.name, utility_slug: utility.slug }
+      })
+    }
   }
 
   return (
