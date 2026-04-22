@@ -16,6 +16,8 @@ import {
   probeFolder
 } from '../lib/googleDrive'
 import { logActivity } from '../lib/community'
+import { countCommentsForReports } from '../lib/comments'
+import BrandReportComments from '../components/BrandReportComments'
 
 // 기본 Drive 루트 폴더 URL (관리자가 모달에서 변경 가능)
 // 이 폴더 아래로 {YYYY}년 / {M}월 서브폴더를 자동 생성해서 시트를 이동
@@ -52,6 +54,7 @@ export default function ReportGroupDetail() {
   const [publishing, setPublishing] = useState(false)
   const [publishDialog, setPublishDialog] = useState(null)  // { targetUrl } when open
   const [publishResult, setPublishResult] = useState(null)  // { folderUrl, errors }
+  const [commentCounts, setCommentCounts] = useState({})    // { reportId: { total, open } }
 
   useEffect(() => { load() }, [id])
 
@@ -84,7 +87,11 @@ export default function ReportGroupDetail() {
       if (gErr) throw gErr
       setGroup(g)
       if (g) {
-        setReports(await listBrandReports(g.id))
+        const rs = await listBrandReports(g.id)
+        setReports(rs)
+        // 댓글 카운트 미리 로드 (뱃지용)
+        const counts = await countCommentsForReports(rs.map((r) => r.id))
+        setCommentCounts(counts)
       }
     } catch (e) {
       setError(e.message)
@@ -92,6 +99,23 @@ export default function ReportGroupDetail() {
       setLoading(false)
     }
   }
+
+  // 댓글 변동 시 카운트도 실시간 갱신
+  useEffect(() => {
+    if (!reports.length) return
+    const ch = supabase
+      .channel('report-comments-count-' + id)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'brand_report_comments' },
+        async () => {
+          const counts = await countCommentsForReports(reports.map((r) => r.id))
+          setCommentCounts(counts)
+        }
+      )
+      .subscribe()
+    return () => supabase.removeChannel(ch)
+  }, [reports.map((r) => r.id).join(','), id])
 
   async function handleDownload(r) {
     try {
@@ -495,8 +519,15 @@ export default function ReportGroupDetail() {
         </div>
       ) : (
         <div className="space-y-3">
-          {reports.map((r) => (
-            <div key={r.id} className="bg-white border border-slate-200 rounded-2xl p-5">
+          {reports.map((r) => {
+            const cc = commentCounts[r.id] || { total: 0, open: 0 }
+            return (
+            <div
+              key={r.id}
+              className={`bg-white border rounded-2xl p-5 ${
+                cc.open > 0 ? 'border-rose-200 ring-1 ring-rose-100' : 'border-slate-200'
+              }`}
+            >
               <div className="flex items-start gap-3">
                 <div className="w-11 h-11 rounded-xl bg-myriad-primary/10 flex items-center justify-center text-xl shrink-0">
                   📊
@@ -506,6 +537,11 @@ export default function ReportGroupDetail() {
                     <h3 className="font-bold text-slate-900">{r.brand_name}</h3>
                     <StatusBadge status={r.status} />
                     <span className="text-[10px] text-slate-500">Top {r.top_n}</span>
+                    {cc.open > 0 && (
+                      <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded-full">
+                        💬 미해결 {cc.open}
+                      </span>
+                    )}
                   </div>
                   <div className="text-xs text-slate-500 mt-1 flex items-center gap-3 flex-wrap">
                     <span className="flex items-center gap-1">
@@ -625,8 +661,12 @@ export default function ReportGroupDetail() {
                   )}
                 </button>
               </div>
+
+              {/* 댓글 스레드 — 미해결 있으면 기본 펼침 */}
+              <BrandReportComments report={r} defaultOpen={cc.open > 0} />
             </div>
-          ))}
+            )
+          })}
         </div>
       )}
 

@@ -242,6 +242,8 @@ function eventBrief(ev) {
     case 'announcement_posted': return `공지: ${p.title ?? ''}`
     case 'utility_executed': return `${p.utility_name ?? '유틸'} 실행`
     case 'shared_sheet_added': return `공용 시트 "${p.title ?? ''}" 등록`
+    case 'comment_posted': return `${p.brand ?? ''} 보고서에 댓글`
+    case 'comment_resolved': return `${p.brand ?? ''} 보고서 댓글 해결`
     default: return ev.event_type
   }
 }

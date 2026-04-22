@@ -535,6 +535,20 @@ function renderEvent(ev) {
         text: <>새 공용 시트 "{p.title ?? ''}" 를 등록했습니다.</>,
         link: '/sheets'
       }
+    case 'comment_posted':
+      return {
+        icon: Users,
+        color: 'bg-amber-100 text-amber-800',
+        text: <>{p.brand ?? ''} 보고서에 댓글을 남겼습니다{p.preview ? `: "${p.preview}"` : ''}.</>,
+        link: p.group_id ? `/reports/groups/${p.group_id}` : null
+      }
+    case 'comment_resolved':
+      return {
+        icon: CheckCircle2,
+        color: 'bg-emerald-100 text-emerald-700',
+        text: <>{p.brand ?? ''} 보고서 댓글을 해결 처리했습니다.</>,
+        link: p.group_id ? `/reports/groups/${p.group_id}` : null
+      }
     default:
       return {
         icon: Activity,
