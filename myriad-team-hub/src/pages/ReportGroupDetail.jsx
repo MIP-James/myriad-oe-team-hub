@@ -12,7 +12,8 @@ import {
 } from '../lib/reportStore'
 import {
   uploadExcelAsSheet, GoogleAuthRequiredError,
-  findOrCreateSubfolder, moveFile, extractFolderId, extractSheetId, folderIdToUrl
+  findOrCreateSubfolder, moveFile, extractFolderId, extractSheetId, folderIdToUrl,
+  probeFolder
 } from '../lib/googleDrive'
 
 // 기본 Drive 루트 폴더 URL (관리자가 모달에서 변경 가능)
@@ -143,6 +144,10 @@ export default function ReportGroupDetail() {
     setPublishing(true)
     setPublishResult(null)
     try {
+      // 0) 루트 폴더 접근 가능한지 먼저 확인 (상세 에러 메시지 위함)
+      const rootFolder = await probeFolder(googleAccessToken, rootFolderId)
+      console.log('[publish] root folder:', rootFolder)
+
       // 1) 루트 폴더 아래 {YYYY}년 폴더 확보 (없으면 생성, 있으면 재사용)
       const yearFolder = await findOrCreateSubfolder(
         googleAccessToken,
