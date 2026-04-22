@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import {
   Users, Megaphone, Activity, Pin, PinOff, Plus, X, Save, Trash2, Loader2,
   AlertCircle, AlertTriangle, Info, CheckCircle2, Edit3, RefreshCw, BarChart3,
-  FileSpreadsheet, Rocket, Wrench, Clock
+  FileSpreadsheet, Rocket, Wrench, Clock, BookOpen, FilePlus2
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import {
@@ -548,6 +548,20 @@ function renderEvent(ev) {
         color: 'bg-emerald-100 text-emerald-700',
         text: <>{p.brand ?? ''} 보고서 댓글을 해결 처리했습니다.</>,
         link: p.group_id ? `/reports/groups/${p.group_id}` : null
+      }
+    case 'wiki_page_created':
+      return {
+        icon: FilePlus2,
+        color: 'bg-indigo-100 text-indigo-700',
+        text: <>위키에 새 페이지 "{p.title ?? ''}" 를 만들었습니다.</>,
+        link: ev.target_id ? `/wiki/${ev.target_id}` : '/wiki'
+      }
+    case 'wiki_page_updated':
+      return {
+        icon: BookOpen,
+        color: 'bg-indigo-100 text-indigo-700',
+        text: <>위키 "{p.title ?? ''}" 을(를) 수정했습니다.</>,
+        link: ev.target_id ? `/wiki/${ev.target_id}` : '/wiki'
       }
     default:
       return {

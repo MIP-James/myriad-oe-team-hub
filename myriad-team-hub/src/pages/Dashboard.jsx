@@ -2,11 +2,12 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   CalendarDays, StickyNote, Activity, ChevronRight, Pin, Lock, Users as UsersIcon,
-  Loader2, Megaphone, AlertCircle, AlertTriangle, Info
+  Loader2, Megaphone, AlertCircle, AlertTriangle, Info, BookOpen, Folder
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { listAnnouncements, getMyReadIds, listActivityEvents, getProfileShort } from '../lib/community'
+import { listRecentWikiPages } from '../lib/wiki'
 
 export default function Dashboard() {
   const { user } = useAuth()
@@ -17,6 +18,7 @@ export default function Dashboard() {
   const [unreadAnns, setUnreadAnns] = useState([])
   const [recentActivity, setRecentActivity] = useState([])
   const [activityProfiles, setActivityProfiles] = useState({})
+  const [recentWiki, setRecentWiki] = useState([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => { load() }, [user?.id])
@@ -27,7 +29,7 @@ export default function Dashboard() {
     const dayEnd = new Date(dayStart)
     dayEnd.setDate(dayEnd.getDate() + 1)
 
-    const [schedulesRes, memosRes, anns, reads, actList] = await Promise.all([
+    const [schedulesRes, memosRes, anns, reads, actList, wikiList] = await Promise.all([
       supabase
         .from('schedules')
         .select('*')
@@ -42,13 +44,15 @@ export default function Dashboard() {
         .limit(5),
       listAnnouncements().catch(() => []),
       getMyReadIds(user?.id).catch(() => new Set()),
-      listActivityEvents(5).catch(() => [])
+      listActivityEvents(5).catch(() => []),
+      listRecentWikiPages(5).catch(() => [])
     ])
     setTodayItems(schedulesRes.data ?? [])
     setMemos(memosRes.data ?? [])
     // 읽지 않은 공지 (최대 3)
     setUnreadAnns((anns ?? []).filter((a) => !reads.has(a.id)).slice(0, 3))
     setRecentActivity(actList)
+    setRecentWiki(wikiList)
 
     // 활동자 프로필 조회
     const uniq = [...new Set(actList.map((e) => e.actor_id).filter(Boolean))]
@@ -104,7 +108,7 @@ export default function Dashboard() {
         </section>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
         {/* 오늘의 일정 */}
         <Widget
           icon={CalendarDays}
@@ -170,6 +174,38 @@ export default function Dashboard() {
                   </div>
                   <div className="text-xs text-slate-500 mt-0.5 line-clamp-1 whitespace-pre-wrap">
                     {m.body || '(내용 없음)'}
+                  </div>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </Widget>
+
+        {/* 최근 위키 */}
+        <Widget
+          icon={BookOpen}
+          title="최근 편집된 위키"
+          to="/wiki"
+          empty={recentWiki.length === 0 ? '아직 위키 페이지가 없습니다.' : null}
+          loading={loading}
+        >
+          <ul className="space-y-2">
+            {recentWiki.map((w) => (
+              <li key={w.id}>
+                <Link
+                  to={`/wiki/${w.id}`}
+                  className="block p-2 rounded-lg hover:bg-slate-50 transition"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-medium text-slate-900 truncate">{w.title}</span>
+                  </div>
+                  <div className="text-xs text-slate-500 mt-0.5 flex items-center gap-1.5">
+                    {w.category && (
+                      <span className="inline-flex items-center gap-0.5 text-[10px] bg-myriad-primary/20 text-myriad-ink px-1.5 py-0.5 rounded-full">
+                        <Folder size={8} /> {w.category}
+                      </span>
+                    )}
+                    <span className="text-slate-400">{relativeTime(w.updated_at)}</span>
                   </div>
                 </Link>
               </li>
@@ -244,6 +280,8 @@ function eventBrief(ev) {
     case 'shared_sheet_added': return `공용 시트 "${p.title ?? ''}" 등록`
     case 'comment_posted': return `${p.brand ?? ''} 보고서에 댓글`
     case 'comment_resolved': return `${p.brand ?? ''} 보고서 댓글 해결`
+    case 'wiki_page_created': return `위키 "${p.title ?? ''}" 생성`
+    case 'wiki_page_updated': return `위키 "${p.title ?? ''}" 수정`
     default: return ev.event_type
   }
 }

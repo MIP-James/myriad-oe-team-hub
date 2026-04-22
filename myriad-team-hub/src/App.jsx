@@ -14,6 +14,8 @@ import Reports from './pages/Reports'
 import ReportGroups from './pages/ReportGroups'
 import ReportGroupDetail from './pages/ReportGroupDetail'
 import Community from './pages/Community'
+import Wiki from './pages/Wiki'
+import WikiPage from './pages/WikiPage'
 import Admin from './pages/Admin'
 import AdminUtilities from './pages/AdminUtilities'
 import AdminSharedSheets from './pages/AdminSharedSheets'
@@ -42,6 +44,8 @@ export default function App() {
         <Route path="reports/groups" element={<ReportGroups />} />
         <Route path="reports/groups/:id" element={<ReportGroupDetail />} />
         <Route path="community" element={<Community />} />
+        <Route path="wiki" element={<Wiki />} />
+        <Route path="wiki/:id" element={<WikiPage />} />
         <Route path="admin" element={<AdminGate><Admin /></AdminGate>} />
         <Route path="admin/utilities" element={<AdminGate><AdminUtilities /></AdminGate>} />
         <Route path="admin/sheets" element={<AdminGate><AdminSharedSheets /></AdminGate>} />

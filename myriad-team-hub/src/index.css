@@ -5,3 +5,122 @@
 html, body, #root {
   height: 100%;
 }
+
+/* ─── 위키 마크다운 렌더링 (@tailwindcss/typography 없이 직접) ─── */
+.wiki-prose {
+  color: #1e293b;
+  line-height: 1.65;
+  font-size: 15px;
+}
+.wiki-prose h1 {
+  font-size: 1.75rem;
+  font-weight: 700;
+  margin-top: 1.5rem;
+  margin-bottom: 0.75rem;
+  color: #0f172a;
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 0.4rem;
+}
+.wiki-prose h2 {
+  font-size: 1.35rem;
+  font-weight: 700;
+  margin-top: 1.5rem;
+  margin-bottom: 0.6rem;
+  color: #0f172a;
+}
+.wiki-prose h3 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin-top: 1.25rem;
+  margin-bottom: 0.5rem;
+  color: #0f172a;
+}
+.wiki-prose h4, .wiki-prose h5, .wiki-prose h6 {
+  font-size: 1rem;
+  font-weight: 700;
+  margin-top: 1rem;
+  margin-bottom: 0.4rem;
+  color: #0f172a;
+}
+.wiki-prose p {
+  margin: 0.75rem 0;
+}
+.wiki-prose a {
+  color: #0891b2;
+  text-decoration: underline;
+}
+.wiki-prose a:hover {
+  color: #0e7490;
+}
+.wiki-prose ul, .wiki-prose ol {
+  margin: 0.6rem 0;
+  padding-left: 1.5rem;
+}
+.wiki-prose ul { list-style: disc; }
+.wiki-prose ol { list-style: decimal; }
+.wiki-prose li { margin: 0.25rem 0; }
+.wiki-prose li > ul, .wiki-prose li > ol { margin: 0.25rem 0; }
+.wiki-prose blockquote {
+  border-left: 3px solid #cbd5e1;
+  padding-left: 1rem;
+  color: #64748b;
+  margin: 0.75rem 0;
+  font-style: italic;
+}
+.wiki-prose code {
+  background: #f1f5f9;
+  color: #be185d;
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  font-size: 0.88em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.wiki-prose pre {
+  background: #0f172a;
+  color: #e2e8f0;
+  padding: 1rem;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin: 0.75rem 0;
+  font-size: 0.85em;
+  line-height: 1.55;
+}
+.wiki-prose pre code {
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  border-radius: 0;
+  font-size: inherit;
+}
+.wiki-prose table {
+  border-collapse: collapse;
+  margin: 0.75rem 0;
+  width: 100%;
+  font-size: 0.92em;
+}
+.wiki-prose th, .wiki-prose td {
+  border: 1px solid #e2e8f0;
+  padding: 0.45rem 0.75rem;
+  text-align: left;
+}
+.wiki-prose th {
+  background: #f8fafc;
+  font-weight: 700;
+  color: #0f172a;
+}
+.wiki-prose hr {
+  border: none;
+  border-top: 1px solid #e2e8f0;
+  margin: 1.25rem 0;
+}
+.wiki-prose img {
+  max-width: 100%;
+  border-radius: 6px;
+  margin: 0.5rem 0;
+}
+.wiki-prose input[type="checkbox"] {
+  margin-right: 0.35rem;
+}
+.wiki-prose del {
+  color: #94a3b8;
+}
