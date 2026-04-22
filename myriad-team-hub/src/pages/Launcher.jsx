@@ -47,25 +47,39 @@ export default function Launcher() {
     setLoading(false)
   }
 
-  function generateConnection() {
+  async function generateConnection() {
     if (!session) {
       setError('로그인 세션을 확인할 수 없습니다.')
+      return
+    }
+    setError(null)
+    // 실제로 Supabase 에 refresh 를 요청해서 "새로운" refresh_token 을 받아야
+    // 런처/다른 디바이스가 쓸 수 있는 유효한 토큰이 됨.
+    let fresh = session
+    try {
+      const { data, error } = await supabase.auth.refreshSession()
+      if (error) throw error
+      if (!data.session) throw new Error('세션 갱신 실패')
+      fresh = data.session
+    } catch (e) {
+      setError(
+        '토큰 갱신 실패: ' + (e?.message ?? String(e)) +
+        '\n(기존 토큰이 이미 다른 기기에서 소비됐을 수 있습니다. 로그아웃 후 재로그인하세요.)'
+      )
       return
     }
     const payload = {
       v: 1,
       url: import.meta.env.VITE_SUPABASE_URL,
       anon_key: import.meta.env.VITE_SUPABASE_ANON_KEY,
-      access_token: session.access_token,
-      refresh_token: session.refresh_token,
-      user_id: user.id,
-      email: user.email
+      access_token: fresh.access_token,
+      refresh_token: fresh.refresh_token,
+      user_id: fresh.user.id,
+      email: fresh.user.email
     }
-    const json = JSON.stringify(payload)
-    const encoded = btoa(unescape(encodeURIComponent(json)))
+    const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(payload))))
     setConnectionString('myriadlauncher_v1:' + encoded)
     setCopied(false)
-    setError(null)
   }
 
   async function copyToken() {
