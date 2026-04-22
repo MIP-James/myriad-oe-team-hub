@@ -582,8 +582,9 @@ function colLetterToNum(letters) {
  * ExcelJS 가 기본 'bottom' 으로 내는 걸 막기 위한 최종 패스.
  */
 function forceCenterAlignment(ws) {
-  ws.eachRow({ includeEmpty: false }, (row) => {
-    row.eachCell({ includeEmpty: false }, (cell) => {
+  // includeEmpty: true 로 모든 존재하는 셀 순회 (padTable 로 생긴 스타일만 있는 셀 포함)
+  ws.eachRow({ includeEmpty: true }, (row) => {
+    row.eachCell({ includeEmpty: true }, (cell) => {
       const existing = cell.alignment || {}
       // 이미 top 으로 명시된 셀은 건드리지 않음
       if (existing.vertical === 'top') return
@@ -594,6 +595,11 @@ function forceCenterAlignment(ws) {
       }
     })
   })
+  // 기본 style 수준에도 설정 (ExcelJS 가 styles.xml 기본값을 bottom 으로 내보내는 대비)
+  ws.properties = {
+    ...(ws.properties || {}),
+    defaultRowHeight: 15
+  }
 }
 
 // ---------------- Workbook 생성 ----------------
