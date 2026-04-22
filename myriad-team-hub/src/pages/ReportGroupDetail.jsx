@@ -3,14 +3,22 @@ import { Link, useParams } from 'react-router-dom'
 import {
   FolderOpen, Loader2, ChevronLeft, Download, Edit3, CheckCircle2,
   Trash2, RefreshCw, FileSpreadsheet, Clock, StickyNote, ExternalLink,
-  Maximize2, X, Upload, AlertTriangle
+  Maximize2, X, Upload, AlertTriangle, Send, Rocket
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import {
   listBrandReports, getReportSignedUrl, updateBrandReportStatus,
   updateBrandReportNote, deleteBrandReport, updateBrandReportGoogleSheet
 } from '../lib/reportStore'
-import { uploadExcelAsSheet, GoogleAuthRequiredError } from '../lib/googleDrive'
+import {
+  uploadExcelAsSheet, GoogleAuthRequiredError,
+  findOrCreateSubfolder, moveFile, extractFolderId, extractSheetId, folderIdToUrl
+} from '../lib/googleDrive'
+
+// 기본 Drive 저장 폴더 URL (관리자가 모달에서 변경 가능)
+const DEFAULT_TARGET_FOLDER_URL =
+  import.meta.env.VITE_REPORTS_DRIVE_FOLDER_URL ||
+  'https://drive.google.com/drive/folders/1_rrhBSbgDDmV7VFnOESCajZPTwxYWoyG'
 import { useAuth } from '../contexts/AuthContext'
 
 function toEmbedUrl(url) {
@@ -30,6 +38,9 @@ export default function ReportGroupDetail() {
   const [noteDraft, setNoteDraft] = useState('')
   const [opened, setOpened] = useState(null)   // 풀스크린 iframe 중인 보고서
   const [uploadingId, setUploadingId] = useState(null)   // Sheet 생성 중인 보고서 id
+  const [publishing, setPublishing] = useState(false)
+  const [publishDialog, setPublishDialog] = useState(null)  // { targetUrl } when open
+  const [publishResult, setPublishResult] = useState(null)  // { folderUrl, errors }
 
   useEffect(() => { load() }, [id])
 
@@ -104,6 +115,82 @@ export default function ReportGroupDetail() {
       await deleteBrandReport(r.id, r.excel_storage_path)
     } catch (e) {
       alert('삭제 실패: ' + e.message)
+    }
+  }
+
+  async function handlePublish(targetUrl) {
+    if (!googleAccessToken) {
+      alert('Google 연결이 필요합니다. 로그아웃 → 재로그인.')
+      return
+    }
+    const parentFolderId = extractFolderId(targetUrl)
+    if (!parentFolderId) {
+      alert('유효한 Google Drive 폴더 URL 이 아닙니다.\n(예: https://drive.google.com/drive/folders/xxx)')
+      return
+    }
+    setPublishing(true)
+    setPublishResult(null)
+    try {
+      // 1) {year_month} 이름의 서브폴더 생성 (이미 있으면 재사용)
+      const subfolder = await findOrCreateSubfolder(
+        googleAccessToken,
+        parentFolderId,
+        group.year_month
+      )
+
+      // 2) 각 Sheet 를 서브폴더로 이동
+      const errors = []
+      let movedCount = 0
+      for (const r of reports) {
+        if (!r.google_sheet_url) {
+          errors.push(`${r.brand_name}: Google Sheet 링크 없음 — 먼저 "Sheet 생성" 필요`)
+          continue
+        }
+        const sheetId = extractSheetId(r.google_sheet_url)
+        if (!sheetId) {
+          errors.push(`${r.brand_name}: URL 파싱 실패 (${r.google_sheet_url})`)
+          continue
+        }
+        try {
+          await moveFile(googleAccessToken, sheetId, subfolder.id)
+          movedCount++
+        } catch (e) {
+          if (e instanceof GoogleAuthRequiredError) {
+            throw e
+          }
+          errors.push(`${r.brand_name}: ${e.message}`)
+        }
+      }
+
+      // 3) 전부 성공했으면 그룹 상태 업데이트
+      const folderUrl = folderIdToUrl(subfolder.id)
+      if (errors.length === 0) {
+        const { error: updErr } = await supabase
+          .from('report_groups')
+          .update({
+            status: 'published',
+            google_drive_folder_id: subfolder.id
+          })
+          .eq('id', group.id)
+        if (updErr) throw updErr
+      }
+
+      setPublishResult({
+        folderUrl,
+        folderName: subfolder.name,
+        errors,
+        movedCount,
+        total: reports.length
+      })
+      setPublishDialog(null)
+    } catch (e) {
+      if (e instanceof GoogleAuthRequiredError) {
+        alert('Google 세션 만료. 로그아웃 후 재로그인 해주세요.')
+      } else {
+        alert('발행 실패: ' + e.message)
+      }
+    } finally {
+      setPublishing(false)
     }
   }
 
@@ -267,15 +354,91 @@ export default function ReportGroupDetail() {
             style={{ width: `${progress}%` }}
           />
         </div>
-        {allDone && (
+        {group.status === 'published' && group.google_drive_folder_id && (
           <div className="mt-3 flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-lg p-3">
             <CheckCircle2 className="text-emerald-600 shrink-0" size={16} />
             <div className="text-xs text-emerald-800 flex-1">
-              <b>모든 보고서 완료 상태!</b> 다음 단계에서 Google Drive 에 일괄 업로드 기능이 추가될 예정입니다. (Phase 5c.3)
+              <b>Drive 발행 완료됨.</b>{' '}
+              <a
+                href={folderIdToUrl(group.google_drive_folder_id)}
+                target="_blank"
+                rel="noreferrer"
+                className="underline font-semibold"
+              >
+                Drive 폴더 열기 →
+              </a>
             </div>
           </div>
         )}
+        {allDone && group.status !== 'published' && (
+          <div className="mt-3 flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-lg p-3">
+            <CheckCircle2 className="text-emerald-600 shrink-0" size={16} />
+            <div className="text-xs text-emerald-800 flex-1">
+              <b>모든 보고서 완료!</b> 아래 "Drive 로 발행" 으로 지정 폴더에 일괄 이동할 수 있습니다.
+            </div>
+            {isAdmin && (
+              <button
+                onClick={() => setPublishDialog({ targetUrl: DEFAULT_TARGET_FOLDER_URL })}
+                disabled={publishing}
+                className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-3 py-1.5 rounded-lg text-sm disabled:opacity-50"
+              >
+                {publishing ? (
+                  <><Loader2 size={14} className="animate-spin" /> 발행 중...</>
+                ) : (
+                  <><Rocket size={14} /> Drive 로 발행</>
+                )}
+              </button>
+            )}
+          </div>
+        )}
       </section>
+
+      {publishResult && (
+        <section className={`mb-4 rounded-2xl p-4 border ${
+          publishResult.errors.length === 0
+            ? 'bg-emerald-50 border-emerald-200'
+            : 'bg-amber-50 border-amber-200'
+        }`}>
+          <div className="flex items-start gap-2">
+            {publishResult.errors.length === 0 ? (
+              <Rocket className="text-emerald-600 shrink-0 mt-0.5" size={16} />
+            ) : (
+              <AlertTriangle className="text-amber-600 shrink-0 mt-0.5" size={16} />
+            )}
+            <div className="flex-1 text-sm">
+              <div className="font-semibold text-slate-900">
+                {publishResult.errors.length === 0 ? '발행 완료' : '일부 실패'}
+              </div>
+              <div className="text-xs text-slate-700 mt-1">
+                {publishResult.movedCount}/{publishResult.total}개 시트를 "{publishResult.folderName}" 폴더로 이동했습니다.
+              </div>
+              {publishResult.errors.length > 0 && (
+                <ul className="text-xs text-rose-700 mt-2 list-disc pl-4">
+                  {publishResult.errors.map((e, i) => (
+                    <li key={i}>{e}</li>
+                  ))}
+                </ul>
+              )}
+              <div className="mt-2">
+                <a
+                  href={publishResult.folderUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 text-xs text-emerald-800 font-semibold underline"
+                >
+                  <ExternalLink size={11} /> Drive 폴더 열기
+                </a>
+              </div>
+            </div>
+            <button
+              onClick={() => setPublishResult(null)}
+              className="text-slate-400 hover:text-slate-700"
+            >
+              <X size={16} />
+            </button>
+          </div>
+        </section>
+      )}
 
       {error && (
         <div className="mb-4 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-lg p-3">
@@ -424,6 +587,124 @@ export default function ReportGroupDetail() {
           ))}
         </div>
       )}
+
+      {publishDialog && (
+        <PublishDialog
+          group={group}
+          reports={reports}
+          defaultTargetUrl={publishDialog.targetUrl}
+          onCancel={() => setPublishDialog(null)}
+          onConfirm={handlePublish}
+          publishing={publishing}
+        />
+      )}
+    </div>
+  )
+}
+
+function PublishDialog({ group, reports, defaultTargetUrl, onCancel, onConfirm, publishing }) {
+  const [targetUrl, setTargetUrl] = useState(defaultTargetUrl)
+
+  const sheetReports = reports.filter((r) => r.google_sheet_url)
+  const missingSheets = reports.filter((r) => !r.google_sheet_url)
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+      onClick={onCancel}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-6 py-4 border-b border-slate-200 flex items-center gap-2">
+          <Rocket className="text-emerald-600" size={18} />
+          <h2 className="font-bold text-slate-900">Drive 로 발행</h2>
+          <div className="flex-1" />
+          <button onClick={onCancel} className="p-1 hover:bg-slate-100 rounded">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="p-6 overflow-auto space-y-4">
+          <p className="text-sm text-slate-700">
+            {group.year_month} 의 모든 Google Sheets 를 지정한 Drive 폴더 안에
+            <code className="mx-1 bg-slate-100 px-1 rounded text-xs">{group.year_month}</code>
+            서브폴더를 만들어서 이동합니다.
+          </p>
+
+          <div>
+            <label className="text-xs font-semibold text-slate-600 block mb-1">
+              대상 Drive 폴더 URL
+            </label>
+            <input
+              type="url"
+              value={targetUrl}
+              onChange={(e) => setTargetUrl(e.target.value)}
+              placeholder="https://drive.google.com/drive/folders/..."
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-myriad-primary/40 text-xs font-mono"
+            />
+            <p className="text-[11px] text-slate-500 mt-1">
+              이 폴더 안에 <code>{group.year_month}</code> 하위 폴더가 (없으면) 자동 생성됩니다.
+              수정하려면 URL 교체.
+            </p>
+          </div>
+
+          {missingSheets.length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800">
+              <div className="font-semibold flex items-center gap-1">
+                <AlertTriangle size={12} /> Google Sheet 미생성 {missingSheets.length}건
+              </div>
+              <ul className="list-disc pl-4 mt-1">
+                {missingSheets.map((r) => (
+                  <li key={r.id}>{r.brand_name} — 먼저 "Sheet 생성" 필요</li>
+                ))}
+              </ul>
+              <p className="mt-1 text-amber-700">
+                발행은 진행되지만 이 보고서들은 제외됩니다. Sheet 생성 후 재발행 권장.
+              </p>
+            </div>
+          )}
+
+          {sheetReports.length > 0 && (
+            <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+              <div className="text-xs font-semibold text-slate-600 mb-2">
+                이동될 Sheets ({sheetReports.length}건)
+              </div>
+              <ul className="text-xs text-slate-700 space-y-0.5 max-h-40 overflow-auto">
+                {sheetReports.map((r) => (
+                  <li key={r.id} className="flex items-center gap-2">
+                    <FileSpreadsheet size={11} className="text-sky-500 shrink-0" />
+                    <span className="truncate">{r.brand_name}</span>
+                    <StatusBadge status={r.status} />
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+
+        <div className="px-6 py-4 border-t border-slate-200 flex items-center justify-end gap-2">
+          <button
+            onClick={onCancel}
+            disabled={publishing}
+            className="text-slate-600 hover:bg-slate-100 px-4 py-2 rounded-lg disabled:opacity-50"
+          >
+            취소
+          </button>
+          <button
+            onClick={() => onConfirm(targetUrl)}
+            disabled={publishing || sheetReports.length === 0}
+            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-4 py-2 rounded-lg disabled:opacity-50"
+          >
+            {publishing ? (
+              <><Loader2 size={14} className="animate-spin" /> 발행 중...</>
+            ) : (
+              <><Send size={14} /> 발행 확정</>
+            )}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

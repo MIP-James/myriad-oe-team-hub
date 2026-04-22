@@ -136,3 +136,15 @@ export function extractFolderId(url) {
   const m = String(url).match(/\/folders\/([a-zA-Z0-9_-]+)/)
   return m ? m[1] : null
 }
+
+/** Google Sheets URL 에서 file ID 추출. */
+export function extractSheetId(url) {
+  if (!url) return null
+  const m = String(url).match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/)
+  return m ? m[1] : null
+}
+
+/** 폴더 ID 로부터 브라우저에서 열 수 있는 Drive 폴더 URL 생성. */
+export function folderIdToUrl(id) {
+  return id ? `https://drive.google.com/drive/folders/${id}` : null
+}
