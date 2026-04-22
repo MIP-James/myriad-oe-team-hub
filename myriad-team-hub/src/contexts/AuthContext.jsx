@@ -137,9 +137,12 @@ export function AuthProvider({ children }) {
       provider: 'google',
       options: {
         redirectTo: window.location.origin,
-        // 기존 폴더(사용자가 직접 만든) 에 접근하려면 'drive' 스코프 필요.
-        // 'drive.file' 은 앱이 만든 파일만 가능해서 기존 폴더 이동 불가.
-        scopes: 'https://www.googleapis.com/auth/drive',
+        // drive: 기존 폴더(사용자가 직접 만든) 접근용 — Phase 5c 에서 추가
+        // gmail.readonly: Phase 8 케이스 관리에서 메일 본문 import 용
+        scopes: [
+          'https://www.googleapis.com/auth/drive',
+          'https://www.googleapis.com/auth/gmail.readonly'
+        ].join(' '),
         queryParams: {
           ...(ALLOWED_DOMAIN ? { hd: ALLOWED_DOMAIN } : {}),
           access_type: 'offline',

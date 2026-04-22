@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import {
   Users, Megaphone, Activity, Pin, PinOff, Plus, X, Save, Trash2, Loader2,
   AlertCircle, AlertTriangle, Info, CheckCircle2, Edit3, RefreshCw, BarChart3,
-  FileSpreadsheet, Rocket, Wrench, Clock, BookOpen, FilePlus2
+  FileSpreadsheet, Rocket, Wrench, Clock, Briefcase, MessageSquare
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import {
@@ -12,16 +12,29 @@ import {
   listActivityEvents, getProfileShort
 } from '../lib/community'
 import { useAuth } from '../contexts/AuthContext'
+import CasesTab from '../components/CasesTab'
 
 const TABS = [
   { key: 'announcements', label: '공지', icon: Megaphone },
+  { key: 'cases', label: '케이스', icon: Briefcase },
   { key: 'activity', label: '활동', icon: Activity }
 ]
 
 export default function Community() {
-  const [tab, setTab] = useState('announcements')
+  const [params, setParams] = useSearchParams()
+  const tab = TABS.some((t) => t.key === params.get('tab')) ? params.get('tab') : 'announcements'
+
+  function setTab(key) {
+    const next = new URLSearchParams(params)
+    if (key === 'announcements') next.delete('tab')
+    else next.set('tab', key)
+    setParams(next, { replace: true })
+  }
+
+  const isCasesTab = tab === 'cases'
+
   return (
-    <div className="p-8 max-w-4xl mx-auto">
+    <div className={`p-8 ${isCasesTab ? 'max-w-6xl' : 'max-w-4xl'} mx-auto`}>
       <header className="mb-6 flex items-center gap-3">
         <Users className="text-myriad-ink" />
         <h1 className="text-2xl font-bold text-slate-900">팀 커뮤니티</h1>
@@ -44,6 +57,7 @@ export default function Community() {
       </div>
 
       {tab === 'announcements' && <AnnouncementsTab />}
+      {tab === 'cases' && <CasesTab />}
       {tab === 'activity' && <ActivityTab />}
     </div>
   )
@@ -549,19 +563,35 @@ function renderEvent(ev) {
         text: <>{p.brand ?? ''} 보고서 댓글을 해결 처리했습니다.</>,
         link: p.group_id ? `/reports/groups/${p.group_id}` : null
       }
-    case 'wiki_page_created':
+    case 'case_created':
       return {
-        icon: FilePlus2,
+        icon: Briefcase,
         color: 'bg-indigo-100 text-indigo-700',
-        text: <>위키에 새 페이지 "{p.title ?? ''}" 를 만들었습니다.</>,
-        link: ev.target_id ? `/wiki/${ev.target_id}` : '/wiki'
+        text: <>케이스 "{p.title ?? ''}" 을 등록했습니다{p.brand ? ` (${p.brand})` : ''}.</>,
+        link: ev.target_id ? `/community/cases/${ev.target_id}` : '/community?tab=cases'
       }
-    case 'wiki_page_updated':
+    case 'case_updated':
       return {
-        icon: BookOpen,
+        icon: Edit3,
         color: 'bg-indigo-100 text-indigo-700',
-        text: <>위키 "{p.title ?? ''}" 을(를) 수정했습니다.</>,
-        link: ev.target_id ? `/wiki/${ev.target_id}` : '/wiki'
+        text: <>케이스 "{p.title ?? ''}" 을 수정했습니다.</>,
+        link: ev.target_id ? `/community/cases/${ev.target_id}` : '/community?tab=cases'
+      }
+    case 'case_status_changed': {
+      const isResolved = p.to === 'resolved'
+      return {
+        icon: isResolved ? CheckCircle2 : RefreshCw,
+        color: isResolved ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700',
+        text: <>케이스 "{p.title ?? ''}" 상태를 <b>{p.status_label ?? p.to}</b> 으로 변경했습니다.</>,
+        link: ev.target_id ? `/community/cases/${ev.target_id}` : '/community?tab=cases'
+      }
+    }
+    case 'case_comment_posted':
+      return {
+        icon: MessageSquare,
+        color: 'bg-amber-100 text-amber-800',
+        text: <>케이스 "{p.title ?? ''}" 에 댓글을 남겼습니다{p.preview ? `: "${p.preview}"` : ''}.</>,
+        link: ev.target_id ? `/community/cases/${ev.target_id}` : '/community?tab=cases'
       }
     default:
       return {

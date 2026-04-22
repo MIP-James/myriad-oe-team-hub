@@ -2,12 +2,12 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   CalendarDays, StickyNote, Activity, ChevronRight, Pin, Lock, Users as UsersIcon,
-  Loader2, Megaphone, AlertCircle, AlertTriangle, Info, BookOpen, Folder
+  Loader2, Megaphone, AlertCircle, AlertTriangle, Info, Briefcase, Tag as TagIcon
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { listAnnouncements, getMyReadIds, listActivityEvents, getProfileShort } from '../lib/community'
-import { listRecentWikiPages } from '../lib/wiki'
+import { listRecentCases, STATUS_LABELS, STATUS_COLORS } from '../lib/cases'
 
 export default function Dashboard() {
   const { user } = useAuth()
@@ -18,7 +18,7 @@ export default function Dashboard() {
   const [unreadAnns, setUnreadAnns] = useState([])
   const [recentActivity, setRecentActivity] = useState([])
   const [activityProfiles, setActivityProfiles] = useState({})
-  const [recentWiki, setRecentWiki] = useState([])
+  const [recentCases, setRecentCases] = useState([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => { load() }, [user?.id])
@@ -29,7 +29,7 @@ export default function Dashboard() {
     const dayEnd = new Date(dayStart)
     dayEnd.setDate(dayEnd.getDate() + 1)
 
-    const [schedulesRes, memosRes, anns, reads, actList, wikiList] = await Promise.all([
+    const [schedulesRes, memosRes, anns, reads, actList, caseList] = await Promise.all([
       supabase
         .from('schedules')
         .select('*')
@@ -45,14 +45,14 @@ export default function Dashboard() {
       listAnnouncements().catch(() => []),
       getMyReadIds(user?.id).catch(() => new Set()),
       listActivityEvents(5).catch(() => []),
-      listRecentWikiPages(5).catch(() => [])
+      listRecentCases(5).catch(() => [])
     ])
     setTodayItems(schedulesRes.data ?? [])
     setMemos(memosRes.data ?? [])
     // 읽지 않은 공지 (최대 3)
     setUnreadAnns((anns ?? []).filter((a) => !reads.has(a.id)).slice(0, 3))
     setRecentActivity(actList)
-    setRecentWiki(wikiList)
+    setRecentCases(caseList)
 
     // 활동자 프로필 조회
     const uniq = [...new Set(actList.map((e) => e.actor_id).filter(Boolean))]
@@ -181,31 +181,33 @@ export default function Dashboard() {
           </ul>
         </Widget>
 
-        {/* 최근 위키 */}
+        {/* 최근 케이스 */}
         <Widget
-          icon={BookOpen}
-          title="최근 편집된 위키"
-          to="/wiki"
-          empty={recentWiki.length === 0 ? '아직 위키 페이지가 없습니다.' : null}
+          icon={Briefcase}
+          title="최근 케이스"
+          to="/community?tab=cases"
+          empty={recentCases.length === 0 ? '아직 공유된 케이스가 없습니다.' : null}
           loading={loading}
         >
           <ul className="space-y-2">
-            {recentWiki.map((w) => (
-              <li key={w.id}>
+            {recentCases.map((c) => (
+              <li key={c.id}>
                 <Link
-                  to={`/wiki/${w.id}`}
+                  to={`/community/cases/${c.id}`}
                   className="block p-2 rounded-lg hover:bg-slate-50 transition"
                 >
                   <div className="flex items-center gap-1.5">
-                    <span className="font-medium text-slate-900 truncate">{w.title}</span>
+                    <span className="font-medium text-slate-900 truncate flex-1">{c.title}</span>
+                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full shrink-0 ${STATUS_COLORS[c.status] || 'bg-slate-100 text-slate-600'}`}>
+                      {STATUS_LABELS[c.status] || c.status}
+                    </span>
                   </div>
-                  <div className="text-xs text-slate-500 mt-0.5 flex items-center gap-1.5">
-                    {w.category && (
-                      <span className="inline-flex items-center gap-0.5 text-[10px] bg-myriad-primary/20 text-myriad-ink px-1.5 py-0.5 rounded-full">
-                        <Folder size={8} /> {w.category}
-                      </span>
-                    )}
-                    <span className="text-slate-400">{relativeTime(w.updated_at)}</span>
+                  <div className="text-xs text-slate-500 mt-0.5 flex items-center gap-1.5 flex-wrap">
+                    <span className="inline-flex items-center gap-0.5 text-[10px] bg-myriad-primary/20 text-myriad-ink px-1.5 py-0.5 rounded-full">
+                      <TagIcon size={8} /> {c.brand}
+                    </span>
+                    <span className="text-[10px] text-slate-500">{c.platform === '기타' ? (c.platform_other || '기타') : c.platform}</span>
+                    <span className="text-slate-400 ml-auto">{relativeTime(c.created_at)}</span>
                   </div>
                 </Link>
               </li>
@@ -280,8 +282,10 @@ function eventBrief(ev) {
     case 'shared_sheet_added': return `공용 시트 "${p.title ?? ''}" 등록`
     case 'comment_posted': return `${p.brand ?? ''} 보고서에 댓글`
     case 'comment_resolved': return `${p.brand ?? ''} 보고서 댓글 해결`
-    case 'wiki_page_created': return `위키 "${p.title ?? ''}" 생성`
-    case 'wiki_page_updated': return `위키 "${p.title ?? ''}" 수정`
+    case 'case_created': return `케이스 "${p.title ?? ''}" 등록 (${p.brand ?? ''})`
+    case 'case_updated': return `케이스 "${p.title ?? ''}" 수정`
+    case 'case_status_changed': return `케이스 "${p.title ?? ''}" 상태 → ${p.status_label ?? p.to ?? ''}`
+    case 'case_comment_posted': return `케이스 "${p.title ?? ''}" 에 댓글`
     default: return ev.event_type
   }
 }

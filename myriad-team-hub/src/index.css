@@ -6,68 +6,72 @@ html, body, #root {
   height: 100%;
 }
 
-/* ─── 위키 마크다운 렌더링 (@tailwindcss/typography 없이 직접) ─── */
-.wiki-prose {
+/* ─── 케이스 본문 TipTap 렌더링 + 에디터 공통 스타일 ─── */
+.case-prose,
+.tiptap-editor .ProseMirror {
   color: #1e293b;
   line-height: 1.65;
   font-size: 15px;
+  min-height: 200px;
+  outline: none;
 }
-.wiki-prose h1 {
+.case-prose h1,
+.tiptap-editor .ProseMirror h1 {
   font-size: 1.75rem;
   font-weight: 700;
-  margin-top: 1.5rem;
-  margin-bottom: 0.75rem;
+  margin: 1.25rem 0 0.6rem;
   color: #0f172a;
   border-bottom: 1px solid #e2e8f0;
-  padding-bottom: 0.4rem;
+  padding-bottom: 0.35rem;
 }
-.wiki-prose h2 {
+.case-prose h2,
+.tiptap-editor .ProseMirror h2 {
   font-size: 1.35rem;
   font-weight: 700;
-  margin-top: 1.5rem;
-  margin-bottom: 0.6rem;
+  margin: 1.25rem 0 0.5rem;
   color: #0f172a;
 }
-.wiki-prose h3 {
+.case-prose h3,
+.tiptap-editor .ProseMirror h3 {
   font-size: 1.1rem;
   font-weight: 700;
-  margin-top: 1.25rem;
-  margin-bottom: 0.5rem;
+  margin: 1rem 0 0.4rem;
   color: #0f172a;
 }
-.wiki-prose h4, .wiki-prose h5, .wiki-prose h6 {
-  font-size: 1rem;
-  font-weight: 700;
-  margin-top: 1rem;
-  margin-bottom: 0.4rem;
-  color: #0f172a;
+.case-prose p,
+.tiptap-editor .ProseMirror p {
+  margin: 0.55rem 0;
 }
-.wiki-prose p {
-  margin: 0.75rem 0;
-}
-.wiki-prose a {
+.case-prose a,
+.tiptap-editor .ProseMirror a {
   color: #0891b2;
   text-decoration: underline;
 }
-.wiki-prose a:hover {
+.case-prose a:hover,
+.tiptap-editor .ProseMirror a:hover {
   color: #0e7490;
 }
-.wiki-prose ul, .wiki-prose ol {
-  margin: 0.6rem 0;
-  padding-left: 1.5rem;
+.case-prose ul, .case-prose ol,
+.tiptap-editor .ProseMirror ul, .tiptap-editor .ProseMirror ol {
+  margin: 0.5rem 0;
+  padding-left: 1.4rem;
 }
-.wiki-prose ul { list-style: disc; }
-.wiki-prose ol { list-style: decimal; }
-.wiki-prose li { margin: 0.25rem 0; }
-.wiki-prose li > ul, .wiki-prose li > ol { margin: 0.25rem 0; }
-.wiki-prose blockquote {
+.case-prose ul,
+.tiptap-editor .ProseMirror ul { list-style: disc; }
+.case-prose ol,
+.tiptap-editor .ProseMirror ol { list-style: decimal; }
+.case-prose li,
+.tiptap-editor .ProseMirror li { margin: 0.2rem 0; }
+.case-prose blockquote,
+.tiptap-editor .ProseMirror blockquote {
   border-left: 3px solid #cbd5e1;
-  padding-left: 1rem;
-  color: #64748b;
-  margin: 0.75rem 0;
+  padding-left: 0.9rem;
+  color: #475569;
+  margin: 0.6rem 0;
   font-style: italic;
 }
-.wiki-prose code {
+.case-prose code,
+.tiptap-editor .ProseMirror code {
   background: #f1f5f9;
   color: #be185d;
   padding: 0.1em 0.35em;
@@ -75,52 +79,49 @@ html, body, #root {
   font-size: 0.88em;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
-.wiki-prose pre {
+.case-prose pre,
+.tiptap-editor .ProseMirror pre {
   background: #0f172a;
   color: #e2e8f0;
-  padding: 1rem;
+  padding: 0.9rem;
   border-radius: 8px;
   overflow-x: auto;
-  margin: 0.75rem 0;
-  font-size: 0.85em;
-  line-height: 1.55;
+  margin: 0.6rem 0;
+  font-size: 0.88em;
 }
-.wiki-prose pre code {
+.case-prose pre code,
+.tiptap-editor .ProseMirror pre code {
   background: transparent;
   color: inherit;
   padding: 0;
   border-radius: 0;
-  font-size: inherit;
 }
-.wiki-prose table {
-  border-collapse: collapse;
-  margin: 0.75rem 0;
-  width: 100%;
-  font-size: 0.92em;
-}
-.wiki-prose th, .wiki-prose td {
-  border: 1px solid #e2e8f0;
-  padding: 0.45rem 0.75rem;
-  text-align: left;
-}
-.wiki-prose th {
-  background: #f8fafc;
-  font-weight: 700;
-  color: #0f172a;
-}
-.wiki-prose hr {
+.case-prose hr,
+.tiptap-editor .ProseMirror hr {
   border: none;
   border-top: 1px solid #e2e8f0;
-  margin: 1.25rem 0;
+  margin: 1rem 0;
 }
-.wiki-prose img {
+.case-prose img,
+.tiptap-editor .ProseMirror img {
   max-width: 100%;
   border-radius: 6px;
-  margin: 0.5rem 0;
+  margin: 0.4rem 0;
 }
-.wiki-prose input[type="checkbox"] {
-  margin-right: 0.35rem;
+.case-prose u,
+.tiptap-editor .ProseMirror u {
+  text-decoration: underline;
 }
-.wiki-prose del {
+.case-prose s,
+.tiptap-editor .ProseMirror s {
   color: #94a3b8;
+}
+
+/* TipTap placeholder */
+.tiptap-editor .ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: #94a3b8;
+  float: left;
+  height: 0;
+  pointer-events: none;
 }
