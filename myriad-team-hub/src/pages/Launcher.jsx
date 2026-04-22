@@ -12,6 +12,10 @@ function isFresh(lastSeenAt) {
   return Date.now() - new Date(lastSeenAt).getTime() < STALE_THRESHOLD_MS
 }
 
+// 런처 배포 고정 URL — admin-scripts/release_launcher.py 가 이 태그에 업로드
+const LAUNCHER_DOWNLOAD_URL =
+  'https://github.com/MIP-James/myriad-oe-team-hub/releases/download/launcher-latest/MyriadLauncher.zip'
+
 export default function Launcher() {
   const { session, user } = useAuth()
   const [devices, setDevices] = useState([])
@@ -188,14 +192,18 @@ export default function Launcher() {
         <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-6">
           <Step n={1} title="런처 설치">
             <p className="text-sm text-slate-600 mb-2">
-              아직 준비 중입니다 (Phase 4.1b). 곧 다운로드 링크가 제공됩니다.
+              <b>MyriadLauncher.zip</b> 을 받아서 원하는 폴더에 압축 풀기.
+              안에 <code className="text-xs bg-slate-100 px-1 rounded">MyriadLauncher.exe</code> +
+              <code className="text-xs bg-slate-100 px-1 rounded ml-1">MyriadSetup.exe</code> 두 파일이 들어있습니다.
             </p>
-            <button
-              disabled
-              className="inline-flex items-center gap-2 bg-slate-100 text-slate-400 font-semibold px-4 py-2 rounded-lg text-sm cursor-not-allowed"
+            <a
+              href={LAUNCHER_DOWNLOAD_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-2 bg-myriad-primary hover:bg-myriad-primaryDark text-myriad-ink font-semibold px-4 py-2 rounded-lg text-sm transition"
             >
-              <Download size={14} /> 런처 다운로드 (준비 중)
-            </button>
+              <Download size={14} /> 런처 다운로드 (ZIP)
+            </a>
           </Step>
 
           <Step n={2} title="연결 토큰 발급">

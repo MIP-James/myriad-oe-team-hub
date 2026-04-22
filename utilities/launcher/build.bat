@@ -5,6 +5,12 @@ echo =====================================
 echo  MYRIAD Launcher - Build
 echo =====================================
 
+REM 재빌드 시 기존 config.json 이 dist 정리로 날아가지 않도록 임시 백업
+if exist dist\config.json (
+  echo [preserve] backing up dist\config.json ...
+  copy /Y dist\config.json config.json.bak > nul
+)
+
 echo.
 echo Step 1/5: Verify Python
 python -c "import sys; print('Python', sys.version); print('Exe:', sys.executable)"
@@ -39,12 +45,22 @@ echo   --^> MyriadSetup.exe (console setup)
 python -m PyInstaller --clean --noconfirm MyriadSetup.spec
 if errorlevel 1 goto err
 
+REM 백업해뒀던 config.json 복구
+if exist config.json.bak (
+  echo [restore] restoring config.json to dist\
+  if not exist dist mkdir dist
+  move /Y config.json.bak dist\config.json > nul
+)
+
 echo.
 echo =====================================
 echo  Build complete
 echo =====================================
 echo  dist\MyriadLauncher.exe
 echo  dist\MyriadSetup.exe
+if exist dist\config.json (
+  echo  dist\config.json              [preserved]
+)
 echo =====================================
 pause
 exit /b 0

@@ -1,0 +1,7 @@
+@echo off
+cd /d "%~dp0"
+python release_launcher.py %*
+if errorlevel 1 (
+  echo.
+  pause
+)
