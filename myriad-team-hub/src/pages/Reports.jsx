@@ -5,7 +5,10 @@ import {
   AlertCircle, RefreshCw, Calendar, FolderOpen, Save
 } from 'lucide-react'
 import { generateReport, normalizeReportMonth } from '../lib/reportGenerator'
-import { getOrCreateGroup, uploadBrandReport, listGroups } from '../lib/reportStore'
+import {
+  getOrCreateGroup, uploadBrandReport, listGroups, updateBrandReportGoogleSheet
+} from '../lib/reportStore'
+import { uploadExcelAsSheet, GoogleAuthRequiredError } from '../lib/googleDrive'
 import { useAuth } from '../contexts/AuthContext'
 
 const DEFAULT_REPORT_MONTH = () => {
@@ -14,7 +17,7 @@ const DEFAULT_REPORT_MONTH = () => {
 }
 
 export default function Reports() {
-  const { user } = useAuth()
+  const { user, googleAccessToken } = useAuth()
   const [prevFile, setPrevFile] = useState(null)
   const [currFile, setCurrFile] = useState(null)
   const [reportMonth, setReportMonth] = useState(DEFAULT_REPORT_MONTH())
@@ -90,6 +93,30 @@ export default function Reports() {
           userId: user?.id
         })
         appendLog(`그룹 "${group.title}" 에 "${brand}" 보고서 저장 완료`)
+
+        // Google Drive 로 자동 업로드 (Sheets 변환)
+        if (googleAccessToken) {
+          try {
+            appendLog('Google Drive 에 Sheet 로 업로드 중...')
+            const sheetName = `${brand} ${opt.reportMonth} 월간동향`
+            const driveResult = await uploadExcelAsSheet(
+              googleAccessToken,
+              buffer,
+              sheetName
+            )
+            await updateBrandReportGoogleSheet(savedReport.id, driveResult.webViewLink)
+            savedReport.google_sheet_url = driveResult.webViewLink
+            appendLog(`✓ Google Sheets 생성: ${driveResult.webViewLink}`)
+          } catch (ge) {
+            if (ge instanceof GoogleAuthRequiredError) {
+              appendLog('⚠ Google 연결 만료/없음. 재로그인 후 그룹 화면에서 "Sheet 생성" 재시도 가능.')
+            } else {
+              appendLog('⚠ Google Sheets 업로드 실패: ' + ge.message)
+            }
+          }
+        } else {
+          appendLog('ℹ Google 연결 없음 — 그룹 화면에서 수동으로 "Sheet 생성" 가능')
+        }
       } else {
         appendLog('그룹 저장 스킵 (다운로드만)')
       }

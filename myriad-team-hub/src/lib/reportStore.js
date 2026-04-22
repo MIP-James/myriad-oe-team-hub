@@ -149,6 +149,14 @@ export async function updateBrandReportStatus(id, status) {
   if (error) throw error
 }
 
+export async function updateBrandReportGoogleSheet(id, url) {
+  const { error } = await supabase
+    .from('brand_reports')
+    .update({ google_sheet_url: url })
+    .eq('id', id)
+  if (error) throw error
+}
+
 export async function updateBrandReportNote(id, note) {
   const { error } = await supabase
     .from('brand_reports')

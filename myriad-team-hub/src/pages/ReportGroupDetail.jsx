@@ -2,24 +2,34 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
   FolderOpen, Loader2, ChevronLeft, Download, Edit3, CheckCircle2,
-  Trash2, RefreshCw, FileSpreadsheet, User, Clock, StickyNote
+  Trash2, RefreshCw, FileSpreadsheet, Clock, StickyNote, ExternalLink,
+  Maximize2, X, Upload, AlertTriangle
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import {
   listBrandReports, getReportSignedUrl, updateBrandReportStatus,
-  updateBrandReportNote, deleteBrandReport
+  updateBrandReportNote, deleteBrandReport, updateBrandReportGoogleSheet
 } from '../lib/reportStore'
+import { uploadExcelAsSheet, GoogleAuthRequiredError } from '../lib/googleDrive'
 import { useAuth } from '../contexts/AuthContext'
+
+function toEmbedUrl(url) {
+  if (!url) return ''
+  const sep = url.includes('?') ? '&' : '?'
+  return url + sep + 'rm=minimal'
+}
 
 export default function ReportGroupDetail() {
   const { id } = useParams()
-  const { user, isAdmin } = useAuth()
+  const { user, isAdmin, googleAccessToken } = useAuth()
   const [group, setGroup] = useState(null)
   const [reports, setReports] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [editingNote, setEditingNote] = useState(null) // id of report being edited
+  const [editingNote, setEditingNote] = useState(null)
   const [noteDraft, setNoteDraft] = useState('')
+  const [opened, setOpened] = useState(null)   // 풀스크린 iframe 중인 보고서
+  const [uploadingId, setUploadingId] = useState(null)   // Sheet 생성 중인 보고서 id
 
   useEffect(() => { load() }, [id])
 
@@ -97,6 +107,36 @@ export default function ReportGroupDetail() {
     }
   }
 
+  async function handleCreateOrRefreshSheet(r) {
+    if (!googleAccessToken) {
+      alert(
+        'Google 연결이 필요합니다. 로그아웃 → 재로그인 시 Google Drive 권한 동의 후 다시 시도하세요.'
+      )
+      return
+    }
+    setUploadingId(r.id)
+    try {
+      // Storage 에서 Excel 다운로드
+      const signedUrl = await getReportSignedUrl(r.excel_storage_path)
+      const resp = await fetch(signedUrl)
+      if (!resp.ok) throw new Error('Storage 다운로드 실패')
+      const buffer = await resp.arrayBuffer()
+
+      // Google Drive 로 업로드
+      const sheetName = `${r.brand_name} ${r.report_month} 월간동향`
+      const driveResult = await uploadExcelAsSheet(googleAccessToken, buffer, sheetName)
+      await updateBrandReportGoogleSheet(r.id, driveResult.webViewLink)
+    } catch (e) {
+      if (e instanceof GoogleAuthRequiredError) {
+        alert('Google 세션 만료. 로그아웃 후 재로그인 해주세요.')
+      } else {
+        alert('Google Sheets 업로드 실패: ' + e.message)
+      }
+    } finally {
+      setUploadingId(null)
+    }
+  }
+
   if (loading) {
     return (
       <div className="p-8 max-w-5xl mx-auto">
@@ -116,6 +156,57 @@ export default function ReportGroupDetail() {
         <div className="py-12 text-center text-sm text-rose-600">
           그룹을 찾을 수 없습니다 (삭제되었거나 권한 없음).
         </div>
+      </div>
+    )
+  }
+
+  // iframe 풀스크린 (Google Sheet 편집)
+  if (opened) {
+    return (
+      <div className="fixed inset-0 z-40 bg-white flex flex-col">
+        <div className="h-12 border-b border-slate-200 bg-white flex items-center gap-3 px-4 shrink-0">
+          <button
+            onClick={() => setOpened(null)}
+            className="flex items-center gap-1.5 text-sm text-slate-600 hover:text-slate-900 px-2 py-1 rounded hover:bg-slate-100"
+          >
+            <X size={16} /> 그룹으로
+          </button>
+          <div className="w-px h-5 bg-slate-200" />
+          <span className="text-xl">📊</span>
+          <span className="font-semibold text-slate-900 truncate">
+            {opened.brand_name}
+            <span className="text-xs text-slate-500 ml-2">{opened.report_month}</span>
+          </span>
+          <StatusBadge status={opened.status} />
+          <div className="flex-1" />
+          <button
+            onClick={() => toggleStatus(opened)}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold ${
+              opened.status === 'done'
+                ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
+                : 'bg-amber-100 text-amber-800 hover:bg-amber-200'
+            }`}
+          >
+            {opened.status === 'done' ? (
+              <><CheckCircle2 size={12} /> 완료</>
+            ) : (
+              <><Edit3 size={12} /> 수정 중</>
+            )}
+          </button>
+          <a
+            href={opened.google_sheet_url}
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center gap-1.5 text-xs text-slate-600 hover:text-slate-900 px-2 py-1 rounded hover:bg-slate-100"
+          >
+            <ExternalLink size={12} /> 새 탭
+          </a>
+        </div>
+        <iframe
+          src={toEmbedUrl(opened.google_sheet_url)}
+          title={opened.brand_name}
+          className="flex-1 w-full border-0"
+        />
       </div>
     )
   }
@@ -151,6 +242,16 @@ export default function ReportGroupDetail() {
           </Link>
         </div>
       </div>
+
+      {!googleAccessToken && (
+        <div className="mb-4 bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded-lg p-3 flex items-start gap-2">
+          <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+          <div>
+            <b>Google Drive 연결 없음.</b> "Sheet 생성/편집" 기능을 쓰려면 로그아웃 후 재로그인 시 Drive 권한에 동의해주세요.
+            Excel 다운로드 기능은 그대로 사용 가능합니다.
+          </div>
+        </div>
+      )}
 
       {/* 진행률 */}
       <section className="bg-white border border-slate-200 rounded-2xl p-5 mb-4">
@@ -257,13 +358,44 @@ export default function ReportGroupDetail() {
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 mt-4 pt-4 border-t border-slate-100">
+              <div className="flex items-center gap-2 mt-4 pt-4 border-t border-slate-100 flex-wrap">
                 <button
                   onClick={() => handleDownload(r)}
                   className="flex items-center gap-1.5 text-xs text-slate-600 hover:text-myriad-ink px-3 py-1.5 rounded-lg hover:bg-slate-100"
                 >
                   <Download size={12} /> Excel
                 </button>
+                {r.google_sheet_url ? (
+                  <button
+                    onClick={() => setOpened(r)}
+                    className="flex items-center gap-1.5 text-xs bg-sky-50 text-sky-700 hover:bg-sky-100 px-3 py-1.5 rounded-lg font-semibold"
+                  >
+                    <Maximize2 size={12} /> Sheet 편집
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => handleCreateOrRefreshSheet(r)}
+                    disabled={uploadingId === r.id}
+                    className="flex items-center gap-1.5 text-xs bg-white border border-sky-300 text-sky-700 hover:bg-sky-50 px-3 py-1.5 rounded-lg disabled:opacity-50"
+                    title="Storage 의 Excel 을 Google Sheets 로 변환 업로드"
+                  >
+                    {uploadingId === r.id ? (
+                      <><Loader2 size={12} className="animate-spin" /> 생성 중...</>
+                    ) : (
+                      <><Upload size={12} /> Sheet 생성</>
+                    )}
+                  </button>
+                )}
+                {r.google_sheet_url && isAdmin && (
+                  <button
+                    onClick={() => handleCreateOrRefreshSheet(r)}
+                    disabled={uploadingId === r.id}
+                    className="text-xs text-slate-400 hover:text-slate-700 px-1 py-1.5 rounded"
+                    title="Excel 로부터 Google Sheet 재생성 (기존 링크는 유지, 새 Sheet 생성됨)"
+                  >
+                    {uploadingId === r.id ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={11} />}
+                  </button>
+                )}
                 <div className="flex-1" />
                 {isAdmin && (
                   <button
@@ -282,13 +414,9 @@ export default function ReportGroupDetail() {
                   }`}
                 >
                   {r.status === 'done' ? (
-                    <>
-                      <CheckCircle2 size={14} /> 완료
-                    </>
+                    <><CheckCircle2 size={14} /> 완료</>
                   ) : (
-                    <>
-                      <Edit3 size={14} /> 수정 중
-                    </>
+                    <><Edit3 size={14} /> 수정 중</>
                   )}
                 </button>
               </div>
