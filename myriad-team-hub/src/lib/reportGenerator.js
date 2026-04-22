@@ -12,8 +12,12 @@ import ExcelJS from 'exceljs'
 const REQUIRED_COLUMNS = ['Platform', 'Model Type', 'Infringement Type']
 const HEADER_BLUE = 'FF1F4E79'
 const BORDER_GRAY = 'FFBFBFBF'
-const HEADER_ROW_HEIGHT = 22
+// 기존 Python 프로그램 출력과 맞춤 — 21.75 는 Excel 의 기본 1줄 행 높이
+const HEADER_ROW_HEIGHT = 21.75
 const BASE_DATA_ROW_HEIGHT = 18
+
+// Worksheet 별로 "autosize 제외할 행(제목 행)" 추적
+const titleRowsByWs = new WeakMap()
 
 const INFR_PALETTE = [
   'FFD6EAF8', 'FFFADBD8', 'FFD5F5E3', 'FFFCF3CF',
@@ -388,6 +392,9 @@ function writeTitle(ws, row, col, title, spanCols) {
     ws.mergeCells(row, col, row, col + spanCols - 1)
   }
   ws.getRow(row).height = HEADER_ROW_HEIGHT
+  // autosize 가 inflate 못 하도록 제목 행을 추적
+  if (!titleRowsByWs.has(ws)) titleRowsByWs.set(ws, new Set())
+  titleRowsByWs.get(ws).add(row)
 }
 
 function writeTable(ws, startRow, startCol, title, data, headers, colWidths, opts = {}) {
@@ -504,9 +511,48 @@ function buildInfrColorMap(blocksByPlatform) {
 }
 
 function autosizeRows(ws, startRow, endRow, endCol) {
+  const titleRows = titleRowsByWs.get(ws) || new Set()
+  // 병합된 구간의 primary 가 아닌 셀을 파악하기 위해 merge 정보 수집
+  const mergeRanges = []
+  try {
+    // ExcelJS 버전 따라 _merges 또는 model.merges 가 있음
+    const merges = ws.model?.merges || ws._merges || []
+    for (const m of merges) {
+      // m 은 "A1:C1" 같은 문자열
+      if (typeof m === 'string') {
+        const match = m.match(/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/)
+        if (match) {
+          const [, c1s, r1s, c2s, r2s] = match
+          mergeRanges.push({
+            row1: Number(r1s),
+            row2: Number(r2s),
+            col1: colLetterToNum(c1s),
+            col2: colLetterToNum(c2s)
+          })
+        }
+      }
+    }
+  } catch {
+    // merge 정보 실패해도 치명적이지 않음
+  }
+
+  function isMergedSecondary(r, c) {
+    for (const m of mergeRanges) {
+      if (r >= m.row1 && r <= m.row2 && c >= m.col1 && c <= m.col2) {
+        // primary (row1, col1) 가 아니면 secondary
+        if (!(r === m.row1 && c === m.col1)) return true
+      }
+    }
+    return false
+  }
+
   for (let r = startRow; r <= endRow; r++) {
+    // 제목 행은 고정 높이 유지 (autosize 건너뜀)
+    if (titleRows.has(r)) continue
+
     let maxLines = 1
     for (let c = 1; c <= endCol; c++) {
+      if (isMergedSecondary(r, c)) continue  // 병합의 secondary cell 건너뜀
       const cell = ws.getCell(r, c)
       const text = cell.value == null ? '' : String(cell.value)
       if (!text) continue
@@ -520,6 +566,34 @@ function autosizeRows(ws, startRow, endRow, endCol) {
     const base = current === HEADER_ROW_HEIGHT ? HEADER_ROW_HEIGHT : BASE_DATA_ROW_HEIGHT
     ws.getRow(r).height = Math.max(base, BASE_DATA_ROW_HEIGHT * maxLines)
   }
+}
+
+function colLetterToNum(letters) {
+  let n = 0
+  for (const ch of letters) {
+    n = n * 26 + (ch.charCodeAt(0) - 64)
+  }
+  return n
+}
+
+/**
+ * 모든 셀의 세로 정렬을 'center' 로 강제.
+ * 단, vertical:'top' 으로 명시된 셀(이슈 박스 등)은 유지.
+ * ExcelJS 가 기본 'bottom' 으로 내는 걸 막기 위한 최종 패스.
+ */
+function forceCenterAlignment(ws) {
+  ws.eachRow({ includeEmpty: false }, (row) => {
+    row.eachCell({ includeEmpty: false }, (cell) => {
+      const existing = cell.alignment || {}
+      // 이미 top 으로 명시된 셀은 건드리지 않음
+      if (existing.vertical === 'top') return
+      cell.alignment = {
+        horizontal: existing.horizontal || 'center',
+        vertical: 'center',
+        wrapText: existing.wrapText !== false
+      }
+    })
+  })
 }
 
 // ---------------- Workbook 생성 ----------------
@@ -629,8 +703,10 @@ export async function buildReportWorkbook(prev, curr, opt) {
 
   centerWrap(ws0, 1, ws0.rowCount, 1, 10)
   autosizeRows(ws0, 1, ws0.rowCount, 10)
-  // 이슈 셀 다시 왼쪽 정렬
+  // 이슈 셀은 왼쪽 상단 정렬 유지
   ws0.getCell(issueTopRow, L).alignment = { horizontal: 'left', vertical: 'top', wrapText: true }
+  // 전체 셀 vertical 강제 center (이슈 박스처럼 top 으로 명시된 건 유지)
+  forceCenterAlignment(ws0)
 
   // ---- 상세 시트 ----
   const detailHeaders = useDivision
@@ -673,6 +749,7 @@ export async function buildReportWorkbook(prev, curr, opt) {
     applyGridBorder(ws, 1, Math.max(1, ws.rowCount), 1, ncols)
     centerWrap(ws, 1, ws.rowCount, 1, ncols)
     autosizeRows(ws, 1, ws.rowCount, ncols)
+    forceCenterAlignment(ws)
   }
 
   return { workbook: wb, useDivision, prevSummary, currSummary }
