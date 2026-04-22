@@ -9,9 +9,11 @@ import Schedules from './pages/Schedules'
 import Utilities from './pages/Utilities'
 import Launcher from './pages/Launcher'
 import Jobs from './pages/Jobs'
+import SharedSheets from './pages/SharedSheets'
 import Community from './pages/Community'
 import Admin from './pages/Admin'
 import AdminUtilities from './pages/AdminUtilities'
+import AdminSharedSheets from './pages/AdminSharedSheets'
 import NotFound from './pages/NotFound'
 
 export default function App() {
@@ -32,9 +34,11 @@ export default function App() {
         <Route path="utilities" element={<Utilities />} />
         <Route path="launcher" element={<Launcher />} />
         <Route path="jobs" element={<Jobs />} />
+        <Route path="sheets" element={<SharedSheets />} />
         <Route path="community" element={<Community />} />
         <Route path="admin" element={<AdminGate><Admin /></AdminGate>} />
         <Route path="admin/utilities" element={<AdminGate><AdminUtilities /></AdminGate>} />
+        <Route path="admin/sheets" element={<AdminGate><AdminSharedSheets /></AdminGate>} />
       </Route>
       <Route path="*" element={<NotFound />} />
     </Routes>

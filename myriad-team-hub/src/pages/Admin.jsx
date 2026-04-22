@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { ShieldCheck, Wrench, Users, ChevronRight } from 'lucide-react'
+import { ShieldCheck, Wrench, FileSpreadsheet, Users, ChevronRight } from 'lucide-react'
 
 const SECTIONS = [
   {
@@ -7,6 +7,13 @@ const SECTIONS = [
     label: '유틸리티 관리',
     desc: '유틸 등록 / 버전 업데이트 / 다운로드 링크 관리',
     icon: Wrench,
+    ready: true
+  },
+  {
+    to: '/admin/sheets',
+    label: '공용 시트 관리',
+    desc: '팀이 함께 쓰는 Google Sheets 등록 / 편집',
+    icon: FileSpreadsheet,
     ready: true
   },
   {

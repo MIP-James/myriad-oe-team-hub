@@ -124,41 +124,67 @@ def utcnow_iso() -> str:
 
 
 def make_icon_image(online: bool = True) -> Image.Image:
-    """트레이에 표시할 아이콘을 실시간 생성."""
+    """트레이에 표시할 아이콘을 실시간 생성. 작은 사이즈에서도 또렷하도록 대비 강조."""
     size = 64
     img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
-    color = (255, 179, 0, 255) if online else (150, 150, 150, 255)
-    draw.ellipse([4, 4, size - 4, size - 4], fill=color)
 
-    # 중앙에 "M"
-    try:
-        font = ImageFont.truetype("arialbd.ttf", 34)
-    except Exception:
+    # 선명한 주황 (online) / 중간회색 (offline). 작게 보일 때 빠져보이지 않도록 진한 색.
+    fill = (255, 140, 0, 255) if online else (120, 120, 120, 255)
+    outline = (30, 30, 30, 255)
+    # 원을 거의 꽉 차게 + 어두운 테두리
+    draw.ellipse([1, 1, size - 1, size - 1], fill=fill, outline=outline, width=2)
+
+    # 중앙 "M" — 검정색, 두껍게
+    font = None
+    for candidate in ("arialbd.ttf", "segoeuib.ttf", "malgunbd.ttf"):
         try:
-            font = ImageFont.truetype("malgun.ttf", 34)
+            font = ImageFont.truetype(candidate, 40)
+            break
         except Exception:
-            font = ImageFont.load_default()
+            continue
+    if font is None:
+        font = ImageFont.load_default()
     try:
         bbox = draw.textbbox((0, 0), "M", font=font)
         w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
         draw.text(
             (size // 2 - w // 2 - bbox[0], size // 2 - h // 2 - bbox[1] - 2),
             "M",
-            fill=(17, 17, 17, 255),
+            fill=(20, 20, 20, 255),
             font=font,
         )
     except Exception:
-        draw.text((size // 2 - 8, size // 2 - 12), "M", fill=(17, 17, 17, 255))
+        draw.text((size // 2 - 10, size // 2 - 14), "M", fill=(20, 20, 20, 255))
     return img
 
 
 def show_info(title: str, message: str):
-    """tkinter 메시지박스로 정보/경고 표시 (콘솔 없어도 보여야 하는 메시지)."""
+    """정보 메시지 박스.
+
+    pystray 메뉴 콜백 스레드에서 직접 MessageBoxW 를 호출하면 스레드의
+    메시지 큐가 제대로 안 돌아 "확인" 버튼이 반응하지 않는 경우가 있다.
+    별도 스레드에서 띄우면 해당 스레드가 자기 메시지 루프로 처리하므로 확실.
+    """
+    if sys.platform == "win32":
+        import threading
+
+        def _popup():
+            try:
+                import ctypes
+                # MB_OK | MB_ICONINFORMATION | MB_SETFOREGROUND | MB_TOPMOST
+                flags = 0x0 | 0x40 | 0x10000 | 0x40000
+                ctypes.windll.user32.MessageBoxW(0, message, title, flags)
+            except Exception as e:
+                logging.warning(f"MessageBoxW failed: {e}")
+
+        threading.Thread(target=_popup, daemon=True, name="msgbox").start()
+        return
+
+    # Fallback: tkinter (macOS/Linux 용)
     try:
         import tkinter as tk
         from tkinter import messagebox
-
         root = tk.Tk()
         root.withdraw()
         messagebox.showinfo(title, message)
@@ -596,10 +622,13 @@ class Launcher:
         def autostart_checked(_):
             return is_autostart_installed()
 
+        noop = lambda icon, item: None  # 클릭해도 아무 일 안 일어남
+
         return pystray.Menu(
-            pystray.MenuItem(status_label, None, enabled=False),
-            pystray.MenuItem(device_label, None, enabled=False),
-            pystray.MenuItem(last_job_label, None, enabled=False),
+            # 상단 3 줄은 "정보 표시" 용이지만 회색으로 보이지 않도록 enabled=True + no-op
+            pystray.MenuItem(status_label, noop),
+            pystray.MenuItem(device_label, noop),
+            pystray.MenuItem(last_job_label, noop),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("웹 대시보드 열기", self.menu_open_web),
             pystray.MenuItem("설치된 유틸 폴더 열기", self.menu_open_tools),

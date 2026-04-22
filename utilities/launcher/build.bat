@@ -1,72 +1,125 @@
 @echo off
+chcp 65001 > nul
 cd /d "%~dp0"
 
 echo =====================================
 echo  MYRIAD Launcher - Build
 echo =====================================
 
-REM 재빌드 시 기존 config.json 이 dist 정리로 날아가지 않도록 임시 백업
+REM Preserve config.json across rebuilds (backup before dist cleanup)
 if exist dist\config.json (
-  echo [preserve] backing up dist\config.json ...
+  echo [preserve] backing up dist\config.json
   copy /Y dist\config.json config.json.bak > nul
 )
 
-echo.
-echo Step 1/5: Verify Python
-python -c "import sys; print('Python', sys.version); print('Exe:', sys.executable)"
-if errorlevel 1 goto err
+REM Remove stray EXEs at root (leftover from interrupted builds)
+if exist MyriadLauncher.exe (
+  echo [cleanup] removing stray root MyriadLauncher.exe
+  del /Q MyriadLauncher.exe
+)
+if exist MyriadSetup.exe (
+  echo [cleanup] removing stray root MyriadSetup.exe
+  del /Q MyriadSetup.exe
+)
 
 echo.
-echo Step 2/5: Install runtime deps (same Python as above)
+echo Step 1/6: Verify Python
+python -c "import sys; print('Python', sys.version); print('Exe:', sys.executable)"
+if errorlevel 1 goto err_py
+
+echo.
+echo Step 2/6: Install runtime deps
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
-if errorlevel 1 goto err
+if errorlevel 1 goto err_deps
 
 echo.
-echo Step 3/5: Install PyInstaller (into same Python)
+echo Step 3/6: Install PyInstaller
 python -m pip install --upgrade pyinstaller
-if errorlevel 1 goto err
+if errorlevel 1 goto err_pyi
 
 echo.
-echo Step 4/5: Verify imports + supabase location
-python -c "import supabase, pystray; from PIL import Image; import os; print('supabase at:', os.path.dirname(supabase.__file__)); print('imports OK')"
-if errorlevel 1 goto err
+echo Step 4/6: Verify imports
+python -c "import supabase, pystray; from PIL import Image; import winotify; import os; print('supabase at:', os.path.dirname(supabase.__file__)); print('imports OK')"
+if errorlevel 1 goto err_imports
 
 python make_icon.py
 
 echo.
-echo Step 5/5: Build using spec files (via python -m PyInstaller)
-
-echo   --^> MyriadLauncher.exe (tray, no console)
+echo Step 5/6: Build MyriadLauncher.exe (tray, no console)
 python -m PyInstaller --clean --noconfirm MyriadLauncher.spec
-if errorlevel 1 goto err
+if errorlevel 1 goto err_build_launcher
+if not exist dist\MyriadLauncher.exe goto err_missing_launcher
+echo   OK: dist\MyriadLauncher.exe
 
-echo   --^> MyriadSetup.exe (console setup)
+echo.
+echo Step 6/6: Build MyriadSetup.exe (console setup)
 python -m PyInstaller --clean --noconfirm MyriadSetup.spec
-if errorlevel 1 goto err
+if errorlevel 1 goto err_build_setup
+if not exist dist\MyriadSetup.exe goto err_missing_setup
+echo   OK: dist\MyriadSetup.exe
 
-REM 백업해뒀던 config.json 복구
+REM Restore backed-up config.json
 if exist config.json.bak (
-  echo [restore] restoring config.json to dist\
+  echo [restore] restoring config.json to dist
   if not exist dist mkdir dist
   move /Y config.json.bak dist\config.json > nul
 )
 
 echo.
 echo =====================================
-echo  Build complete
+echo  Build complete - dist contents:
 echo =====================================
-echo  dist\MyriadLauncher.exe
-echo  dist\MyriadSetup.exe
-if exist dist\config.json (
-  echo  dist\config.json              [preserved]
-)
+dir /B dist
 echo =====================================
 pause
 exit /b 0
 
-:err
+:err_py
 echo.
-echo [ERROR] Build failed. See output above.
+echo [ERROR] Python check failed. Install / PATH.
+goto cleanup
+
+:err_deps
+echo.
+echo [ERROR] pip install requirements failed.
+goto cleanup
+
+:err_pyi
+echo.
+echo [ERROR] PyInstaller install failed.
+goto cleanup
+
+:err_imports
+echo.
+echo [ERROR] Required module import failed (see output above).
+goto cleanup
+
+:err_build_launcher
+echo.
+echo [ERROR] MyriadLauncher build failed (PyInstaller non-zero exit).
+goto cleanup
+
+:err_missing_launcher
+echo.
+echo [ERROR] MyriadLauncher.exe not found in dist\ after build.
+goto cleanup
+
+:err_build_setup
+echo.
+echo [ERROR] MyriadSetup build failed (PyInstaller non-zero exit).
+goto cleanup
+
+:err_missing_setup
+echo.
+echo [ERROR] MyriadSetup.exe not found in dist\ after build.
+goto cleanup
+
+:cleanup
+if exist config.json.bak (
+  if not exist dist mkdir dist
+  move /Y config.json.bak dist\config.json > nul
+)
+echo.
 pause
 exit /b 1

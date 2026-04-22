@@ -1,11 +1,12 @@
 import { NavLink, Outlet } from 'react-router-dom'
-import { LayoutDashboard, StickyNote, CalendarDays, Wrench, Cpu, History, Users, ShieldCheck, LogOut } from 'lucide-react'
+import { LayoutDashboard, StickyNote, CalendarDays, FileSpreadsheet, Wrench, Cpu, History, Users, ShieldCheck, LogOut } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 
 const BASE_NAV = [
   { to: '/', label: '대시보드', icon: LayoutDashboard, end: true },
   { to: '/memos', label: '메모', icon: StickyNote },
   { to: '/schedules', label: '일정', icon: CalendarDays },
+  { to: '/sheets', label: '공용 시트', icon: FileSpreadsheet },
   { to: '/utilities', label: '유틸리티', icon: Wrench },
   { to: '/launcher', label: '내 런처', icon: Cpu },
   { to: '/jobs', label: '작업 이력', icon: History },
