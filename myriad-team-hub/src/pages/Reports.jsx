@@ -1,9 +1,12 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import {
   BarChart3, Upload, FileSpreadsheet, Download, Loader2, CheckCircle2,
-  AlertCircle, RefreshCw, Calendar
+  AlertCircle, RefreshCw, Calendar, FolderOpen, Save
 } from 'lucide-react'
 import { generateReport, normalizeReportMonth } from '../lib/reportGenerator'
+import { getOrCreateGroup, uploadBrandReport, listGroups } from '../lib/reportStore'
+import { useAuth } from '../contexts/AuthContext'
 
 const DEFAULT_REPORT_MONTH = () => {
   const d = new Date()
@@ -11,14 +14,29 @@ const DEFAULT_REPORT_MONTH = () => {
 }
 
 export default function Reports() {
+  const { user } = useAuth()
   const [prevFile, setPrevFile] = useState(null)
   const [currFile, setCurrFile] = useState(null)
   const [reportMonth, setReportMonth] = useState(DEFAULT_REPORT_MONTH())
   const [topN, setTopN] = useState(3)
+  const [saveToGroup, setSaveToGroup] = useState(true)
   const [running, setRunning] = useState(false)
   const [result, setResult] = useState(null)
   const [error, setError] = useState(null)
   const [log, setLog] = useState([])
+  const [recentGroups, setRecentGroups] = useState([])
+
+  useEffect(() => { loadRecent() }, [])
+
+  async function loadRecent() {
+    try {
+      const groups = await listGroups()
+      setRecentGroups(groups.slice(0, 3))
+    } catch (e) {
+      // 조용히 무시 (DB 테이블 없을 수 있음)
+      console.warn('loadRecent:', e.message)
+    }
+  }
 
   function appendLog(msg) {
     const ts = new Date().toLocaleTimeString('ko-KR', { hour12: false })
@@ -43,22 +61,42 @@ export default function Reports() {
 
     setRunning(true)
     try {
-      appendLog('직전달 파일 파싱 중...')
-      await new Promise((r) => setTimeout(r, 10)) // yield to UI
-      appendLog('이번달 파일 파싱 중...')
+      appendLog('엑셀 파일 파싱 중...')
+      await new Promise((r) => setTimeout(r, 10))
       const { buffer, fileName, brand, useDivision } = await generateReport(
         prevFile,
         currFile,
         opt
       )
       appendLog(`브랜드 인식: ${brand} · 집계 기준: ${useDivision ? '사업부' : '상품유형'}`)
-      appendLog('Excel 생성 완료.')
+
       const blob = new Blob([buffer], {
         type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
       })
       const url = URL.createObjectURL(blob)
-      setResult({ url, fileName, brand, useDivision, opt })
+      let savedReport = null
+
+      if (saveToGroup) {
+        appendLog(`그룹 확인/생성 중 (${opt.reportMonth})...`)
+        const group = await getOrCreateGroup(opt.reportMonth, user?.id)
+        appendLog(`Storage 업로드 중...`)
+        savedReport = await uploadBrandReport({
+          groupId: group.id,
+          brandName: brand,
+          reportMonth: opt.reportMonth,
+          topN: opt.topN,
+          excelBuffer: buffer,
+          fileName,
+          userId: user?.id
+        })
+        appendLog(`그룹 "${group.title}" 에 "${brand}" 보고서 저장 완료`)
+      } else {
+        appendLog('그룹 저장 스킵 (다운로드만)')
+      }
+
       appendLog(`파일 준비됨: ${fileName}`)
+      setResult({ url, fileName, brand, useDivision, opt, savedReport })
+      loadRecent()
     } catch (e) {
       console.error(e)
       setError(e.message || String(e))
@@ -83,6 +121,12 @@ export default function Reports() {
         <BarChart3 className="text-myriad-ink" />
         <h1 className="text-2xl font-bold text-slate-900">월간 동향 보고서</h1>
         <div className="flex-1" />
+        <Link
+          to="/reports/groups"
+          className="text-sm text-slate-600 hover:text-myriad-ink flex items-center gap-1 px-3 py-1.5 rounded-lg hover:bg-slate-100"
+        >
+          <FolderOpen size={14} /> 전체 보고서 그룹
+        </Link>
         {(prevFile || currFile || result) && (
           <button
             onClick={reset}
@@ -94,9 +138,39 @@ export default function Reports() {
       </header>
 
       <p className="text-sm text-slate-500 mb-6">
-        직전달/이번달 엑셀 파일을 업로드하면 비교 보고서 Excel 이 생성됩니다.
-        모든 처리는 <b>본인 브라우저에서만</b> 이뤄지고 서버로 파일이 전송되지 않습니다.
+        직전달/이번달 엑셀 파일을 업로드하면 비교 보고서 Excel 이 생성되어
+        월간 보고서 그룹에 자동 저장됩니다. 처리는 <b>본인 브라우저에서만</b>.
       </p>
+
+      {/* 최근 그룹 요약 */}
+      {recentGroups.length > 0 && (
+        <section className="bg-slate-50 border border-slate-200 rounded-2xl p-4 mb-4">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-xs font-semibold text-slate-600 uppercase tracking-wider">
+              최근 그룹
+            </h3>
+            <Link to="/reports/groups" className="text-xs text-myriad-ink hover:underline">
+              전체 보기 →
+            </Link>
+          </div>
+          <div className="flex gap-2 flex-wrap">
+            {recentGroups.map((g) => (
+              <Link
+                key={g.id}
+                to={`/reports/groups/${g.id}`}
+                className="text-xs bg-white border border-slate-200 hover:border-myriad-primary px-3 py-1.5 rounded-lg flex items-center gap-1.5"
+              >
+                <FolderOpen size={11} /> {g.title}
+                {g.status === 'published' && (
+                  <span className="bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded text-[10px]">
+                    발행
+                  </span>
+                )}
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* 옵션 */}
       <section className="bg-white border border-slate-200 rounded-2xl p-5 mb-4">
@@ -126,6 +200,21 @@ export default function Reports() {
             />
           </label>
         </div>
+        <label className="flex items-start gap-2 mt-3 p-2 bg-amber-50 border border-amber-200 rounded-lg cursor-pointer">
+          <input
+            type="checkbox"
+            checked={saveToGroup}
+            onChange={(e) => setSaveToGroup(e.target.checked)}
+            className="w-4 h-4 mt-0.5"
+          />
+          <span className="text-sm text-slate-700">
+            <b>월간 보고서 그룹에 자동 저장</b>
+            <span className="block text-xs text-slate-500 mt-0.5">
+              체크하면 생성된 Excel 이 팀 공용 워크스페이스 ({reportMonth} 그룹) 에 저장되어
+              다른 팀원과 공유되며, "수정 중 / 완료" 상태 추적도 가능합니다.
+            </span>
+          </span>
+        </label>
       </section>
 
       {/* 파일 업로드 */}
@@ -134,24 +223,15 @@ export default function Reports() {
           <Upload size={16} /> 엑셀 파일
         </h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <FileUpload
-            label="직전달 엑셀"
-            file={prevFile}
-            onChange={setPrevFile}
-          />
-          <FileUpload
-            label="이번달 엑셀"
-            file={currFile}
-            onChange={setCurrFile}
-          />
+          <FileUpload label="직전달 엑셀" file={prevFile} onChange={setPrevFile} />
+          <FileUpload label="이번달 엑셀" file={currFile} onChange={setCurrFile} />
         </div>
         <p className="text-[11px] text-slate-400 mt-3">
           필수 컬럼: <code>Platform</code>, <code>Model Type</code> (또는 <code>Product Model Type</code>), <code>Infringement Type</code>.
-          선택 컬럼: <code>Business Division</code> (있으면 사업부 기준 집계), <code>Client</code> (브랜드명 자동 인식).
+          선택: <code>Business Division</code>, <code>Client</code>.
         </p>
       </section>
 
-      {/* 실행 */}
       <div className="flex gap-3 mb-4">
         <button
           onClick={handleGenerate}
@@ -161,6 +241,10 @@ export default function Reports() {
           {running ? (
             <>
               <Loader2 size={18} className="animate-spin" /> 생성 중...
+            </>
+          ) : saveToGroup ? (
+            <>
+              <Save size={18} /> 생성 + 그룹 저장
             </>
           ) : (
             <>
@@ -177,17 +261,17 @@ export default function Reports() {
         </div>
       )}
 
-      {/* 진행 로그 */}
       {log.length > 0 && (
         <section className="bg-slate-50 border border-slate-200 rounded-2xl p-4 mb-4">
-          <h3 className="text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wider">진행 로그</h3>
+          <h3 className="text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wider">
+            진행 로그
+          </h3>
           <pre className="text-[11px] text-slate-700 whitespace-pre-wrap font-mono leading-relaxed max-h-48 overflow-auto">
             {log.join('\n')}
           </pre>
         </section>
       )}
 
-      {/* 결과 */}
       {result && (
         <section className="bg-emerald-50 border border-emerald-200 rounded-2xl p-5">
           <div className="flex items-start gap-3 mb-4">
@@ -207,16 +291,31 @@ export default function Reports() {
                 <div>
                   파일명: <code>{result.fileName}</code>
                 </div>
+                {result.savedReport && (
+                  <div className="mt-2 inline-flex items-center gap-1 bg-white px-2 py-1 rounded border border-emerald-300">
+                    <Save size={12} /> 그룹 저장됨 (상태: 수정 중)
+                  </div>
+                )}
               </div>
             </div>
           </div>
-          <a
-            href={result.url}
-            download={result.fileName}
-            className="inline-flex items-center gap-2 bg-myriad-primary hover:bg-myriad-primaryDark text-myriad-ink font-semibold px-4 py-2 rounded-lg"
-          >
-            <Download size={16} /> Excel 다운로드
-          </a>
+          <div className="flex gap-2 flex-wrap">
+            <a
+              href={result.url}
+              download={result.fileName}
+              className="inline-flex items-center gap-2 bg-myriad-primary hover:bg-myriad-primaryDark text-myriad-ink font-semibold px-4 py-2 rounded-lg"
+            >
+              <Download size={16} /> Excel 다운로드
+            </a>
+            {result.savedReport && (
+              <Link
+                to={`/reports/groups/${result.savedReport.group_id}`}
+                className="inline-flex items-center gap-2 bg-white border border-emerald-300 hover:bg-emerald-100 text-emerald-800 font-semibold px-4 py-2 rounded-lg"
+              >
+                <FolderOpen size={16} /> 그룹에서 보기
+              </Link>
+            )}
+          </div>
         </section>
       )}
     </div>
@@ -262,10 +361,7 @@ function FileUpload({ label, file, onChange }) {
         />
         {file ? (
           <div className="text-sm">
-            <FileSpreadsheet
-              size={28}
-              className="mx-auto mb-2 text-emerald-600"
-            />
+            <FileSpreadsheet size={28} className="mx-auto mb-2 text-emerald-600" />
             <div className="font-semibold text-slate-900 truncate">{file.name}</div>
             <div className="text-[10px] text-slate-500 mt-0.5">
               {(file.size / 1024).toFixed(1)} KB · 다시 클릭해서 변경

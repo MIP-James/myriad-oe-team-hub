@@ -353,7 +353,7 @@ function setHeaderCells(ws, rowIdx, colIdx, headers) {
     cell.value = headers[i]
     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: HEADER_BLUE } }
     cell.font = { color: { argb: 'FFFFFFFF' }, bold: true }
-    cell.alignment = { horizontal: 'center', vertical: 'center', wrapText: true }
+    cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }
     cell.border = THIN_BORDER
   }
 }
@@ -362,7 +362,7 @@ function centerWrap(ws, startRow, endRow, startCol, endCol) {
   for (let r = startRow; r <= endRow; r++) {
     for (let c = startCol; c <= endCol; c++) {
       const cell = ws.getCell(r, c)
-      cell.alignment = { horizontal: 'center', vertical: 'center', wrapText: true }
+      cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }
     }
   }
 }
@@ -387,7 +387,7 @@ function writeTitle(ws, row, col, title, spanCols) {
   const cell = ws.getCell(row, col)
   cell.value = title
   cell.font = { bold: true }
-  cell.alignment = { horizontal: 'left', vertical: 'center' }
+  cell.alignment = { horizontal: 'left', vertical: 'middle' }
   if (spanCols > 1) {
     ws.mergeCells(row, col, row, col + spanCols - 1)
   }
@@ -432,7 +432,7 @@ function padTable(ws, startCol, hdrRow, curEndRow, targetEndRow, ncols) {
       const cell = ws.getCell(r, startCol + i)
       cell.value = ''
       cell.border = THIN_BORDER
-      cell.alignment = { horizontal: 'center', vertical: 'center', wrapText: true }
+      cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }
     }
   }
 }
@@ -472,7 +472,7 @@ function writeIssueBox(ws, startRow, startCol, title, widthCols) {
   hdr.value = title
   hdr.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: HEADER_BLUE } }
   hdr.font = { color: { argb: 'FFFFFFFF' }, bold: true }
-  hdr.alignment = { horizontal: 'center', vertical: 'center', wrapText: true }
+  hdr.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }
   ws.getRow(startRow).height = HEADER_ROW_HEIGHT
   for (let c = left; c <= right; c++) ws.getCell(startRow, c).border = THIN_BORDER
 
@@ -590,7 +590,7 @@ function forceCenterAlignment(ws) {
       if (existing.vertical === 'top') return
       cell.alignment = {
         horizontal: existing.horizontal || 'center',
-        vertical: 'center',
+        vertical: 'middle',
         wrapText: existing.wrapText !== false
       }
     })
