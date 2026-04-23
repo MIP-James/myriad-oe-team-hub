@@ -368,24 +368,41 @@ export default function CaseEditor({
         </div>
 
         {gmailOpen && (
-          <div className="mt-3 flex gap-2">
-            <input
-              type="url"
-              value={gmailUrl}
-              onChange={(e) => setGmailUrl(e.target.value)}
-              placeholder="https://mail.google.com/mail/u/0/#inbox/..."
-              className="flex-1 px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/40"
-              disabled={gmailLoading}
-            />
-            <button
-              type="button"
-              onClick={importGmail}
-              disabled={gmailLoading || !gmailUrl.trim()}
-              className="flex items-center gap-1.5 bg-sky-600 hover:bg-sky-700 disabled:bg-slate-300 text-white text-sm font-semibold px-4 rounded-lg"
-            >
-              {gmailLoading ? <Loader2 size={13} className="animate-spin" /> : <Mail size={13} />}
-              가져오기
-            </button>
+          <div className="mt-3 space-y-2">
+            <div className="flex gap-2">
+              <input
+                type="url"
+                value={gmailUrl}
+                onChange={(e) => setGmailUrl(e.target.value)}
+                placeholder="permmsgid=msg-f:... 가 포함된 '원본 보기' URL"
+                className="flex-1 px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/40"
+                disabled={gmailLoading}
+              />
+              <button
+                type="button"
+                onClick={importGmail}
+                disabled={gmailLoading || !gmailUrl.trim()}
+                className="flex items-center gap-1.5 bg-sky-600 hover:bg-sky-700 disabled:bg-slate-300 text-white text-sm font-semibold px-4 rounded-lg"
+              >
+                {gmailLoading ? <Loader2 size={13} className="animate-spin" /> : <Mail size={13} />}
+                가져오기
+              </button>
+            </div>
+            <details className="text-[11px] text-slate-500">
+              <summary className="cursor-pointer hover:text-slate-700">
+                💡 어떤 URL 을 붙여넣어야 하나요? (클릭)
+              </summary>
+              <div className="mt-2 pl-4 space-y-1 leading-relaxed">
+                <p>Gmail 웹 주소창의 <code className="bg-slate-100 px-1 rounded">#inbox/FMfcgz...</code> 형식 URL 은 Gmail API 가 받지 못합니다.</p>
+                <p className="font-semibold text-slate-700">올바른 방법:</p>
+                <ol className="list-decimal pl-5 space-y-0.5">
+                  <li>가져올 메일을 Gmail 에서 열기</li>
+                  <li>메일 우측 상단 <b>⋮ (더보기)</b> → <b>"원본 보기"</b> 클릭</li>
+                  <li>새로 열린 탭의 주소창 URL 을 그대로 복사 → 위 칸에 붙여넣기</li>
+                </ol>
+                <p className="text-slate-400">(URL 에 <code className="bg-slate-100 px-1 rounded">?permmsgid=msg-f:...</code> 가 포함되어 있으면 정상)</p>
+              </div>
+            </details>
           </div>
         )}
         {form.gmailThreadUrl && (

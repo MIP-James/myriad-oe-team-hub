@@ -38,32 +38,60 @@ async function _fetch(url, token) {
 }
 
 /**
- * Gmail URL 에서 메시지 ID 추출.
- * 실제 Gmail 웹 UI URL 은 16진수/Base64 혼합의 긴 ID(예: FMfcgzQV... or 18a1b2c3d4e5f6g7)
- * 를 쓰고, 이게 thread ID 일 수 있음. Gmail API 는 messageId 를 받지만,
- * thread ID 로 조회하려면 별도 `threads.get` 을 써야 함.
- * 일단 URL 에서 마지막 세그먼트를 추출 — messages.get 이 실패하면 threads.get 으로 폴백.
+ * Gmail URL 또는 ID 에서 Gmail API 가 받는 messageId 추출.
+ *
+ * Gmail 의 ID 체계는 두 가지가 공존:
+ *   (A) **API ID** — 16자리 hex (예: `196b1d8a8e4c0c0e`). messages.get 에 직접 사용.
+ *   (B) **웹 UI ID** — `FMfcgzQVx...` 같은 32자 영숫자. 웹 주소창 #inbox/... 에 표시.
+ *       이건 API 가 직접 받지 못함 → "Invalid id value (400)" 발생.
+ *
+ * 변환 가능한 한 가지 경로: 메일 우측 상단 ⋮ → "원본 보기" 클릭 시 열리는 새 탭의
+ *   URL 에 `permmsgid=msg-f:1812345678901234567` 형식이 있음. 이 십진수를 hex 로
+ *   변환하면 그게 곧 API ID.
+ *
+ * 따라서 추출 우선순위:
+ *   1. permmsgid=msg-f:<decimal>  → hex 변환 (가장 신뢰)
+ *   2. URL ?th=<hex> 또는 ?msg=<hex>  (간혹 노출)
+ *   3. 사용자가 hex ID 만 붙여넣음
+ *   4. (마지막) #inbox/<webid> 형식 — API 거부 가능. throw 신호 위해 prefix 부착.
  */
 export function extractGmailId(url) {
   if (!url) return null
   const s = String(url).trim()
 
-  // 케이스 1: 일반 Gmail 웹 URL — https://mail.google.com/mail/u/<n>/#<label>/<id>
-  //           또는 #all/<id>, #search/<q>/<id>, #label/<name>/<id>
-  // 마지막 '/' 뒤의 영숫자 덩어리를 ID 후보로.
-  const hashMatch = s.match(/#[^/]+(?:\/[^/]*)*\/([A-Za-z0-9_-]{16,})\b/)
-  if (hashMatch) return hashMatch[1]
+  // 1. permmsgid 형식 (원본 보기 URL) — 가장 정확
+  //    예: ...?permmsgid=msg-f:1812345678901234567 또는 msg-a:r123...
+  const permF = s.match(/permmsgid=msg-[fa]:(\d+)/i)
+  if (permF) {
+    try {
+      const dec = BigInt(permF[1])
+      return dec.toString(16)
+    } catch { /* fall through */ }
+  }
 
-  // 케이스 2: 이미 ID 만 붙여넣은 경우
-  const idOnly = s.match(/^([A-Za-z0-9_-]{16,})$/)
-  if (idOnly) return idOnly[1]
-
-  // 케이스 3: 쿼리 파라미터에 ?message_id= 가 있는 경우 (드문 편)
+  // 2. URL 쿼리 파라미터 ?th=<id> ?msg=<id>
   try {
     const u = new URL(s)
-    const mid = u.searchParams.get('message_id') || u.searchParams.get('msg')
-    if (mid) return mid
+    const th = u.searchParams.get('th')
+    const msg = u.searchParams.get('msg') || u.searchParams.get('message_id')
+    if (msg && /^[0-9a-f]{8,32}$/i.test(msg)) return msg
+    if (th && /^[0-9a-f]{8,32}$/i.test(th)) return th
   } catch { /* ignore */ }
+
+  // 3. 사용자가 hex ID 만 붙여넣은 경우
+  const hexOnly = s.match(/^([0-9a-f]{14,32})$/i)
+  if (hexOnly) return hexOnly[1]
+
+  // 4. #inbox/<id> 형식 — 웹 UI ID 일 가능성 높음 (FMfcgz... 등)
+  //    이건 API 가 거부함. 시도라도 해보되 실패 시 사용자에게 친절한 안내.
+  const hashMatch = s.match(/#[^/]+(?:\/[^/]*)*\/([A-Za-z0-9_-]{16,})/)
+  if (hashMatch) {
+    const candidate = hashMatch[1]
+    // hex 면 API ID 일 가능성 → 그대로
+    if (/^[0-9a-f]+$/i.test(candidate) && candidate.length <= 32) return candidate
+    // 아니면 웹 UI ID — 표식 prefix 로 호출자가 안내 메시지 띄울 수 있게
+    return '__WEB_UI_ID__' + candidate
+  }
 
   return null
 }
@@ -128,6 +156,17 @@ export async function fetchMessage(token, id) {
   if (!token) throw new GoogleAuthRequiredError()
   if (!id) throw new Error('메시지 ID 가 비어있습니다.')
 
+  // 웹 UI ID 가 들어온 경우 → API 가 받지 못함. 즉시 안내.
+  if (id.startsWith('__WEB_UI_ID__')) {
+    throw new Error(
+      '이 URL 은 Gmail 웹 전용 형식이라 API 로 가져올 수 없습니다.\n\n' +
+      '대신 다음 방법으로 진행해주세요:\n' +
+      '  1) 가져올 메일 열기\n' +
+      '  2) 메일 우측 상단 ⋮ (더보기) → "원본 보기" 클릭\n' +
+      '  3) 새로 열린 탭의 주소창 URL 을 그대로 붙여넣기'
+    )
+  }
+
   let data
   try {
     data = await _fetch(
@@ -135,14 +174,22 @@ export async function fetchMessage(token, id) {
       token
     )
   } catch (e) {
-    // thread ID 로 잘못 들어온 경우 폴백
-    if (/404/.test(e.message)) {
-      const threadData = await _fetch(
-        `https://gmail.googleapis.com/gmail/v1/users/me/threads/${encodeURIComponent(id)}?format=full`,
-        token
-      )
-      data = threadData?.messages?.[threadData.messages.length - 1]
-      if (!data) throw new Error('메일을 찾을 수 없습니다. URL 을 다시 확인해주세요.')
+    // 404 또는 400 (Invalid id) — thread.get 으로 폴백 시도
+    if (/404|400|Invalid id/i.test(e.message)) {
+      try {
+        const threadData = await _fetch(
+          `https://gmail.googleapis.com/gmail/v1/users/me/threads/${encodeURIComponent(id)}?format=full`,
+          token
+        )
+        data = threadData?.messages?.[threadData.messages.length - 1]
+        if (!data) throw new Error('thread 에 메시지 없음')
+      } catch (innerErr) {
+        throw new Error(
+          '메일을 찾을 수 없습니다. URL 형식을 확인해주세요.\n\n' +
+          '권장: 메일 → ⋮ → "원본 보기" → 새 탭의 URL 을 사용\n' +
+          '(원본 URL 은 ?permmsgid=msg-f:... 형식을 포함합니다)'
+        )
+      }
     } else {
       throw e
     }
