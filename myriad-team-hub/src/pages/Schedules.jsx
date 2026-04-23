@@ -491,6 +491,33 @@ export default function Schedules() {
             )}
           </div>
 
+          {/* 선택한 날짜의 일일 기록 */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-5">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-bold text-slate-900 flex items-center gap-1.5">
+                <NotebookPen size={14} className="text-emerald-700" />
+                오늘 한 일
+              </h3>
+              <button
+                onClick={() => openDailyRecord(selectedDate)}
+                className="text-xs text-myriad-ink hover:underline font-semibold"
+              >
+                {selectedDailyRecord ? '편집' : '+ 기록'}
+              </button>
+            </div>
+            {selectedDailyRecord && selectedDailyRecord.items?.length > 0 ? (
+              <ol className="space-y-1.5 list-decimal list-inside text-sm text-slate-700">
+                {selectedDailyRecord.items.map((it, i) => (
+                  <li key={i} className="leading-relaxed">{it.text}</li>
+                ))}
+              </ol>
+            ) : (
+              <p className="text-sm text-slate-400">
+                아직 기록 없음. 가볍게 한 줄 적어두면 나중에 도움 돼요.
+              </p>
+            )}
+          </div>
+
           {/* 이번 주 한 일 (선택한 주의 일일 기록 누적) */}
           <div className="bg-white border border-slate-200 rounded-2xl p-5">
             <div className="flex items-center justify-between mb-3">
@@ -537,33 +564,6 @@ export default function Schedules() {
             ) : (
               <p className="text-sm text-slate-400">
                 아직 이번 주 기록 없음. '오늘 한 일'을 채우면 여기 누적돼요.
-              </p>
-            )}
-          </div>
-
-          {/* 선택한 날짜의 일일 기록 */}
-          <div className="bg-white border border-slate-200 rounded-2xl p-5">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-bold text-slate-900 flex items-center gap-1.5">
-                <NotebookPen size={14} className="text-emerald-700" />
-                오늘 한 일
-              </h3>
-              <button
-                onClick={() => openDailyRecord(selectedDate)}
-                className="text-xs text-myriad-ink hover:underline font-semibold"
-              >
-                {selectedDailyRecord ? '편집' : '+ 기록'}
-              </button>
-            </div>
-            {selectedDailyRecord && selectedDailyRecord.items?.length > 0 ? (
-              <ol className="space-y-1.5 list-decimal list-inside text-sm text-slate-700">
-                {selectedDailyRecord.items.map((it, i) => (
-                  <li key={i} className="leading-relaxed">{it.text}</li>
-                ))}
-              </ol>
-            ) : (
-              <p className="text-sm text-slate-400">
-                아직 기록 없음. 가볍게 한 줄 적어두면 나중에 도움 돼요.
               </p>
             )}
           </div>
