@@ -98,12 +98,13 @@ export default function Schedules() {
     rangeEnd.setDate(rangeEnd.getDate() + 1)
 
     try {
+      // 월 그리드와 겹치는 모든 일정: starts_at < rangeEnd AND (ends_at >= rangeStart OR ends_at IS NULL)
       const [schedulesRes, plans, records, reminder] = await Promise.all([
         supabase
           .from('schedules')
           .select('*')
-          .gte('starts_at', rangeStart.toISOString())
           .lt('starts_at', rangeEnd.toISOString())
+          .or(`ends_at.gte.${rangeStart.toISOString()},ends_at.is.null`)
           .order('starts_at', { ascending: true }),
         listWeeklyPlansInRange(
           user.id,
@@ -137,12 +138,20 @@ export default function Schedules() {
     }
   }
 
+  // 시작~종료 사이 모든 날짜에 일정 매핑 (ends_at 없으면 시작일만)
   const itemsByDay = useMemo(() => {
     const map = {}
     for (const s of items) {
-      const k = dateKey(new Date(s.starts_at))
-      if (!map[k]) map[k] = []
-      map[k].push(s)
+      const start = new Date(s.starts_at)
+      const end = s.ends_at ? new Date(s.ends_at) : start
+      const cur = new Date(start.getFullYear(), start.getMonth(), start.getDate())
+      const last = new Date(end.getFullYear(), end.getMonth(), end.getDate())
+      while (cur <= last) {
+        const k = dateKey(cur)
+        if (!map[k]) map[k] = []
+        map[k].push(s)
+        cur.setDate(cur.getDate() + 1)
+      }
     }
     return map
   }, [items])

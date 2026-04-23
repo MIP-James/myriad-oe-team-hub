@@ -14,12 +14,53 @@ from __future__ import annotations
 import logging
 import os
 import shutil
+import ssl
 import subprocess
 import sys
+import urllib.error
 import urllib.request
 import zipfile
 from pathlib import Path
 from typing import Callable, Optional
+
+
+def _urlopen(url: str, timeout: int = 60):
+    """urllib.urlopen 을 시스템 인증서 저장소 우선으로 호출.
+
+    회사 PC 의 SSL 가로채기 프록시 환경에서 기본 certifi CA 번들로는
+    "unable to get local issuer certificate" 에러가 나는 케이스가 있다.
+    아래 순서로 시도하여 가장 널리 호환되는 컨텍스트를 찾는다.
+
+      1) Windows/macOS 시스템 인증서 저장소 (truststore)
+         → 회사 루트 CA 가 여기 들어있는 경우 유일한 해결책
+      2) 기본 (Python / certifi) 컨텍스트
+    """
+    last_exc: Optional[BaseException] = None
+
+    # 1차: truststore (시스템 인증서 저장소) — 회사 루트 CA 지원
+    try:
+        import truststore  # type: ignore
+        ctx = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        return urllib.request.urlopen(url, timeout=timeout, context=ctx)
+    except ImportError:
+        logging.info("[tools] truststore 미설치 — 기본 SSL 컨텍스트로 진행")
+    except urllib.error.URLError as e:
+        last_exc = e
+        logging.warning(f"[tools] truststore SSL 실패, 기본 컨텍스트로 재시도: {e}")
+    except Exception as e:
+        last_exc = e
+        logging.warning(f"[tools] truststore 초기화 실패: {e}")
+
+    # 2차: 기본 컨텍스트 (certifi CA)
+    try:
+        return urllib.request.urlopen(url, timeout=timeout)
+    except Exception as e:
+        if last_exc is not None:
+            raise RuntimeError(
+                f"SSL 인증서 검증 실패. 회사 네트워크 프록시가 HTTPS 를 "
+                f"가로채는 환경일 수 있습니다. 기본 에러: {e} / truststore 에러: {last_exc}"
+            )
+        raise
 
 
 def tools_root() -> Path:
@@ -114,7 +155,7 @@ def ensure_installed(
 
     tmp_file = target / "_download.tmp"
     try:
-        with urllib.request.urlopen(url, timeout=60) as resp:
+        with _urlopen(url, timeout=60) as resp:
             total = int(resp.headers.get("Content-Length") or 0)
             downloaded = 0
             last_pct = -10
@@ -197,7 +238,7 @@ def _download_url(
 ) -> None:
     """URL 에서 dest 로 파일 다운로드 (10% 단위 진행률 콜백)."""
     dest.parent.mkdir(parents=True, exist_ok=True)
-    with urllib.request.urlopen(url, timeout=60) as resp:
+    with _urlopen(url, timeout=60) as resp:
         total = int(resp.headers.get("Content-Length") or 0)
         downloaded = 0
         last_pct = -10

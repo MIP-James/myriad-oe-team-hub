@@ -209,28 +209,67 @@ class Launcher:
     # 초기화
     # ------------------------------------------------------------------
     def connect(self) -> bool:
+        """Supabase 세션 복원.
+
+        PC 를 껐다 켠 경우 저장된 access_token 은 보통 만료된 상태(기본 1시간).
+        - 1차: set_session 으로 저장된 토큰 주입 후 get_user — access_token 이
+          아직 유효하면 성공.
+        - 2차: refresh_session(refresh_token) 으로 새 access_token 발급 시도.
+          refresh_token 은 기본 수개월 유효하므로 보통 여기서 복구됨.
+        """
         sb = self.config["supabase"]
         logging.info(f"Connecting to {sb['url']}")
         try:
             self.client = create_client(sb["url"], sb["anon_key"])
-            self.client.auth.set_session(sb["access_token"], sb["refresh_token"])
         except Exception as e:
-            logging.error(f"Connect/session failed: {e}")
-            self.status_text = "인증 실패 (토큰 재설정 필요)"
+            logging.error(f"create_client failed: {e}")
+            self.status_text = "Supabase 연결 실패"
             return False
 
+        user_obj = None
+
+        # 1차: 저장된 access_token 으로 세션 복원 시도
         try:
-            user = self.client.auth.get_user()
-            self.user_id = user.user.id if user and user.user else None
+            self.client.auth.set_session(sb["access_token"], sb["refresh_token"])
+            resp = self.client.auth.get_user()
+            if resp and resp.user:
+                user_obj = resp.user
         except Exception as e:
-            logging.error(f"get_user failed: {e}")
-            self.status_text = "사용자 조회 실패"
+            logging.warning(f"set_session/get_user 실패 (만료 가능성 높음): {e}")
+
+        # 2차: refresh_token 으로 새 세션 발급
+        if user_obj is None:
+            try:
+                logging.info("refresh_session 으로 토큰 갱신 시도")
+                rresp = self.client.auth.refresh_session(sb["refresh_token"])
+                new_session = getattr(rresp, "session", None)
+                if new_session and new_session.access_token:
+                    sb["access_token"] = new_session.access_token
+                    sb["refresh_token"] = new_session.refresh_token
+                    save_config(self.config)
+                    logging.info("토큰 갱신 & 저장 완료 (PC 재부팅 복구)")
+                rr_user = getattr(rresp, "user", None)
+                if rr_user:
+                    user_obj = rr_user
+                elif new_session:
+                    # 일부 버전은 user 를 response 에 안 실음 — get_user 재시도
+                    try:
+                        ur = self.client.auth.get_user()
+                        if ur and ur.user:
+                            user_obj = ur.user
+                    except Exception as ge:
+                        logging.warning(f"refresh 후 get_user 실패: {ge}")
+            except Exception as e:
+                logging.error(f"refresh_session 실패: {e}")
+                self.status_text = "인증 실패 (토큰 재설정 필요)"
+                return False
+
+        if user_obj is None:
+            self.status_text = "사용자 정보 없음 (토큰 재설정 필요)"
             return False
 
-        if not self.user_id:
-            self.status_text = "사용자 정보 없음"
-            return False
-        logging.info(f"Connected as {user.user.email}")
+        self.user_id = user_obj.id
+        logging.info(f"Connected as {getattr(user_obj, 'email', '?')}")
         self._persist_refreshed_session()
         return True
 
