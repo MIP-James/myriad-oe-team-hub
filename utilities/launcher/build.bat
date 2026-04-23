@@ -48,7 +48,9 @@ python make_icon.py
 echo.
 echo Step 5/6: Build MyriadLauncher (tray, onedir for fast startup)
 REM onedir build: creates dist\MyriadLauncher\MyriadLauncher.exe + dist\MyriadLauncher\_internal\
-python -m PyInstaller --clean --noconfirm MyriadLauncher.spec
+REM --clean 제거: PyInstaller 증분 캐시 활용 → 재빌드 시간 대폭 단축.
+REM 의존성 변경 후 빌드 이상 감지되면 build\ 폴더 수동 삭제 후 재실행.
+python -m PyInstaller --noconfirm MyriadLauncher.spec
 if errorlevel 1 goto err_build_launcher
 if not exist dist\MyriadLauncher\MyriadLauncher.exe goto err_missing_launcher
 
@@ -73,7 +75,7 @@ echo [hide] dist\_internal is now hidden
 
 echo.
 echo Step 6/6: Build MyriadSetup (onedir, shares dist\_internal with Launcher)
-python -m PyInstaller --clean --noconfirm MyriadSetup.spec
+python -m PyInstaller --noconfirm MyriadSetup.spec
 if errorlevel 1 goto err_build_setup
 if not exist dist\MyriadSetup\MyriadSetup.exe goto err_missing_setup
 
