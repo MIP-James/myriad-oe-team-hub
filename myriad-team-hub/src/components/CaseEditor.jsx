@@ -40,7 +40,11 @@ const EMPTY = {
   bodyHtml: '',
   bodyText: '',
   gmailMessageId: null,
-  gmailThreadUrl: null
+  gmailThreadUrl: null,
+  gmailSubject: null,
+  gmailFrom: null,
+  gmailDate: null,
+  gmailBodyText: null
 }
 
 export default function CaseEditor({
@@ -197,24 +201,18 @@ export default function CaseEditor({
     setGmailLoading(true)
     try {
       const msg = await fetchMessage(googleAccessToken, id)
-      // 제목/본문/Gmail 메타 세팅. 본문은 기존 내용에 이어붙이지 않고 교체 (확인 후)
+      // Gmail 메타데이터를 form 에 별도 저장 (본문 에디터에 삽입하지 않음).
+      // 뷰 모드에서 별도 <details> 블록으로 접힌 상태로 표시됨.
       setForm((f) => ({
         ...f,
         title: f.title || msg.subject || '',
         gmailMessageId: msg.id,
-        gmailThreadUrl: gmailThreadUrl(msg.threadId)
+        gmailThreadUrl: gmailThreadUrl(msg.threadId),
+        gmailSubject: msg.subject || null,
+        gmailFrom: msg.from || null,
+        gmailDate: msg.date ? msg.date.toISOString() : null,
+        gmailBodyText: msg.text || null
       }))
-      // 메일 본문을 TipTap 에 평문으로 삽입 (HTML 이 깔끔하지 않은 경우가 많아 text 로)
-      if (editor) {
-        const snippetHeader = `<p><strong>📧 Gmail 가져오기</strong><br>
-          <em>From:</em> ${escapeHtml(msg.from)}<br>
-          <em>Date:</em> ${msg.date ? msg.date.toLocaleString('ko-KR') : ''}<br>
-          <em>Subject:</em> ${escapeHtml(msg.subject)}</p><hr>`
-        const bodyHtml = `<p>${escapeHtml(msg.text).replace(/\n/g, '<br>')}</p>`
-        const current = editor.getHTML()
-        const insert = current && current !== '<p></p>' ? current + snippetHeader + bodyHtml : snippetHeader + bodyHtml
-        editor.commands.setContent(insert, true)
-      }
       setGmailOpen(false)
       setGmailUrl('')
     } catch (e) {
@@ -226,6 +224,19 @@ export default function CaseEditor({
     } finally {
       setGmailLoading(false)
     }
+  }
+
+  function removeGmailAttachment() {
+    if (!window.confirm('Gmail 첨부를 제거할까요? (게시글 본문에는 영향 없음)')) return
+    setForm((f) => ({
+      ...f,
+      gmailMessageId: null,
+      gmailThreadUrl: null,
+      gmailSubject: null,
+      gmailFrom: null,
+      gmailDate: null,
+      gmailBodyText: null
+    }))
   }
 
   async function handleSubmit(e) {
@@ -354,18 +365,45 @@ export default function CaseEditor({
             <span className="text-sm font-semibold text-slate-700">Gmail 에서 가져오기</span>
             {form.gmailMessageId && (
               <span className="text-[10px] bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full">
-                연동됨
+                첨부됨
               </span>
             )}
           </div>
-          <button
-            type="button"
-            onClick={() => { setGmailOpen((v) => !v); setGmailUrl('') }}
-            className="text-xs font-semibold text-sky-700 hover:text-sky-900"
-          >
-            {gmailOpen ? '닫기' : (form.gmailMessageId ? '다른 메일로 다시 가져오기' : '메일 URL 붙여넣기')}
-          </button>
+          <div className="flex items-center gap-2">
+            {form.gmailMessageId && (
+              <button
+                type="button"
+                onClick={removeGmailAttachment}
+                className="text-xs text-rose-600 hover:text-rose-800"
+              >
+                제거
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => { setGmailOpen((v) => !v); setGmailUrl('') }}
+              className="text-xs font-semibold text-sky-700 hover:text-sky-900"
+            >
+              {gmailOpen ? '닫기' : (form.gmailMessageId ? '다른 메일로 다시 가져오기' : '메일 URL 붙여넣기')}
+            </button>
+          </div>
         </div>
+
+        {/* 첨부된 Gmail 미리보기 (접힌 details — 에디터에서 미리 어떻게 보일지 확인용) */}
+        {form.gmailMessageId && !gmailOpen && (
+          <details className="mt-3 bg-sky-50 border border-sky-200 rounded-lg overflow-hidden">
+            <summary className="cursor-pointer px-3 py-2 text-xs font-semibold text-sky-900 hover:bg-sky-100 flex items-center gap-1.5">
+              📧 {form.gmailSubject || '(제목 없음)'}
+              <span className="text-sky-700/70 font-normal">
+                · {form.gmailFrom?.replace(/<.*>/, '').trim() || ''}
+                {form.gmailDate && ` · ${new Date(form.gmailDate).toLocaleString('ko-KR')}`}
+              </span>
+            </summary>
+            <div className="px-4 py-3 text-xs text-slate-700 whitespace-pre-wrap leading-relaxed bg-white border-t border-sky-200 max-h-64 overflow-auto">
+              {form.gmailBodyText || '(본문 없음)'}
+            </div>
+          </details>
+        )}
 
         {gmailOpen && (
           <div className="mt-3 space-y-2">
@@ -638,12 +676,3 @@ function AttachmentsGallery({ tmp, tmpPreviewUrls, existing, existingUrls, onRem
   )
 }
 
-function escapeHtml(s) {
-  if (!s) return ''
-  return String(s)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-}

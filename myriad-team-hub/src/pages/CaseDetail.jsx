@@ -205,7 +205,11 @@ export default function CaseDetail({ mode }) {
             bodyHtml: caseData.body_html,
             bodyText: caseData.body_text,
             gmailMessageId: caseData.gmail_message_id,
-            gmailThreadUrl: caseData.gmail_thread_url
+            gmailThreadUrl: caseData.gmail_thread_url,
+            gmailSubject: caseData.gmail_subject,
+            gmailFrom: caseData.gmail_from,
+            gmailDate: caseData.gmail_date,
+            gmailBodyText: caseData.gmail_body_text
           }}
           saving={saving}
           onSubmit={handleSubmit}
@@ -340,17 +344,45 @@ function ViewMode({
           )}
         </div>
 
+        {/* Gmail 첨부 (있을 때만, 기본 접힘 상태) */}
+        {c.gmail_body_text && (
+          <details className="border-t border-slate-100 pt-5 group">
+            <summary className="cursor-pointer flex items-center gap-2 text-sm font-semibold text-sky-900 bg-sky-50 hover:bg-sky-100 border border-sky-200 rounded-lg px-3 py-2 transition list-none">
+              <Mail size={14} className="text-sky-600 shrink-0" />
+              <span className="flex-1 min-w-0 truncate">
+                📧 {c.gmail_subject || '(제목 없음)'}
+              </span>
+              <span className="text-[11px] text-sky-700/70 font-normal hidden md:inline">
+                {c.gmail_from?.replace(/<.*>/, '').trim()}
+                {c.gmail_date && ` · ${new Date(c.gmail_date).toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' })}`}
+              </span>
+              <span className="text-[11px] text-sky-600 font-normal shrink-0 group-open:hidden">▼ 펼치기</span>
+              <span className="text-[11px] text-sky-600 font-normal shrink-0 hidden group-open:inline">▲ 접기</span>
+            </summary>
+            <div className="mt-2 bg-white border border-sky-200 border-t-0 rounded-b-lg -mt-px">
+              <div className="px-4 py-2 bg-sky-50/50 border-b border-sky-100 text-[11px] text-slate-600 grid grid-cols-1 md:grid-cols-3 gap-2">
+                <div><b>From:</b> {c.gmail_from || '—'}</div>
+                <div><b>Date:</b> {c.gmail_date ? new Date(c.gmail_date).toLocaleString('ko-KR') : '—'}</div>
+                <div className="md:col-span-1 truncate"><b>Subject:</b> {c.gmail_subject || '—'}</div>
+              </div>
+              <div className="px-4 py-3 text-sm text-slate-800 whitespace-pre-wrap leading-relaxed max-h-[60vh] overflow-auto">
+                {c.gmail_body_text}
+              </div>
+            </div>
+          </details>
+        )}
+
         {/* 본문 */}
         {c.body_html && c.body_html !== '<p></p>' ? (
           <div
-            className="case-prose border-t border-slate-100 pt-5"
+            className="case-prose border-t border-slate-100 pt-5 mt-4"
             dangerouslySetInnerHTML={{ __html: c.body_html }}
           />
-        ) : (
+        ) : !c.gmail_body_text ? (
           <p className="text-sm text-slate-400 italic border-t border-slate-100 pt-5">
             본문이 없습니다.
           </p>
-        )}
+        ) : null}
       </article>
 
       {/* 첨부 갤러리 */}

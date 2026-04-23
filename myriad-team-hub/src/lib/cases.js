@@ -101,6 +101,10 @@ export async function createCase(payload, userId) {
     body_text: payload.bodyText || '',
     gmail_message_id: payload.gmailMessageId || null,
     gmail_thread_url: payload.gmailThreadUrl || null,
+    gmail_subject: payload.gmailSubject || null,
+    gmail_from: payload.gmailFrom || null,
+    gmail_date: payload.gmailDate || null,
+    gmail_body_text: payload.gmailBodyText || null,
     created_by: userId,
     updated_by: userId
   }
@@ -131,6 +135,10 @@ export async function updateCase(id, payload, userId) {
     body_text: payload.bodyText || '',
     gmail_message_id: payload.gmailMessageId || null,
     gmail_thread_url: payload.gmailThreadUrl || null,
+    gmail_subject: payload.gmailSubject || null,
+    gmail_from: payload.gmailFrom || null,
+    gmail_date: payload.gmailDate || null,
+    gmail_body_text: payload.gmailBodyText || null,
     updated_by: userId
   }
   const { data, error } = await supabase
