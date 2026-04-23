@@ -35,6 +35,10 @@ git push
 
 `git push` 순간 Cloudflare Pages 가 감지해서 자동 빌드+배포.
 
+**중요 — Claude 가 직접 git 을 실행한 경우에도 cmd 블록을 응답에 항상 함께 표시.**
+사용자가 다른 장비에서 동일 작업을 재현하거나, 실행 내용을 검증하거나, 패턴을 학습할 수 있도록.
+실제 사용한 메시지/파일 목록을 그대로 cmd 형식으로 보여줌.
+
 **예외 — 세션이 worktree 에서 시작됐다면 (시스템 프롬프트에 "operating in a git worktree" 표시):**
 작업은 그대로 진행하되, 마지막에 main 으로 병합하는 cmd 를 제공:
 ```cmd
