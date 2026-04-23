@@ -54,6 +54,19 @@ export function getMonthGridMondayStart(year, month) {
   })
 }
 
+/** 한 달 캘린더 그리드 생성 (일요일 시작, 6주 = 42칸) */
+export function getMonthGridSundayStart(year, month) {
+  const first = new Date(year, month, 1)
+  // 일요일 = 0 → 그대로 offset
+  const startOffset = first.getDay()
+  const gridStart = new Date(year, month, 1 - startOffset)
+  return Array.from({ length: 42 }, (_, i) => {
+    const d = new Date(gridStart)
+    d.setDate(gridStart.getDate() + i)
+    return d
+  })
+}
+
 /** "M/D" 형식 표시 */
 export function formatMD(d) {
   return `${d.getMonth() + 1}/${d.getDate()}`

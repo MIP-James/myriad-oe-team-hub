@@ -18,7 +18,7 @@ import {
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import {
-  getMonthGridMondayStart, isoWeekOf, isoWeekStart, isoWeekEnd,
+  getMonthGridSundayStart, isoWeekOf, isoWeekStart, isoWeekEnd,
   dateKey, formatMD, timeToHHMM
 } from '../lib/dateHelpers'
 import {
@@ -29,6 +29,9 @@ import WeeklyPlanModal from '../components/WeeklyPlanModal'
 import DailyRecordModal from '../components/DailyRecordModal'
 import ReminderSettingsModal from '../components/ReminderSettingsModal'
 
+// 캘린더 헤더: 일요일 시작 (표준 UI). 주차 띠 계산은 ISO(월~일) 유지.
+const WEEKDAYS_SUN = ['일', '월', '화', '수', '목', '금', '토']
+// "이번 주 한 일" 섹션은 ISO 주(월~일) 순서로 누적되므로 별도 배열 유지.
 const WEEKDAYS_MON = ['월', '화', '수', '목', '금', '토', '일']
 const pad = (n) => n.toString().padStart(2, '0')
 
@@ -106,7 +109,7 @@ export default function Schedules() {
   const [reminderModalOpen, setReminderModalOpen] = useState(false)
 
   const grid = useMemo(
-    () => getMonthGridMondayStart(cursor.getFullYear(), cursor.getMonth()),
+    () => getMonthGridSundayStart(cursor.getFullYear(), cursor.getMonth()),
     [cursor]
   )
 
@@ -393,13 +396,13 @@ export default function Schedules() {
         {/* ─── 캘린더 ─── */}
         <div className="col-span-12 lg:col-span-8">
           <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
-            {/* 요일 헤더 */}
+            {/* 요일 헤더 — 일요일 시작 */}
             <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50 text-xs font-semibold text-slate-600">
-              {WEEKDAYS_MON.map((d, i) => (
+              {WEEKDAYS_SUN.map((d, i) => (
                 <div
                   key={d}
                   className={`py-2 text-center ${
-                    i === 5 ? 'text-blue-500' : i === 6 ? 'text-rose-500' : ''
+                    i === 0 ? 'text-rose-500' : i === 6 ? 'text-blue-500' : ''
                   }`}
                 >
                   {d}
@@ -407,13 +410,15 @@ export default function Schedules() {
               ))}
             </div>
 
-            {/* 주 단위 행 (각 행 위에 주차 띠) */}
+            {/* 주 단위 행 (각 행 위에 주차 띠) — 주차 계산은 행의 월요일(index 1) 기준 ISO 주 */}
             {rows.map((rowDays, rowIdx) => {
-              const monday = rowDays[0]
+              const monday = rowDays[1]       // 일요일 시작 그리드에서 월요일은 두 번째 칸
               const { year, week } = isoWeekOf(monday)
               const plan = weeklyPlans[`${year}-${week}`]
               const planCount = plan?.items?.length ?? 0
-              const wEnd = rowDays[6]
+              // ISO 주 범위: 월 ~ 그 다음 일요일 (다음 행의 index 0)
+              const wEnd = new Date(monday)
+              wEnd.setDate(monday.getDate() + 6)
               return (
                 <div key={rowIdx}>
                   {/* 주차 띠 — 차분한 stone/amber 톤 */}
@@ -451,7 +456,7 @@ export default function Schedules() {
                       const dayItems = itemsByDay[k] ?? []
                       const dayRecord = dailyRecords[k]
                       const recordCount = dayRecord?.items?.length ?? 0
-                      const isWeekend = idx >= 5
+                      const isWeekend = idx === 0 || idx === 6
                       return (
                         <button
                           key={idx}
@@ -466,8 +471,8 @@ export default function Schedules() {
                           <div
                             className={`text-xs font-semibold inline-flex items-center justify-center w-5 h-5 ${
                               isToday ? 'rounded-full bg-myriad-primary text-myriad-ink' : ''
-                            } ${idx === 6 && inMonth && !isToday ? 'text-rose-500' : ''} ${
-                              idx === 5 && inMonth && !isToday ? 'text-blue-500' : ''
+                            } ${idx === 0 && inMonth && !isToday ? 'text-rose-500' : ''} ${
+                              idx === 6 && inMonth && !isToday ? 'text-blue-500' : ''
                             }`}
                           >
                             {d.getDate()}
