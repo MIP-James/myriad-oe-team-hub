@@ -5,10 +5,11 @@
  *  - 브라우저 알림 권한 요청 버튼
  */
 import { useEffect, useState } from 'react'
-import { X, Bell, BellOff, Loader2, Save, AlertTriangle, CheckCircle2 } from 'lucide-react'
+import { X, Bell, BellOff, Loader2, Save, AlertTriangle, CheckCircle2, Send } from 'lucide-react'
 import { saveReminderSettings, getReminderSettings } from '../lib/weekly'
 import { timeToHHMM } from '../lib/dateHelpers'
 import { useAuth } from '../contexts/AuthContext'
+import { REMINDER_SETTINGS_CHANGED } from '../hooks/useDailyReminder'
 
 export default function ReminderSettingsModal({ onClose, onSaved }) {
   const { user } = useAuth()
@@ -62,6 +63,8 @@ export default function ReminderSettingsModal({ onClose, onSaved }) {
     try {
       const dailyTime = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00`
       await saveReminderSettings(user.id, { dailyTime, enabled })
+      // 훅이 즉시 새 설정 다시 읽도록 신호
+      window.dispatchEvent(new Event(REMINDER_SETTINGS_CHANGED))
       onSaved?.()
       onClose()
     } catch (e) {
@@ -69,6 +72,29 @@ export default function ReminderSettingsModal({ onClose, onSaved }) {
     } finally {
       setSaving(false)
     }
+  }
+
+  /** 테스트 알림 — 실제 시각/저장과 무관하게 바로 윈도우 알림 + 토스트 발송 */
+  function sendTestNotification() {
+    const title = '🧪 테스트 알림'
+    const body = '이 알림이 보이면 정상! 저장한 시각에도 동일하게 와요.'
+
+    // 1. 윈도우 알림
+    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+      try {
+        new Notification(title, { body, icon: '/vite.svg', tag: 'myriad-test' })
+      } catch (e) {
+        console.warn('[test notif]', e)
+      }
+    }
+    // 2. 사이트 내 토스트 — 일반 리마인더 토스트 트리거를 흉내내기 위해
+    //    localStorage 비우고 즉시 발송 이벤트 보냄
+    try {
+      localStorage.removeItem('myriad_reminder_last_date')
+    } catch {}
+    window.dispatchEvent(new CustomEvent('myriad-test-toast', {
+      detail: { title, body }
+    }))
   }
 
   return (
@@ -177,6 +203,15 @@ export default function ReminderSettingsModal({ onClose, onSaved }) {
             </div>
 
             {error && <div className="text-xs text-rose-600">{error}</div>}
+
+            {/* 테스트 알림 — 알림 작동 검증용 */}
+            <button
+              type="button"
+              onClick={sendTestNotification}
+              className="w-full flex items-center justify-center gap-1.5 text-xs text-slate-600 hover:text-myriad-ink border border-dashed border-slate-300 hover:border-myriad-primary py-2 rounded-lg transition"
+            >
+              <Send size={12} /> 지금 테스트 알림 보내기
+            </button>
           </div>
         )}
 

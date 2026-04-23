@@ -294,29 +294,29 @@ export default function Schedules() {
               const wEnd = rowDays[6]
               return (
                 <div key={rowIdx}>
-                  {/* 주차 띠 — 밝은 myriad-primary 톤 */}
+                  {/* 주차 띠 — 차분한 stone/amber 톤 */}
                   <button
                     onClick={() => openWeeklyPlan(rowDays)}
-                    className={`w-full px-4 py-2 transition border-b border-amber-100 flex items-center gap-2 text-xs text-left group ${
+                    className={`w-full px-4 py-2 transition border-b border-stone-200 flex items-center gap-2 text-xs text-left group ${
                       planCount > 0
-                        ? 'bg-myriad-primary/15 hover:bg-myriad-primary/25'
-                        : 'bg-amber-50/60 hover:bg-myriad-primary/15'
+                        ? 'bg-amber-100/70 hover:bg-amber-100'
+                        : 'bg-stone-50 hover:bg-amber-50'
                     }`}
                   >
-                    <NotebookPen size={12} className="text-myriad-ink" />
-                    <span className="font-bold text-myriad-ink">Week {week}</span>
-                    <span className="text-amber-700/80 font-medium">
+                    <NotebookPen size={12} className="text-stone-600 group-hover:text-myriad-ink" />
+                    <span className="font-bold text-stone-800">Week {week}</span>
+                    <span className="text-stone-500 font-medium">
                       {formatMD(monday)} ~ {formatMD(wEnd)}
                     </span>
                     <div className="flex-1" />
                     {planCount > 0 ? (
-                      <span className="text-myriad-ink font-bold inline-flex items-center gap-1 bg-white/70 px-2 py-0.5 rounded-full">
+                      <span className="text-stone-800 font-bold inline-flex items-center gap-1 bg-white/80 px-2 py-0.5 rounded-full border border-amber-200">
                         📝 이번 주 계획 {planCount}개
                       </span>
                     ) : (
-                      <span className="text-amber-700/70 font-medium">+ 이번 주 할 일 적어두기</span>
+                      <span className="text-stone-500 font-medium">+ 이번 주 할 일 적어두기</span>
                     )}
-                    <Chevron size={12} className="text-myriad-ink/50 group-hover:text-myriad-ink" />
+                    <Chevron size={12} className="text-stone-400 group-hover:text-stone-700" />
                   </button>
 
                   {/* 7일 셀 */}

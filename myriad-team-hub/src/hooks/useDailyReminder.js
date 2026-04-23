@@ -19,8 +19,9 @@ import { getReminderSettings } from '../lib/weekly'
 import { dateKey } from '../lib/dateHelpers'
 
 const LAST_NOTIFIED_KEY = 'myriad_reminder_last_date'
-const SETTINGS_REFRESH_MS = 60_000   // 1분
-const TICK_MS = 60_000                // 1분
+const SETTINGS_REFRESH_MS = 20_000   // 20초 (저장 직후 빠르게 반영)
+const TICK_MS = 30_000                // 30초 (분 단위 시각 체크에 충분)
+export const REMINDER_SETTINGS_CHANGED = 'myriad-reminder-settings-changed'
 
 export function useDailyReminder() {
   const { user } = useAuth()
@@ -42,6 +43,17 @@ export function useDailyReminder() {
     }
     loadSettings()
     const settingsTimer = setInterval(loadSettings, SETTINGS_REFRESH_MS)
+
+    // 모달에서 저장 직후 즉시 반영 (custom event)
+    const onSettingsChanged = () => loadSettings()
+    window.addEventListener(REMINDER_SETTINGS_CHANGED, onSettingsChanged)
+
+    // 테스트 알림 — 사이트 내 토스트로 강제 표시
+    const onTestToast = (e) => {
+      const d = e?.detail || {}
+      setToast({ title: d.title || '🧪 테스트', body: d.body || '테스트 알림' })
+    }
+    window.addEventListener('myriad-test-toast', onTestToast)
 
     function fireReminder() {
       const today = dateKey(new Date())
@@ -107,6 +119,8 @@ export function useDailyReminder() {
       cancelled = true
       clearInterval(settingsTimer)
       clearInterval(tickTimer)
+      window.removeEventListener(REMINDER_SETTINGS_CHANGED, onSettingsChanged)
+      window.removeEventListener('myriad-test-toast', onTestToast)
     }
   }, [user?.id, navigate])
 
