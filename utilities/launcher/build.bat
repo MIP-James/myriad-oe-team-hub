@@ -72,11 +72,23 @@ attrib +h dist\_internal
 echo [hide] dist\_internal is now hidden
 
 echo.
-echo Step 6/6: Build MyriadSetup.exe (console setup, onefile - runs once)
+echo Step 6/6: Build MyriadSetup (onedir, shares dist\_internal with Launcher)
 python -m PyInstaller --clean --noconfirm MyriadSetup.spec
 if errorlevel 1 goto err_build_setup
-if not exist dist\MyriadSetup.exe goto err_missing_setup
-echo   OK: dist\MyriadSetup.exe
+if not exist dist\MyriadSetup\MyriadSetup.exe goto err_missing_setup
+
+REM Merge Setup's _internal into shared dist\_internal then move exe to root.
+REM Launcher and Setup share supabase/httpx/etc. - same file bytes, safe to overwrite.
+echo [merge] merging MyriadSetup\_internal into dist\_internal (shared)
+attrib -h dist\_internal
+xcopy /Y /E /Q dist\MyriadSetup\_internal\* dist\_internal\ > nul
+if errorlevel 1 goto err_merge_setup
+attrib +h dist\_internal
+
+echo [flatten] moving dist\MyriadSetup\MyriadSetup.exe -> dist\MyriadSetup.exe
+move /Y dist\MyriadSetup\MyriadSetup.exe dist\MyriadSetup.exe > nul
+rmdir /S /Q dist\MyriadSetup
+echo   OK: dist\MyriadSetup.exe (shares dist\_internal, cold start ~1-2s)
 
 REM Restore backed-up config.json
 if exist config.json.bak (
@@ -131,7 +143,12 @@ goto cleanup
 
 :err_missing_setup
 echo.
-echo [ERROR] MyriadSetup.exe not found in dist\ after build.
+echo [ERROR] MyriadSetup.exe not found after build (expected dist\MyriadSetup\MyriadSetup.exe).
+goto cleanup
+
+:err_merge_setup
+echo.
+echo [ERROR] Failed to merge MyriadSetup _internal into dist\_internal.
 goto cleanup
 
 :cleanup
