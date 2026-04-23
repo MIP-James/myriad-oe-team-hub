@@ -18,7 +18,7 @@ import {
   getCase, createCase, updateCase, deleteCase, changeCaseStatus,
   listCaseAttachments, commitTmpAttachments, getAttachmentSignedUrls,
   listCaseComments, createCaseComment, updateCaseComment, deleteCaseComment,
-  STATUS_OPTIONS, STATUS_LABELS, STATUS_COLORS
+  STATUS_OPTIONS, STATUS_LABELS, STATUS_COLORS, INFRINGEMENT_COLORS
 } from '../lib/cases'
 import { getProfileShort } from '../lib/community'
 import CaseEditor from '../components/CaseEditor'
@@ -120,7 +120,29 @@ export default function CaseDetail({ mode }) {
         if (payload._tmpAttachments?.length) {
           await commitTmpAttachments(payload._tmpAttachments, created.id, user.id)
         }
+        // 뷰 모드로 즉시 전환 + 새 ID 의 상세 페이지로 이동.
+        // (React 가 컴포넌트를 재사용할 수 있어서 setEditing(false) 명시 필수 —
+        //  안 그러면 새 URL 인데 여전히 편집 화면 노출)
+        setEditing(false)
+        setCaseData(created)
         navigate(`/community/cases/${created.id}`, { replace: true })
+        // 새 ID 의 첨부/댓글 (방금 commit 된 tmp 포함) 다시 로드
+        try {
+          const [a, cm] = await Promise.all([
+            listCaseAttachments(created.id),
+            listCaseComments(created.id)
+          ])
+          setAttachments(a)
+          if (a.length > 0) {
+            const urls = await getAttachmentSignedUrls(
+              a.map((x) => x.storage_path).filter(Boolean), 60 * 60
+            )
+            setAttachmentUrls(urls)
+          }
+          setComments(cm)
+        } catch (e) {
+          console.warn('[handleSubmit] post-create reload failed:', e?.message)
+        }
       } else {
         await updateCase(id, payload, user.id)
         setEditing(false)
@@ -197,8 +219,9 @@ export default function CaseDetail({ mode }) {
             id: caseData.id,
             title: caseData.title,
             brand: caseData.brand,
-            platform: caseData.platform,
-            platformOther: caseData.platform_other || '',
+            // migration 014 에서 platform_other 가 platform 으로 통합됨.
+            // 만약 아직 마이그레이션 전 데이터면 platform_other 로 폴백.
+            platform: caseData.platform || caseData.platform_other || '',
             postUrl: caseData.post_url || '',
             infringementType: caseData.infringement_type,
             status: caseData.status,
@@ -250,7 +273,8 @@ function ViewMode({
   const c = caseData
   const createdProfile = profiles[c.created_by]
   const createdName = createdProfile?.full_name || createdProfile?.email?.split('@')[0] || '—'
-  const platformLabel = c.platform === '기타' ? (c.platform_other || '기타') : c.platform
+  // migration 014 이후엔 platform 에 다 들어감. 이전 데이터 폴백.
+  const platformLabel = c.platform || c.platform_other || '—'
 
   return (
     <>
@@ -285,14 +309,14 @@ function ViewMode({
                   </div>
                 )}
               </div>
-              <span className="text-[11px] font-semibold bg-myriad-primary/20 text-myriad-ink px-2 py-0.5 rounded-full flex items-center gap-1">
-                <TagIcon size={10} /> {c.brand}
+              <span className="text-xs font-bold bg-myriad-primary/25 text-myriad-ink px-2.5 py-1 rounded-md flex items-center gap-1">
+                <TagIcon size={11} /> {c.brand}
               </span>
-              <span className="text-[11px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full flex items-center gap-1">
-                <Globe size={10} /> {platformLabel}
+              <span className="text-xs font-bold bg-sky-100 text-sky-800 px-2.5 py-1 rounded-md flex items-center gap-1">
+                <Globe size={11} /> {platformLabel}
               </span>
-              <span className="text-[11px] bg-rose-100 text-rose-700 px-2 py-0.5 rounded-full flex items-center gap-1">
-                <AlertCircle size={10} /> {c.infringement_type}
+              <span className={`text-xs font-bold px-2.5 py-1 rounded-md flex items-center gap-1 ${INFRINGEMENT_COLORS[c.infringement_type] || 'bg-slate-100 text-slate-700'}`}>
+                <AlertCircle size={11} /> {c.infringement_type}
               </span>
             </div>
             <h1 className="text-2xl font-bold text-slate-900">{c.title}</h1>

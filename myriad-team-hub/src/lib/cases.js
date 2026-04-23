@@ -5,11 +5,11 @@
  */
 import { supabase } from './supabase'
 import { logActivity } from './community'
+import { PLATFORM_LIST, BRAND_LIST } from './platformBrandLists'
 
-export const PLATFORMS = [
-  '11st', 'SmartStore', 'Gmarket', 'Auction', 'Coupang',
-  'NaverBand', 'KakaoStory', 'Instagram', '독립몰', '기타'
-]
+// 자동완성 드롭다운용 — 마스터 리스트 그대로 노출.
+// 자유 입력 허용이므로 사용자가 신규 값 타이핑해도 OK.
+export const PLATFORMS = PLATFORM_LIST
 
 export const INFRINGEMENT_TYPES = [
   '상표권 침해', '위조품', '저작권', '디자인권', '기타'
@@ -29,6 +29,15 @@ export const STATUS_COLORS = {
   share: 'bg-sky-100 text-sky-700',
   action_needed: 'bg-amber-100 text-amber-800',
   resolved: 'bg-emerald-100 text-emerald-700'
+}
+
+// 침해 유형별 색상 — 게시판 리스트에서 시각적으로 구분
+export const INFRINGEMENT_COLORS = {
+  '상표권 침해': 'bg-rose-100 text-rose-700',
+  '위조품':       'bg-orange-100 text-orange-700',
+  '저작권':       'bg-purple-100 text-purple-700',
+  '디자인권':     'bg-cyan-100 text-cyan-700',
+  '기타':         'bg-slate-100 text-slate-600'
 }
 
 // ───── Case CRUD ────────────────────────────────────────────────
@@ -92,8 +101,8 @@ export async function createCase(payload, userId) {
   const row = {
     title: (payload.title || '').trim(),
     brand: (payload.brand || '').trim(),
-    platform: payload.platform,
-    platform_other: payload.platform === '기타' ? (payload.platformOther || null) : null,
+    platform: (payload.platform || '').trim(),
+    platform_other: null,    // deprecated — migration 014 에서 platform 으로 통합
     post_url: payload.postUrl ? payload.postUrl.trim() : null,
     infringement_type: payload.infringementType,
     status: payload.status || 'share',
@@ -127,8 +136,8 @@ export async function updateCase(id, payload, userId) {
   const row = {
     title: (payload.title || '').trim(),
     brand: (payload.brand || '').trim(),
-    platform: payload.platform,
-    platform_other: payload.platform === '기타' ? (payload.platformOther || null) : null,
+    platform: (payload.platform || '').trim(),
+    platform_other: null,    // deprecated — migration 014 에서 platform 으로 통합
     post_url: payload.postUrl ? payload.postUrl.trim() : null,
     infringement_type: payload.infringementType,
     body_html: payload.bodyHtml || '',
@@ -398,14 +407,15 @@ export async function getAttachmentSignedUrls(paths, expiresIn = 60 * 60) {
 // ───── Brand autocomplete ───────────────────────────────────────
 
 /**
- * 브랜드 제안 목록 — cases.brand 와 brand_reports.brand_name 을 합쳐서 고유값 반환.
+ * 브랜드 제안 목록 — 마스터 리스트(엑셀) + cases.brand + brand_reports.brand_name 통합.
+ * 자유 입력 허용이라 마스터에 없는 신규 값도 사용자가 직접 타이핑 가능.
  */
 export async function listBrandSuggestions() {
   const [casesRes, reportsRes] = await Promise.all([
     supabase.from('cases').select('brand').limit(500),
     supabase.from('brand_reports').select('brand_name').limit(500)
   ])
-  const set = new Set()
+  const set = new Set(BRAND_LIST)        // 마스터 시작점
   for (const r of casesRes.data ?? []) if (r.brand) set.add(r.brand)
   for (const r of reportsRes.data ?? []) if (r.brand_name) set.add(r.brand_name)
   return [...set].sort((a, b) => a.localeCompare(b, 'ko'))

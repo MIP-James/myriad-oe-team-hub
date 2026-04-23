@@ -206,7 +206,7 @@ export default function Dashboard() {
                     <span className="inline-flex items-center gap-0.5 text-[10px] bg-myriad-primary/20 text-myriad-ink px-1.5 py-0.5 rounded-full">
                       <TagIcon size={8} /> {c.brand}
                     </span>
-                    <span className="text-[10px] text-slate-500">{c.platform === '기타' ? (c.platform_other || '기타') : c.platform}</span>
+                    <span className="text-[10px] text-slate-500">{c.platform || c.platform_other || '—'}</span>
                     <span className="text-slate-400 ml-auto">{relativeTime(c.created_at)}</span>
                   </div>
                 </Link>

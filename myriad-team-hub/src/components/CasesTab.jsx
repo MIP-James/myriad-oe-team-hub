@@ -14,7 +14,8 @@ import {
 import { supabase } from '../lib/supabase'
 import {
   listCases, listBrandSuggestions,
-  PLATFORMS, INFRINGEMENT_TYPES, STATUS_OPTIONS, STATUS_LABELS, STATUS_COLORS
+  PLATFORMS, INFRINGEMENT_TYPES, STATUS_OPTIONS, STATUS_LABELS, STATUS_COLORS,
+  INFRINGEMENT_COLORS
 } from '../lib/cases'
 import { getProfileShort } from '../lib/community'
 
@@ -144,14 +145,17 @@ export default function CasesTab() {
         <datalist id="cases-brand-filter">
           {brandSuggestions.map((b) => <option key={b} value={b} />)}
         </datalist>
-        <select
+        <input
+          type="text"
+          list="cases-platform-filter"
           value={platform}
           onChange={(e) => { setPage(0); setPlatform(e.target.value) }}
-          className="px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-myriad-primary/40"
-        >
-          <option value="">플랫폼 전체</option>
-          {PLATFORMS.map((p) => <option key={p} value={p}>{p}</option>)}
-        </select>
+          placeholder="플랫폼 전체"
+          className="px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-myriad-primary/40 w-32"
+        />
+        <datalist id="cases-platform-filter">
+          {PLATFORMS.map((p) => <option key={p} value={p} />)}
+        </datalist>
         <select
           value={infType}
           onChange={(e) => { setPage(0); setInfType(e.target.value) }}
@@ -225,6 +229,7 @@ export default function CasesTab() {
                     const profile = profiles[c.created_by]
                     const author = profile?.full_name || profile?.email?.split('@')[0] || '—'
                     const commentCount = commentCounts[c.id] || 0
+                    const platformLabel = c.platform || '—'
                     return (
                       <tr key={c.id} className="border-b border-slate-100 hover:bg-slate-50 transition">
                         <td className="px-3 py-2.5 text-xs text-slate-400">
@@ -244,19 +249,23 @@ export default function CasesTab() {
                             )}
                           </Link>
                         </td>
-                        <td className="px-3 py-2.5 text-xs text-slate-700">
-                          <span className="inline-flex items-center gap-1">
-                            <TagIcon size={9} className="text-myriad-ink" />
+                        <td className="px-3 py-2.5">
+                          <span className="inline-flex items-center gap-1 bg-myriad-primary/25 text-myriad-ink font-bold px-2 py-0.5 rounded-md text-[11px]">
+                            <TagIcon size={10} />
                             {c.brand}
                           </span>
                         </td>
-                        <td className="px-3 py-2.5 text-xs text-slate-700">
-                          <span className="inline-flex items-center gap-1">
-                            <Globe size={9} className="text-slate-400" />
-                            {c.platform === '기타' ? (c.platform_other || '기타') : c.platform}
+                        <td className="px-3 py-2.5">
+                          <span className="inline-flex items-center gap-1 bg-sky-100 text-sky-800 font-bold px-2 py-0.5 rounded-md text-[11px]">
+                            <Globe size={10} />
+                            {platformLabel}
                           </span>
                         </td>
-                        <td className="px-3 py-2.5 text-xs text-slate-700">{c.infringement_type}</td>
+                        <td className="px-3 py-2.5">
+                          <span className={`inline-flex items-center gap-1 font-bold px-2 py-0.5 rounded-md text-[11px] ${INFRINGEMENT_COLORS[c.infringement_type] || 'bg-slate-100 text-slate-700'}`}>
+                            {c.infringement_type}
+                          </span>
+                        </td>
                         <td className="px-3 py-2.5">
                           <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full inline-flex items-center gap-1 ${STATUS_COLORS[c.status]}`}>
                             <Circle size={6} className="fill-current" />

@@ -32,8 +32,7 @@ import { GoogleAuthRequiredError } from '../lib/googleDrive'
 const EMPTY = {
   title: '',
   brand: '',
-  platform: '11st',
-  platformOther: '',
+  platform: '',
   postUrl: '',
   infringementType: '상표권 침해',
   status: 'share',
@@ -243,10 +242,7 @@ export default function CaseEditor({
     e?.preventDefault()
     if (!form.title.trim()) { setError('제목을 입력하세요.'); return }
     if (!form.brand.trim()) { setError('브랜드(고객사)를 입력하세요.'); return }
-    if (form.platform === '기타' && !form.platformOther.trim()) {
-      setError('플랫폼이 "기타" 면 직접 입력 값을 채워주세요.')
-      return
-    }
+    if (!form.platform.trim()) { setError('플랫폼을 입력하세요.'); return }
     setError(null)
     try {
       await onSubmit({
@@ -302,24 +298,17 @@ export default function CaseEditor({
 
           <div>
             <label className="block text-xs font-semibold text-slate-600 mb-1">플랫폼 *</label>
-            <div className="flex gap-2">
-              <select
-                value={form.platform}
-                onChange={(e) => update('platform', e.target.value)}
-                className="flex-1 px-3 py-2 border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-myriad-primary/40"
-              >
-                {PLATFORMS.map((p) => <option key={p} value={p}>{p}</option>)}
-              </select>
-              {form.platform === '기타' && (
-                <input
-                  type="text"
-                  value={form.platformOther}
-                  onChange={(e) => update('platformOther', e.target.value)}
-                  placeholder="직접 입력"
-                  className="flex-1 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-myriad-primary/40"
-                />
-              )}
-            </div>
+            <input
+              type="text"
+              value={form.platform}
+              onChange={(e) => update('platform', e.target.value)}
+              list="platform-suggestions"
+              placeholder="예: 11st (목록에 없으면 직접 입력)"
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-myriad-primary/40"
+            />
+            <datalist id="platform-suggestions">
+              {PLATFORMS.map((p) => <option key={p} value={p} />)}
+            </datalist>
           </div>
 
           <div>
