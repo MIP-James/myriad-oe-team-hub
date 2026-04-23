@@ -259,6 +259,27 @@ class Launcher:
             self.status_text = "Supabase 연결 실패"
             return False
 
+        # supabase-py 내부 auto-refresh 는 refresh_token 을 rotate 하고 새 값을
+        # 메모리에만 보관. 아래 리스너가 rotation 즉시 config.json 에 저장해서
+        # 다음 부팅 시 stale token 으로 "Refresh Token Not Found" 나는 걸 차단.
+        try:
+            def _on_auth_change(event, session):
+                try:
+                    if session and getattr(session, "refresh_token", None):
+                        sb2 = self.config["supabase"]
+                        if sb2.get("refresh_token") != session.refresh_token:
+                            sb2["access_token"] = session.access_token
+                            sb2["refresh_token"] = session.refresh_token
+                            save_config(self.config)
+                            logging.info(f"[auth] {event} — rotated token saved")
+                except Exception as ex:
+                    logging.warning(f"auth_state_change save 실패: {ex}")
+            self.client.auth.on_auth_state_change(_on_auth_change)
+        except Exception as e:
+            # 일부 supabase-py 버전에서 콜백 시그니처가 다를 수 있음 —
+            # 실패해도 heartbeat_loop 의 폴링 persist 가 안전망으로 작동.
+            logging.warning(f"on_auth_state_change 등록 실패: {e}")
+
         user_obj = None
 
         # 1차: 저장된 access_token 으로 세션 복원 시도
@@ -311,11 +332,17 @@ class Launcher:
             session = self.client.auth.get_session()
             if session and session.access_token:
                 sb = self.config["supabase"]
-                if sb.get("access_token") != session.access_token:
+                # access_token 또는 refresh_token 둘 중 하나라도 바뀌면 저장.
+                # refresh_token 만 rotate 되는 케이스(드물지만 존재)도 포착.
+                changed = (
+                    sb.get("access_token") != session.access_token
+                    or sb.get("refresh_token") != session.refresh_token
+                )
+                if changed:
                     sb["access_token"] = session.access_token
                     sb["refresh_token"] = session.refresh_token
                     save_config(self.config)
-                    logging.info("Token refreshed & saved")
+                    logging.info("Token refreshed & saved (polling)")
         except Exception as e:
             logging.warning(f"Persist session: {e}")
 
@@ -366,6 +393,12 @@ class Launcher:
                 ).eq("id", self.device_id).execute()
             except Exception as e:
                 logging.warning(f"Heartbeat: {e}")
+            # 안전망 — 이벤트 리스너가 미동작하는 supabase-py 버전 대비.
+            # get_session() 은 메모리 조회라 비용 거의 없음.
+            try:
+                self._persist_refreshed_session()
+            except Exception as e:
+                logging.warning(f"Heartbeat persist: {e}")
 
     def poll_loop(self):
         self._update_status("온라인 - 대기 중")
