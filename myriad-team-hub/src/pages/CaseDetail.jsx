@@ -255,6 +255,7 @@ export default function CaseDetail({ mode }) {
           onStatusChange={handleStatusChange}
           user={user}
           isAdmin={isAdmin}
+          onCommentsChanged={loadComments}
         />
       )}
     </div>
@@ -268,7 +269,7 @@ export default function CaseDetail({ mode }) {
 function ViewMode({
   caseData, attachments, attachmentUrls, comments, profiles,
   onEdit, canEdit, statusMenuOpen, setStatusMenuOpen, onStatusChange,
-  user, isAdmin
+  user, isAdmin, onCommentsChanged
 }) {
   const c = caseData
   const createdProfile = profiles[c.created_by]
@@ -448,6 +449,7 @@ function ViewMode({
         profiles={profiles}
         user={user}
         isAdmin={isAdmin}
+        onChanged={onCommentsChanged}
       />
     </>
   )
@@ -457,11 +459,18 @@ function ViewMode({
 // Comments Section
 // ─────────────────────────────────────────────────────
 
-function CommentsSection({ caseId, caseTitle, comments, profiles, user, isAdmin }) {
+function CommentsSection({ caseId, caseTitle, comments, profiles, user, isAdmin, onChanged }) {
   const [draft, setDraft] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [editingId, setEditingId] = useState(null)
   const [editDraft, setEditDraft] = useState('')
+  // 삭제된 ID 를 즉시 숨김 처리 (optimistic UI). onChanged() 가 끝나면 자동으로 정합.
+  const [pendingDeletedIds, setPendingDeletedIds] = useState(new Set())
+
+  // 부모로부터 새 comments 가 내려오면 pending 클리어
+  useEffect(() => {
+    setPendingDeletedIds(new Set())
+  }, [comments])
 
   async function submit() {
     const body = draft.trim()
@@ -470,6 +479,7 @@ function CommentsSection({ caseId, caseTitle, comments, profiles, user, isAdmin 
     try {
       await createCaseComment(caseId, body, user.id, caseTitle)
       setDraft('')
+      onChanged?.()
     } catch (e) {
       alert('댓글 작성 실패: ' + e.message)
     } finally {
@@ -484,6 +494,7 @@ function CommentsSection({ caseId, caseTitle, comments, profiles, user, isAdmin 
       await updateCaseComment(c.id, body)
       setEditingId(null)
       setEditDraft('')
+      onChanged?.()
     } catch (e) {
       alert('수정 실패: ' + e.message)
     }
@@ -491,24 +502,36 @@ function CommentsSection({ caseId, caseTitle, comments, profiles, user, isAdmin 
 
   async function handleDelete(c) {
     if (!window.confirm('이 댓글을 삭제할까요?')) return
+    // 즉시 UI 에서 숨김 (optimistic) — 사용자 체감 빠름
+    setPendingDeletedIds((prev) => new Set([...prev, c.id]))
     try {
       await deleteCaseComment(c.id)
+      onChanged?.()    // 부모가 loadComments() 재호출 → 정합 확인
     } catch (e) {
+      // 실패 시 숨김 해제 (롤백)
+      setPendingDeletedIds((prev) => {
+        const next = new Set(prev)
+        next.delete(c.id)
+        return next
+      })
       alert('삭제 실패: ' + e.message)
     }
   }
 
+  // 화면에 그릴 댓글 = 부모 props 에서 pending 삭제분 제외
+  const visibleComments = comments.filter((c) => !pendingDeletedIds.has(c.id))
+
   return (
     <div className="bg-white border border-slate-200 rounded-2xl p-5">
       <h2 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
-        <MessageSquare size={14} /> 댓글 <span className="text-slate-400 font-normal">{comments.length}개</span>
+        <MessageSquare size={14} /> 댓글 <span className="text-slate-400 font-normal">{visibleComments.length}개</span>
       </h2>
 
-      {comments.length === 0 ? (
+      {visibleComments.length === 0 ? (
         <p className="text-xs text-slate-400 py-3 text-center">아직 댓글이 없습니다. 의견을 남겨보세요.</p>
       ) : (
         <ul className="space-y-2 mb-4">
-          {comments.map((c) => {
+          {visibleComments.map((c) => {
             const p = profiles[c.author_id]
             const author = p?.full_name || p?.email?.split('@')[0] || '알 수 없음'
             const isMine = c.author_id === user?.id
