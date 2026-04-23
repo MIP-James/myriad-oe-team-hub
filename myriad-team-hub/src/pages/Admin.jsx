@@ -28,7 +28,7 @@ const SECTIONS = [
     label: '사용자 관리',
     desc: '팀원 역할 (admin/member) 변경',
     icon: Users,
-    ready: false
+    ready: true
   }
 ]
 
