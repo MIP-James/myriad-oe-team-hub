@@ -2,6 +2,7 @@ import { NavLink, Outlet } from 'react-router-dom'
 import { LayoutDashboard, StickyNote, CalendarDays, FileSpreadsheet, BarChart3, Wrench, Cpu, History, Users, ShieldCheck, LogOut, Bell, X } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useDailyReminder } from '../hooks/useDailyReminder'
+import NotificationBell from './NotificationBell'
 
 const BASE_NAV = [
   { to: '/', label: '대시보드', icon: LayoutDashboard, end: true },
@@ -27,6 +28,8 @@ export default function Layout() {
         <div className="h-14 flex items-center px-5 border-b border-slate-200">
           <span className="font-bold text-myriad-ink">MYRIAD</span>
           <span className="ml-2 text-xs text-slate-500">Team Hub</span>
+          <div className="flex-1" />
+          <NotificationBell />
         </div>
         <nav className="flex-1 p-3 space-y-1">
           {nav.map(({ to, label, icon: Icon, end }) => (

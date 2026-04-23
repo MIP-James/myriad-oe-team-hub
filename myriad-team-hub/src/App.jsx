@@ -17,7 +17,6 @@ import Community from './pages/Community'
 import CaseDetail from './pages/CaseDetail'
 import Admin from './pages/Admin'
 import AdminUtilities from './pages/AdminUtilities'
-import AdminSharedSheets from './pages/AdminSharedSheets'
 import AdminExternalShortcuts from './pages/AdminExternalShortcuts'
 import AdminUsers from './pages/AdminUsers'
 import NotFound from './pages/NotFound'
@@ -49,7 +48,6 @@ export default function App() {
         <Route path="community/cases/:id" element={<CaseDetail />} />
         <Route path="admin" element={<AdminGate><Admin /></AdminGate>} />
         <Route path="admin/utilities" element={<AdminGate><AdminUtilities /></AdminGate>} />
-        <Route path="admin/sheets" element={<AdminGate><AdminSharedSheets /></AdminGate>} />
         <Route path="admin/shortcuts" element={<AdminGate><AdminExternalShortcuts /></AdminGate>} />
         <Route path="admin/users" element={<AdminGate><AdminUsers /></AdminGate>} />
       </Route>
