@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  CalendarDays, StickyNote, Activity, ChevronRight, Pin, Lock, Users as UsersIcon,
-  Loader2, Megaphone, AlertCircle, AlertTriangle, Info, Briefcase, Tag as TagIcon
+  CalendarDays, StickyNote, ChevronRight, Pin, Lock, Users as UsersIcon,
+  Loader2, Megaphone, AlertCircle, AlertTriangle, Info, Briefcase, Tag as TagIcon,
+  Wrench, BarChart3, ExternalLink
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
-import { listAnnouncements, getMyReadIds, listActivityEvents, getProfileShort } from '../lib/community'
+import { listAnnouncements, getMyReadIds } from '../lib/community'
 import { listRecentCases, STATUS_LABELS, STATUS_COLORS } from '../lib/cases'
 
 export default function Dashboard() {
@@ -16,8 +17,6 @@ export default function Dashboard() {
   const [todayItems, setTodayItems] = useState([])
   const [memos, setMemos] = useState([])
   const [unreadAnns, setUnreadAnns] = useState([])
-  const [recentActivity, setRecentActivity] = useState([])
-  const [activityProfiles, setActivityProfiles] = useState({})
   const [recentCases, setRecentCases] = useState([])
   const [loading, setLoading] = useState(true)
 
@@ -29,7 +28,7 @@ export default function Dashboard() {
     const dayEnd = new Date(dayStart)
     dayEnd.setDate(dayEnd.getDate() + 1)
 
-    const [schedulesRes, memosRes, anns, reads, actList, caseList] = await Promise.all([
+    const [schedulesRes, memosRes, anns, reads, caseList] = await Promise.all([
       supabase
         .from('schedules')
         .select('*')
@@ -44,22 +43,12 @@ export default function Dashboard() {
         .limit(5),
       listAnnouncements().catch(() => []),
       getMyReadIds(user?.id).catch(() => new Set()),
-      listActivityEvents(5).catch(() => []),
       listRecentCases(5).catch(() => [])
     ])
     setTodayItems(schedulesRes.data ?? [])
     setMemos(memosRes.data ?? [])
-    // 읽지 않은 공지 (최대 3)
     setUnreadAnns((anns ?? []).filter((a) => !reads.has(a.id)).slice(0, 3))
-    setRecentActivity(actList)
     setRecentCases(caseList)
-
-    // 활동자 프로필 조회
-    const uniq = [...new Set(actList.map((e) => e.actor_id).filter(Boolean))]
-    const pmap = {}
-    await Promise.all(uniq.map(async (id) => { pmap[id] = await getProfileShort(id) }))
-    setActivityProfiles(pmap)
-
     setLoading(false)
   }
 
@@ -108,7 +97,37 @@ export default function Dashboard() {
         </section>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
+      {/* ─── 빠른 작업 (Quick Actions) ─── */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+        <QuickAction
+          to="/utilities"
+          icon={Wrench}
+          title="유틸리티"
+          subtitle="모니터링 도구 실행"
+          colorClass="bg-sky-100 text-sky-700"
+          ringClass="hover:border-sky-400"
+        />
+        <QuickAction
+          to="/reports"
+          icon={BarChart3}
+          title="월간 보고서"
+          subtitle="브랜드별 보고서 작성/검토"
+          colorClass="bg-myriad-primary/30 text-myriad-ink"
+          ringClass="hover:border-myriad-primary"
+        />
+        <QuickAction
+          href="https://bpm-admin.myriadip.com"
+          icon={Briefcase}
+          title="BPM"
+          subtitle="브랜드 관리 시스템"
+          colorClass="bg-purple-100 text-purple-700"
+          ringClass="hover:border-purple-400"
+          external
+        />
+      </div>
+
+      {/* ─── 정보 위젯 3종 (오늘 일정 / 최근 메모 / 최근 케이스) ─── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* 오늘의 일정 */}
         <Widget
           icon={CalendarDays}
@@ -215,79 +234,8 @@ export default function Dashboard() {
           </ul>
         </Widget>
       </div>
-
-      {/* 팀 최근 활동 */}
-      {recentActivity.length > 0 && (
-        <div className="bg-white border border-slate-200 rounded-2xl p-5 mb-4">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <Activity size={16} className="text-myriad-ink" />
-              <h2 className="font-semibold text-slate-900">팀 최근 활동</h2>
-            </div>
-            <Link
-              to="/community"
-              className="text-xs text-slate-500 hover:text-myriad-ink flex items-center gap-0.5"
-            >
-              전체 보기 <ChevronRight size={12} />
-            </Link>
-          </div>
-          <ul className="space-y-1.5">
-            {recentActivity.map((ev) => {
-              const p = activityProfiles[ev.actor_id]
-              const actor = p?.full_name || p?.email?.split('@')[0] || '알 수 없음'
-              return (
-                <li key={ev.id} className="text-xs text-slate-700 flex items-start gap-2">
-                  <span className="text-slate-400 shrink-0">·</span>
-                  <span className="flex-1">
-                    <b>{actor}</b>{' '}
-                    <span className="text-slate-600">{eventBrief(ev)}</span>
-                  </span>
-                  <span className="text-[10px] text-slate-400 shrink-0">
-                    {relativeTime(ev.created_at)}
-                  </span>
-                </li>
-              )
-            })}
-          </ul>
-        </div>
-      )}
-
-      {/* 진행 상황 */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-6">
-        <div className="flex items-center gap-2 mb-3">
-          <Activity size={16} className="text-myriad-ink" />
-          <h2 className="font-semibold text-slate-900">진행 상황</h2>
-        </div>
-        <ul className="text-sm text-slate-600 space-y-1.5 list-disc pl-5">
-          <li>Phase 1: 로그인 + 기본 레이아웃 ✅</li>
-          <li>Phase 2: 개인 일정/메모 ✅</li>
-          <li>Phase 3: 유틸리티 허브 (준비 중)</li>
-          <li>Phase 4: 로컬 런처 연동 (준비 중)</li>
-          <li>Phase 5: 팀 커뮤니티 (준비 중)</li>
-        </ul>
-      </div>
     </div>
   )
-}
-
-function eventBrief(ev) {
-  const p = ev.payload || {}
-  switch (ev.event_type) {
-    case 'report_generated': return `${p.brand ?? ''} 보고서 생성`
-    case 'brand_report_status_changed':
-      return `${p.brand ?? ''} 상태 → ${p.to === 'done' ? '완료' : '수정 중'}`
-    case 'report_group_published': return `${p.year_month ?? ''} Drive 발행`
-    case 'announcement_posted': return `공지: ${p.title ?? ''}`
-    case 'utility_executed': return `${p.utility_name ?? '유틸'} 실행`
-    case 'shared_sheet_added': return `공용 시트 "${p.title ?? ''}" 등록`
-    case 'comment_posted': return `${p.brand ?? ''} 보고서에 댓글`
-    case 'comment_resolved': return `${p.brand ?? ''} 보고서 댓글 해결`
-    case 'case_created': return `케이스 "${p.title ?? ''}" 등록 (${p.brand ?? ''})`
-    case 'case_updated': return `케이스 "${p.title ?? ''}" 수정`
-    case 'case_status_changed': return `케이스 "${p.title ?? ''}" 상태 → ${p.status_label ?? p.to ?? ''}`
-    case 'case_comment_posted': return `케이스 "${p.title ?? ''}" 에 댓글`
-    default: return ev.event_type
-  }
 }
 
 function relativeTime(iso) {
@@ -300,6 +248,41 @@ function relativeTime(iso) {
   const day = Math.floor(hr / 24)
   if (day < 7) return `${day}일 전`
   return new Date(iso).toLocaleDateString('ko-KR')
+}
+
+// ─────────────────────────────────────────────────────
+// QuickAction — 대시보드 상단 빠른가기 카드 (내부 라우트 또는 외부 URL)
+// ─────────────────────────────────────────────────────
+function QuickAction({ to, href, icon: Icon, title, subtitle, colorClass, ringClass, external }) {
+  const inner = (
+    <>
+      <div className={`w-12 h-12 rounded-xl ${colorClass} flex items-center justify-center shrink-0`}>
+        <Icon size={22} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1.5">
+          <h3 className="font-bold text-slate-900">{title}</h3>
+          {external && <ExternalLink size={12} className="text-slate-400" />}
+        </div>
+        <p className="text-xs text-slate-500 mt-0.5 truncate">{subtitle}</p>
+      </div>
+      <ChevronRight size={16} className="text-slate-300 shrink-0" />
+    </>
+  )
+  const cls = `bg-white border border-slate-200 ${ringClass} rounded-2xl p-5 transition shadow-sm hover:shadow-md flex items-center gap-4 group`
+
+  if (external && href) {
+    return (
+      <a href={href} target="_blank" rel="noreferrer" className={cls}>
+        {inner}
+      </a>
+    )
+  }
+  return (
+    <Link to={to} className={cls}>
+      {inner}
+    </Link>
+  )
 }
 
 function Widget({ icon: Icon, title, to, children, empty, loading }) {
