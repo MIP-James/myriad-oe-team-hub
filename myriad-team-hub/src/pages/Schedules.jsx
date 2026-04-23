@@ -32,9 +32,54 @@ import ReminderSettingsModal from '../components/ReminderSettingsModal'
 const WEEKDAYS_MON = ['월', '화', '수', '목', '금', '토', '일']
 const pad = (n) => n.toString().padStart(2, '0')
 
-const toInputValue = (iso) => {
+// ── 날짜/시간 헬퍼 (다일 일정 지원) ─────────────────────
+function enumerateDateKeys(startKey, endKey) {
+  if (!startKey) return []
+  const [sy, sm, sd] = startKey.split('-').map(Number)
+  const [ey, em, ed] = (endKey || startKey).split('-').map(Number)
+  const cur = new Date(sy, sm - 1, sd)
+  const last = new Date(ey, em - 1, ed)
+  if (cur > last) return [startKey]
+  const keys = []
+  while (cur <= last) {
+    keys.push(`${cur.getFullYear()}-${pad(cur.getMonth() + 1)}-${pad(cur.getDate())}`)
+    cur.setDate(cur.getDate() + 1)
+  }
+  return keys
+}
+
+function combineDateTime(dateStr, timeHHMM) {
+  const [y, m, d] = dateStr.split('-').map(Number)
+  const [h, mi] = (timeHHMM || '00:00').split(':').map(Number)
+  return new Date(y, m - 1, d, h, mi, 0).toISOString()
+}
+
+function extractTimeHHMM(iso) {
   const d = new Date(iso)
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+function formatDateKeyKorean(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number)
+  const date = new Date(y, m - 1, d)
+  const weekday = ['일', '월', '화', '수', '목', '금', '토'][date.getDay()]
+  return `${m}/${d} (${weekday})`
+}
+
+// 선택한 날짜에 해당하는 일정 표시용 시간 문자열
+function getItemTimeForDay(item, selectedKey) {
+  if (Array.isArray(item.daily_times) && item.daily_times.length > 0) {
+    const row = item.daily_times.find((x) => x.date === selectedKey)
+    if (row) return `${row.starts_at} ~ ${row.ends_at}`
+  }
+  const startKey = dateKey(new Date(item.starts_at))
+  const endKey = item.ends_at ? dateKey(new Date(item.ends_at)) : startKey
+  const s = new Date(item.starts_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
+  const e = item.ends_at ? new Date(item.ends_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : ''
+  if (startKey === endKey) return e ? `${s} ~ ${e}` : s
+  if (selectedKey === startKey) return `${s} 부터`
+  if (selectedKey === endKey) return `~ ${e}`
+  return '종일'
 }
 
 export default function Schedules() {
@@ -156,39 +201,89 @@ export default function Schedules() {
     return map
   }, [items])
 
-  // ─── 일정 (기존) ───────────────────
+  // ─── 일정 (다일 지원) ───────────────────
   function openNew(date) {
-    const start = new Date(date)
-    start.setHours(9, 0, 0, 0)
-    const end = new Date(start)
-    end.setHours(10, 0, 0, 0)
+    const dk = dateKey(date)
     setEditor({
       id: null, title: '', description: '',
-      starts_at: start.toISOString(),
-      ends_at: end.toISOString(),
+      startDate: dk, endDate: dk,
+      dayTimes: { [dk]: { starts: '09:00', ends: '10:00' } },
       visibility: 'private',
       user_id: user.id
     })
     setError(null)
   }
+
   function openEdit(item) {
+    const startDate = dateKey(new Date(item.starts_at))
+    const endDate = item.ends_at ? dateKey(new Date(item.ends_at)) : startDate
+    const dayKeys = enumerateDateKeys(startDate, endDate)
+    const dayTimes = {}
+    if (Array.isArray(item.daily_times) && item.daily_times.length > 0) {
+      for (const row of item.daily_times) {
+        dayTimes[row.date] = { starts: row.starts_at, ends: row.ends_at }
+      }
+    } else if (dayKeys.length === 1) {
+      dayTimes[startDate] = {
+        starts: extractTimeHHMM(item.starts_at),
+        ends: item.ends_at ? extractTimeHHMM(item.ends_at) : '18:00'
+      }
+    } else {
+      for (let i = 0; i < dayKeys.length; i++) {
+        if (i === 0) {
+          dayTimes[dayKeys[i]] = { starts: extractTimeHHMM(item.starts_at), ends: '18:00' }
+        } else if (i === dayKeys.length - 1) {
+          dayTimes[dayKeys[i]] = {
+            starts: '09:00',
+            ends: item.ends_at ? extractTimeHHMM(item.ends_at) : '18:00'
+          }
+        } else {
+          dayTimes[dayKeys[i]] = { starts: '09:00', ends: '18:00' }
+        }
+      }
+    }
+    // 범위 내 빈 슬롯 채우기
+    for (const k of dayKeys) {
+      if (!dayTimes[k]) dayTimes[k] = { starts: '09:00', ends: '18:00' }
+    }
     setEditor({
       id: item.id, title: item.title, description: item.description ?? '',
-      starts_at: item.starts_at, ends_at: item.ends_at,
+      startDate, endDate, dayTimes,
       visibility: item.visibility, user_id: item.user_id
     })
     setError(null)
   }
+
   async function saveSchedule() {
     if (!editor.title.trim()) { setError('제목을 입력하세요.'); return }
+    const dayKeys = enumerateDateKeys(editor.startDate, editor.endDate)
+    if (dayKeys.length === 0) { setError('날짜 범위가 올바르지 않습니다.'); return }
+    if (editor.startDate > editor.endDate) { setError('종료일이 시작일보다 빠릅니다.'); return }
+
+    // 범위 내 슬롯 확정 + 유효성
+    const dayTimes = {}
+    for (const k of dayKeys) {
+      const slot = editor.dayTimes[k] || { starts: '09:00', ends: '18:00' }
+      if (slot.starts >= slot.ends) {
+        setError(`${formatDateKeyKorean(k)}: 시작 시간이 종료 시간보다 늦거나 같습니다.`)
+        return
+      }
+      dayTimes[k] = slot
+    }
+
     setSaving(true); setError(null)
+    const firstK = dayKeys[0]
+    const lastK = dayKeys[dayKeys.length - 1]
     const payload = {
       title: editor.title.trim(),
       description: editor.description?.trim() || null,
-      starts_at: editor.starts_at,
-      ends_at: editor.ends_at || null,
+      starts_at: combineDateTime(firstK, dayTimes[firstK].starts),
+      ends_at: combineDateTime(lastK, dayTimes[lastK].ends),
       visibility: editor.visibility,
-      user_id: user.id
+      user_id: user.id,
+      daily_times: dayKeys.length > 1
+        ? dayKeys.map((k) => ({ date: k, starts_at: dayTimes[k].starts, ends_at: dayTimes[k].ends }))
+        : null
     }
     const { error } = editor.id
       ? await supabase.from('schedules').update(payload).eq('id', editor.id)
@@ -446,8 +541,7 @@ export default function Schedules() {
                         <span className="font-semibold text-slate-900 truncate">{it.title}</span>
                       </div>
                       <div className="text-xs text-slate-500 mt-1">
-                        {new Date(it.starts_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
-                        {it.ends_at && ' ~ ' + new Date(it.ends_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
+                        {getItemTimeForDay(it, selectedDay)}
                       </div>
                       {it.description && (
                         <div className="text-xs text-slate-600 mt-1 whitespace-pre-wrap line-clamp-2">{it.description}</div>
@@ -647,10 +741,34 @@ function ReminderButton({ settings, onClick }) {
 // ─────────────────────────────────────────────────────
 
 function ScheduleEditor({ editor, setEditor, isMine, saving, error, onSave, onDelete, onClose }) {
+  const dayKeys = enumerateDateKeys(editor.startDate, editor.endDate)
+  const isMultiDay = dayKeys.length > 1
+  const singleKey = dayKeys[0] || editor.startDate
+
+  // 시작일/종료일 변경 시 dayTimes 범위 재조정 (기존 값 유지, 새 날짜는 09:00-18:00, 범위 밖은 제거)
+  function updateRange(nextStart, nextEnd) {
+    let start = nextStart || editor.startDate
+    let end = nextEnd || editor.endDate
+    if (start > end) end = start  // 시작일이 종료일보다 뒤로 가면 종료일을 시작일로 맞춤
+    const keys = enumerateDateKeys(start, end)
+    const nextDayTimes = {}
+    for (const k of keys) {
+      nextDayTimes[k] = editor.dayTimes[k] || { starts: '09:00', ends: '18:00' }
+    }
+    setEditor({ ...editor, startDate: start, endDate: end, dayTimes: nextDayTimes })
+  }
+
+  function updateDayTime(k, field, value) {
+    setEditor({
+      ...editor,
+      dayTimes: { ...editor.dayTimes, [k]: { ...editor.dayTimes[k], [field]: value } }
+    })
+  }
+
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
-        <div className="px-6 py-4 border-b border-slate-200 flex items-center">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[92vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="px-6 py-4 border-b border-slate-200 flex items-center shrink-0">
           <h2 className="font-bold text-slate-900">
             {editor.id ? (isMine ? '일정 편집' : '일정 보기') : '새 일정'}
           </h2>
@@ -659,7 +777,7 @@ function ScheduleEditor({ editor, setEditor, isMine, saving, error, onSave, onDe
             <X size={18} />
           </button>
         </div>
-        <div className="p-6 space-y-4">
+        <div className="p-6 space-y-4 overflow-auto flex-1">
           <div>
             <label className="text-xs font-semibold text-slate-600 block mb-1">제목 *</label>
             <input
@@ -682,28 +800,94 @@ function ScheduleEditor({ editor, setEditor, isMine, saving, error, onSave, onDe
               className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-myriad-primary/40 resize-none disabled:bg-slate-50 disabled:text-slate-500"
             />
           </div>
+
+          {/* 시작일 / 종료일 */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-semibold text-slate-600 block mb-1">시작 *</label>
+              <label className="text-xs font-semibold text-slate-600 block mb-1">시작일 *</label>
               <input
-                type="datetime-local"
-                value={toInputValue(editor.starts_at)}
-                onChange={(e) => setEditor({ ...editor, starts_at: new Date(e.target.value).toISOString() })}
+                type="date"
+                value={editor.startDate}
+                onChange={(e) => updateRange(e.target.value, null)}
                 disabled={!isMine}
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-myriad-primary/40 disabled:bg-slate-50"
               />
             </div>
             <div>
-              <label className="text-xs font-semibold text-slate-600 block mb-1">종료</label>
+              <label className="text-xs font-semibold text-slate-600 block mb-1">종료일 *</label>
               <input
-                type="datetime-local"
-                value={editor.ends_at ? toInputValue(editor.ends_at) : ''}
-                onChange={(e) => setEditor({ ...editor, ends_at: e.target.value ? new Date(e.target.value).toISOString() : null })}
+                type="date"
+                value={editor.endDate}
+                onChange={(e) => updateRange(null, e.target.value)}
                 disabled={!isMine}
+                min={editor.startDate}
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-myriad-primary/40 disabled:bg-slate-50"
               />
             </div>
           </div>
+
+          {/* 단일 날짜: 시간 한 쌍 / 다일: 날짜별 시간 행 */}
+          {!isMultiDay ? (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-semibold text-slate-600 block mb-1">시작 시간</label>
+                <input
+                  type="time"
+                  value={editor.dayTimes[singleKey]?.starts || '09:00'}
+                  onChange={(e) => updateDayTime(singleKey, 'starts', e.target.value)}
+                  disabled={!isMine}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-myriad-primary/40 disabled:bg-slate-50"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-600 block mb-1">종료 시간</label>
+                <input
+                  type="time"
+                  value={editor.dayTimes[singleKey]?.ends || '18:00'}
+                  onChange={(e) => updateDayTime(singleKey, 'ends', e.target.value)}
+                  disabled={!isMine}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-myriad-primary/40 disabled:bg-slate-50"
+                />
+              </div>
+            </div>
+          ) : (
+            <div>
+              <label className="text-xs font-semibold text-slate-600 block mb-2">
+                날짜별 시간 ({dayKeys.length}일)
+              </label>
+              <div className="border border-slate-200 rounded-lg divide-y divide-slate-100 max-h-64 overflow-auto">
+                {dayKeys.map((k) => {
+                  const slot = editor.dayTimes[k] || { starts: '09:00', ends: '18:00' }
+                  return (
+                    <div key={k} className="flex items-center gap-2 px-3 py-2 hover:bg-slate-50">
+                      <div className="w-20 text-xs font-semibold text-slate-700 shrink-0">
+                        {formatDateKeyKorean(k)}
+                      </div>
+                      <input
+                        type="time"
+                        value={slot.starts}
+                        onChange={(e) => updateDayTime(k, 'starts', e.target.value)}
+                        disabled={!isMine}
+                        className="w-24 px-2 py-1 border border-slate-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-myriad-primary/40 disabled:bg-slate-50"
+                      />
+                      <span className="text-slate-400">~</span>
+                      <input
+                        type="time"
+                        value={slot.ends}
+                        onChange={(e) => updateDayTime(k, 'ends', e.target.value)}
+                        disabled={!isMine}
+                        className="w-24 px-2 py-1 border border-slate-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-myriad-primary/40 disabled:bg-slate-50"
+                      />
+                    </div>
+                  )
+                })}
+              </div>
+              <p className="text-[11px] text-slate-400 mt-1.5">
+                💡 각 날짜마다 시간이 다르게 잡혀요. 초기값은 09:00~18:00 — 필요한 날만 수정하세요.
+              </p>
+            </div>
+          )}
+
           <div>
             <label className="text-xs font-semibold text-slate-600 block mb-2">공개 범위</label>
             <div className="flex gap-2">
@@ -738,7 +922,7 @@ function ScheduleEditor({ editor, setEditor, isMine, saving, error, onSave, onDe
           )}
           {error && <div className="text-xs text-rose-600">{error}</div>}
         </div>
-        <div className="px-6 py-4 border-t border-slate-200 flex items-center">
+        <div className="px-6 py-4 border-t border-slate-200 flex items-center shrink-0">
           {editor.id && isMine && (
             <button onClick={onDelete} className="text-rose-600 hover:bg-rose-50 px-3 py-2 rounded-lg flex items-center gap-2 text-sm">
               <Trash2 size={14} /> 삭제
