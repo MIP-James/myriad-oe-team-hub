@@ -12,7 +12,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
   CalendarDays, ChevronLeft, ChevronRight, Plus, X, Trash2, Save, Loader2,
-  Lock, Users as UsersIcon, Bell, BellOff, NotebookPen, ChevronRight as Chevron
+  Lock, Users as UsersIcon, Bell, BellOff, NotebookPen, ChevronRight as Chevron,
+  CheckCircle2
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
@@ -223,6 +224,23 @@ export default function Schedules() {
   const selectedWeeklyPlan = weeklyPlans[`${selectedWeekInfo.year}-${selectedWeekInfo.week}`]
   const selectedWeekStart = useMemo(() => isoWeekStart(selectedDate), [selectedDate])
   const selectedWeekEnd = useMemo(() => isoWeekEnd(selectedDate), [selectedDate])
+
+  // 이번 주 한 일 = 선택한 주의 월~일 daily_records 누적
+  const selectedWeekDoneByDay = useMemo(() => {
+    const out = []
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(selectedWeekStart)
+      d.setDate(selectedWeekStart.getDate() + i)
+      const k = dateKey(d)
+      const rec = dailyRecords[k]
+      if (rec?.items?.length > 0) out.push({ date: d, key: k, items: rec.items })
+    }
+    return out
+  }, [selectedWeekStart, dailyRecords])
+  const selectedWeekDoneCount = useMemo(
+    () => selectedWeekDoneByDay.reduce((sum, g) => sum + g.items.length, 0),
+    [selectedWeekDoneByDay]
+  )
 
   return (
     <div className="p-8 max-w-7xl mx-auto">
@@ -469,6 +487,56 @@ export default function Schedules() {
             ) : (
               <p className="text-sm text-slate-400">
                 아직 계획 없음. 이번 주 할 일을 가볍게 적어두세요.
+              </p>
+            )}
+          </div>
+
+          {/* 이번 주 한 일 (선택한 주의 일일 기록 누적) */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-5">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-bold text-slate-900 flex items-center gap-1.5">
+                <CheckCircle2 size={14} className="text-teal-700" />
+                이번 주 한 일
+              </h3>
+              {selectedWeekDoneCount > 0 && (
+                <span className="text-[11px] font-semibold text-teal-800 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded-full">
+                  총 {selectedWeekDoneCount}개
+                </span>
+              )}
+            </div>
+            <div className="text-[11px] text-slate-400 mb-2">
+              Week {selectedWeekInfo.week} · {formatMD(selectedWeekStart)} ~ {formatMD(selectedWeekEnd)} 누적
+            </div>
+            {selectedWeekDoneByDay.length > 0 ? (
+              <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+                {selectedWeekDoneByDay.map((g) => {
+                  const isSelectedDay = g.key === selectedDay
+                  return (
+                    <div key={g.key}>
+                      <button
+                        onClick={() => { setSelectedDay(g.key); openDailyRecord(g.date) }}
+                        className={`w-full text-left text-[11px] font-bold mb-1 flex items-center gap-1.5 px-1.5 py-0.5 rounded transition ${
+                          isSelectedDay
+                            ? 'text-teal-800 bg-teal-50'
+                            : 'text-slate-500 hover:text-teal-800 hover:bg-slate-50'
+                        }`}
+                      >
+                        <span>{WEEKDAYS_MON[g.date.getDay() === 0 ? 6 : g.date.getDay() - 1]}</span>
+                        <span className="text-slate-400">{formatMD(g.date)}</span>
+                        <span className="text-slate-400 font-medium">· {g.items.length}개</span>
+                      </button>
+                      <ol className="space-y-1 list-decimal list-inside text-sm text-slate-700 pl-1">
+                        {g.items.map((it, i) => (
+                          <li key={i} className="leading-relaxed">{it.text}</li>
+                        ))}
+                      </ol>
+                    </div>
+                  )
+                })}
+              </div>
+            ) : (
+              <p className="text-sm text-slate-400">
+                아직 이번 주 기록 없음. '오늘 한 일'을 채우면 여기 누적돼요.
               </p>
             )}
           </div>
