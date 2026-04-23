@@ -46,6 +46,39 @@ def _setup_console_encoding():
 _setup_console_encoding()
 
 
+def _hide_internal_dir():
+    """onedir 런처의 _internal 폴더를 숨김 속성 처리.
+
+    빌드 시 attrib +h 해도 ZIP 포맷이 Windows hidden attribute 를 보존하지
+    않아 실무자 PC 에서 압축 해제 후 가시 상태로 돌아옴. 매 실행 시 자가
+    검사해서 가시 상태면 숨김 부여 (idempotent — 이미 숨김이면 no-op).
+
+    관리자 권한 불필요, 0.x 밀리초급 호출.
+    """
+    if sys.platform != "win32" or not getattr(sys, "frozen", False):
+        return
+    try:
+        import ctypes
+        internal = Path(sys.executable).resolve().parent / "_internal"
+        if not internal.exists():
+            return
+        FILE_ATTRIBUTE_HIDDEN = 0x02
+        INVALID_FILE_ATTRIBUTES = 0xFFFFFFFF
+        GetAttrs = ctypes.windll.kernel32.GetFileAttributesW
+        SetAttrs = ctypes.windll.kernel32.SetFileAttributesW
+        attrs = GetAttrs(str(internal))
+        if attrs == INVALID_FILE_ATTRIBUTES:
+            return
+        if not (attrs & FILE_ATTRIBUTE_HIDDEN):
+            SetAttrs(str(internal), attrs | FILE_ATTRIBUTE_HIDDEN)
+    except Exception:
+        # 숨김 실패해도 런처 기능엔 영향 없음 — 조용히 패스
+        pass
+
+
+_hide_internal_dir()
+
+
 try:
     from supabase import create_client, Client
     import pystray
