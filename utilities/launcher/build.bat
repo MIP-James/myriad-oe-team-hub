@@ -46,14 +46,33 @@ if errorlevel 1 goto err_imports
 python make_icon.py
 
 echo.
-echo Step 5/6: Build MyriadLauncher.exe (tray, no console)
+echo Step 5/6: Build MyriadLauncher (tray, onedir for fast startup)
+REM onedir build: creates dist\MyriadLauncher\MyriadLauncher.exe + dist\MyriadLauncher\_internal\
 python -m PyInstaller --clean --noconfirm MyriadLauncher.spec
 if errorlevel 1 goto err_build_launcher
-if not exist dist\MyriadLauncher.exe goto err_missing_launcher
-echo   OK: dist\MyriadLauncher.exe
+if not exist dist\MyriadLauncher\MyriadLauncher.exe goto err_missing_launcher
+
+REM Flatten: move exe + _internal up one level to dist\ root (matches prior UX)
+if exist dist\_internal (
+  echo [flatten] removing stale dist\_internal
+  rmdir /S /Q dist\_internal
+)
+if exist dist\MyriadLauncher.exe (
+  del /Q dist\MyriadLauncher.exe
+)
+echo [flatten] moving dist\MyriadLauncher\MyriadLauncher.exe -> dist\MyriadLauncher.exe
+move /Y dist\MyriadLauncher\MyriadLauncher.exe dist\MyriadLauncher.exe > nul
+echo [flatten] moving dist\MyriadLauncher\_internal -> dist\_internal
+move /Y dist\MyriadLauncher\_internal dist\_internal > nul
+rmdir dist\MyriadLauncher
+echo   OK: dist\MyriadLauncher.exe + dist\_internal\
+
+REM Hide _internal folder so end users don't see the clutter
+attrib +h dist\_internal
+echo [hide] dist\_internal is now hidden
 
 echo.
-echo Step 6/6: Build MyriadSetup.exe (console setup)
+echo Step 6/6: Build MyriadSetup.exe (console setup, onefile - runs once)
 python -m PyInstaller --clean --noconfirm MyriadSetup.spec
 if errorlevel 1 goto err_build_setup
 if not exist dist\MyriadSetup.exe goto err_missing_setup

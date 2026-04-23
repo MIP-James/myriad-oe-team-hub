@@ -31,6 +31,7 @@ DIST_DIR = REPO_ROOT / "utilities" / "launcher" / "dist"
 RELEASE_TAG = "launcher-latest"
 ZIP_NAME = "MyriadLauncher.zip"
 REQUIRED_EXES = ["MyriadLauncher.exe", "MyriadSetup.exe"]
+REQUIRED_DIRS = ["_internal"]  # onedir 빌드의 라이브러리 폴더 (build.bat 이 숨김 처리)
 
 
 def _setup_console_encoding():
@@ -70,21 +71,47 @@ def verify_dist() -> list[Path]:
             missing.append(fn)
         else:
             found.append(p)
+    for dn in REQUIRED_DIRS:
+        p = DIST_DIR / dn
+        if not p.is_dir():
+            missing.append(dn + "/")
+        else:
+            found.append(p)
     if missing:
         raise SystemExit(
-            f"[오류] 다음 파일이 없습니다 — 먼저 build.bat 을 완료하세요:\n"
-            + "\n".join(f"  - {DIST_DIR / m}" for m in missing)
+            f"[오류] 다음 파일/폴더가 없습니다 — 먼저 build.bat 을 완료하세요:\n"
+            + "\n".join(f"  - {DIST_DIR / m.rstrip('/')}" for m in missing)
         )
     return found
 
 
 def make_zip(sources: list[Path], output: Path) -> None:
+    """파일은 최상위에, 디렉토리는 이름 유지하며 재귀 포함.
+
+    예) sources = [dist/MyriadLauncher.exe, dist/MyriadSetup.exe, dist/_internal/]
+        → ZIP 구조:
+           MyriadLauncher.exe
+           MyriadSetup.exe
+           _internal/base_library.zip
+           _internal/python3XX.dll
+           ...
+    """
     print(f"  ZIP 생성: {output.name}")
+    file_count = 0
     with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED, allowZip64=True) as zf:
         for src in sources:
-            zf.write(src, arcname=src.name)
+            if src.is_file():
+                zf.write(src, arcname=src.name)
+                file_count += 1
+            elif src.is_dir():
+                # 디렉토리 이름 자체는 유지 (예: _internal/...)
+                for sub in src.rglob("*"):
+                    if sub.is_file():
+                        rel = sub.relative_to(src.parent)
+                        zf.write(sub, arcname=str(rel))
+                        file_count += 1
     size_mb = output.stat().st_size / 1024 / 1024
-    print(f"  ✓ {size_mb:.1f} MB ({len(sources)} files)")
+    print(f"  ✓ {size_mb:.1f} MB ({file_count} files)")
 
 
 def gh_check() -> None:
