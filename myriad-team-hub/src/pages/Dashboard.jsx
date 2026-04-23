@@ -3,24 +3,37 @@ import { Link } from 'react-router-dom'
 import {
   CalendarDays, StickyNote, ChevronRight, Pin, Lock, Users as UsersIcon,
   Loader2, Megaphone, AlertCircle, AlertTriangle, Info, Briefcase, Tag as TagIcon,
-  Wrench, BarChart3, ExternalLink
+  Wrench, BarChart3, ExternalLink, Bookmark
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { listAnnouncements, getMyReadIds } from '../lib/community'
 import { listRecentCases, STATUS_LABELS, STATUS_COLORS } from '../lib/cases'
+import { listActiveShortcuts, getColorClasses } from '../lib/externalShortcuts'
 
 export default function Dashboard() {
-  const { user } = useAuth()
+  const { user, isAdmin } = useAuth()
   const name = user?.user_metadata?.full_name || user?.email?.split('@')[0] || ''
 
   const [todayItems, setTodayItems] = useState([])
   const [memos, setMemos] = useState([])
   const [unreadAnns, setUnreadAnns] = useState([])
   const [recentCases, setRecentCases] = useState([])
+  const [shortcuts, setShortcuts] = useState([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => { load() }, [user?.id])
+
+  useEffect(() => {
+    // 외부 바로가기 realtime — 관리자가 추가/수정 시 즉시 반영
+    const ch = supabase
+      .channel('ext-shortcuts')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'external_shortcuts' }, () => {
+        listActiveShortcuts().then(setShortcuts).catch(() => {})
+      })
+      .subscribe()
+    return () => supabase.removeChannel(ch)
+  }, [])
 
   async function load() {
     const now = new Date()
@@ -28,7 +41,7 @@ export default function Dashboard() {
     const dayEnd = new Date(dayStart)
     dayEnd.setDate(dayEnd.getDate() + 1)
 
-    const [schedulesRes, memosRes, anns, reads, caseList] = await Promise.all([
+    const [schedulesRes, memosRes, anns, reads, caseList, sc] = await Promise.all([
       supabase
         .from('schedules')
         .select('*')
@@ -43,12 +56,14 @@ export default function Dashboard() {
         .limit(5),
       listAnnouncements().catch(() => []),
       getMyReadIds(user?.id).catch(() => new Set()),
-      listRecentCases(5).catch(() => [])
+      listRecentCases(5).catch(() => []),
+      listActiveShortcuts().catch(() => [])
     ])
     setTodayItems(schedulesRes.data ?? [])
     setMemos(memosRes.data ?? [])
     setUnreadAnns((anns ?? []).filter((a) => !reads.has(a.id)).slice(0, 3))
     setRecentCases(caseList)
+    setShortcuts(sc)
     setLoading(false)
   }
 
@@ -97,38 +112,8 @@ export default function Dashboard() {
         </section>
       )}
 
-      {/* ─── 빠른 작업 (Quick Actions) ─── */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-        <QuickAction
-          to="/utilities"
-          icon={Wrench}
-          title="유틸리티"
-          subtitle="모니터링 도구 실행"
-          colorClass="bg-sky-100 text-sky-700"
-          ringClass="hover:border-sky-400"
-        />
-        <QuickAction
-          to="/reports"
-          icon={BarChart3}
-          title="월간 보고서"
-          subtitle="브랜드별 보고서 작성/검토"
-          colorClass="bg-myriad-primary/30 text-myriad-ink"
-          ringClass="hover:border-myriad-primary"
-        />
-        <QuickAction
-          href="https://bpm-admin.myriadip.com"
-          icon={Briefcase}
-          title="BPM"
-          subtitle="브랜드 관리 시스템"
-          colorClass="bg-purple-100 text-purple-700"
-          ringClass="hover:border-purple-400"
-          external
-        />
-      </div>
-
-      {/* ─── 정보 위젯 3종 (오늘 일정 / 최근 메모 / 최근 케이스) ─── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* 오늘의 일정 */}
+      {/* ─── 1. 정보 위젯 3종 (오늘 일정 / 최근 메모 / 최근 케이스) ─── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
         <Widget
           icon={CalendarDays}
           title="오늘의 일정"
@@ -143,10 +128,7 @@ export default function Dashboard() {
                 className="flex items-start gap-3 p-2 rounded-lg hover:bg-slate-50 transition"
               >
                 <div className="shrink-0 text-xs font-semibold text-slate-600 bg-slate-100 px-2 py-1 rounded w-16 text-center">
-                  {new Date(it.starts_at).toLocaleTimeString('ko-KR', {
-                    hour: '2-digit',
-                    minute: '2-digit'
-                  })}
+                  {new Date(it.starts_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5">
@@ -158,9 +140,7 @@ export default function Dashboard() {
                     <span className="font-medium text-slate-900 truncate">{it.title}</span>
                   </div>
                   {it.description && (
-                    <div className="text-xs text-slate-500 mt-0.5 line-clamp-1">
-                      {it.description}
-                    </div>
+                    <div className="text-xs text-slate-500 mt-0.5 line-clamp-1">{it.description}</div>
                   )}
                 </div>
               </li>
@@ -168,7 +148,6 @@ export default function Dashboard() {
           </ul>
         </Widget>
 
-        {/* 메모 */}
         <Widget
           icon={StickyNote}
           title="최근 메모"
@@ -179,14 +158,9 @@ export default function Dashboard() {
           <ul className="space-y-2">
             {memos.map((m) => (
               <li key={m.id}>
-                <Link
-                  to="/memos"
-                  className="block p-2 rounded-lg hover:bg-slate-50 transition"
-                >
+                <Link to="/memos" className="block p-2 rounded-lg hover:bg-slate-50 transition">
                   <div className="flex items-center gap-1.5">
-                    {m.pinned && (
-                      <Pin size={11} className="text-amber-500 fill-amber-400 shrink-0" />
-                    )}
+                    {m.pinned && <Pin size={11} className="text-amber-500 fill-amber-400 shrink-0" />}
                     <span className="font-medium text-slate-900 truncate">
                       {m.title || '(제목 없음)'}
                     </span>
@@ -200,7 +174,6 @@ export default function Dashboard() {
           </ul>
         </Widget>
 
-        {/* 최근 케이스 */}
         <Widget
           icon={Briefcase}
           title="최근 케이스"
@@ -211,10 +184,7 @@ export default function Dashboard() {
           <ul className="space-y-2">
             {recentCases.map((c) => (
               <li key={c.id}>
-                <Link
-                  to={`/community/cases/${c.id}`}
-                  className="block p-2 rounded-lg hover:bg-slate-50 transition"
-                >
+                <Link to={`/community/cases/${c.id}`} className="block p-2 rounded-lg hover:bg-slate-50 transition">
                   <div className="flex items-center gap-1.5">
                     <span className="font-medium text-slate-900 truncate flex-1">{c.title}</span>
                     <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full shrink-0 ${STATUS_COLORS[c.status] || 'bg-slate-100 text-slate-600'}`}>
@@ -234,6 +204,42 @@ export default function Dashboard() {
           </ul>
         </Widget>
       </div>
+
+      {/* ─── 2. 빠른 작업 — 큰 덩어리 3종 (유틸 / 보고서 / BPM) ─── */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <BigQuickAction
+          to="/utilities"
+          icon={Wrench}
+          title="유틸리티"
+          subtitle="모니터링 도구 실행"
+          colorClass="bg-sky-100 text-sky-700"
+          ringClass="hover:border-sky-400"
+        />
+        <BigQuickAction
+          to="/reports"
+          icon={BarChart3}
+          title="월간 동향 보고서"
+          subtitle="브랜드별 보고서 작성/검토"
+          colorClass="bg-myriad-primary/30 text-myriad-ink"
+          ringClass="hover:border-myriad-primary"
+        />
+        <BigQuickAction
+          href="https://bpm-admin.myriadip.com"
+          icon={Briefcase}
+          title="BPM"
+          subtitle="어드민 웹 페이지 바로가기"
+          colorClass="bg-purple-100 text-purple-700"
+          ringClass="hover:border-purple-400"
+          external
+        />
+      </div>
+
+      {/* ─── 3. 외부 바로가기 (관리자가 등록) ─── */}
+      <ExternalShortcutsSection
+        shortcuts={shortcuts}
+        loading={loading}
+        isAdmin={isAdmin}
+      />
     </div>
   )
 }
@@ -251,37 +257,101 @@ function relativeTime(iso) {
 }
 
 // ─────────────────────────────────────────────────────
-// QuickAction — 대시보드 상단 빠른가기 카드 (내부 라우트 또는 외부 URL)
+// 큰 덩어리 빠른 작업 카드 (유틸/보고서/BPM)
 // ─────────────────────────────────────────────────────
-function QuickAction({ to, href, icon: Icon, title, subtitle, colorClass, ringClass, external }) {
+function BigQuickAction({ to, href, icon: Icon, title, subtitle, colorClass, ringClass, external }) {
   const inner = (
     <>
-      <div className={`w-12 h-12 rounded-xl ${colorClass} flex items-center justify-center shrink-0`}>
-        <Icon size={22} />
+      <div className={`w-16 h-16 rounded-2xl ${colorClass} flex items-center justify-center shrink-0`}>
+        <Icon size={28} />
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
-          <h3 className="font-bold text-slate-900">{title}</h3>
-          {external && <ExternalLink size={12} className="text-slate-400" />}
+          <h3 className="font-bold text-slate-900 text-lg">{title}</h3>
+          {external && <ExternalLink size={13} className="text-slate-400" />}
         </div>
-        <p className="text-xs text-slate-500 mt-0.5 truncate">{subtitle}</p>
+        <p className="text-sm text-slate-500 mt-1">{subtitle}</p>
       </div>
-      <ChevronRight size={16} className="text-slate-300 shrink-0" />
+      <ChevronRight size={18} className="text-slate-300 shrink-0" />
     </>
   )
-  const cls = `bg-white border border-slate-200 ${ringClass} rounded-2xl p-5 transition shadow-sm hover:shadow-md flex items-center gap-4 group`
+  const cls = `bg-white border-2 border-slate-200 ${ringClass} rounded-2xl p-6 transition shadow-sm hover:shadow-lg flex items-center gap-5 group min-h-[110px]`
 
   if (external && href) {
-    return (
-      <a href={href} target="_blank" rel="noreferrer" className={cls}>
-        {inner}
-      </a>
-    )
+    return <a href={href} target="_blank" rel="noreferrer" className={cls}>{inner}</a>
   }
+  return <Link to={to} className={cls}>{inner}</Link>
+}
+
+// ─────────────────────────────────────────────────────
+// 외부 바로가기 그리드 — 관리자가 추가, 모두 사용
+// ─────────────────────────────────────────────────────
+function ExternalShortcutsSection({ shortcuts, loading, isAdmin }) {
+  if (loading) return null
+  if (shortcuts.length === 0 && !isAdmin) return null
+
   return (
-    <Link to={to} className={cls}>
-      {inner}
-    </Link>
+    <section>
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="font-semibold text-slate-700 flex items-center gap-2">
+          <Bookmark size={16} className="text-myriad-ink" />
+          외부 바로가기
+        </h2>
+        {isAdmin && (
+          <Link
+            to="/admin/shortcuts"
+            className="text-xs text-slate-500 hover:text-myriad-ink font-semibold"
+          >
+            관리 →
+          </Link>
+        )}
+      </div>
+
+      {shortcuts.length === 0 ? (
+        <div className="bg-white border border-dashed border-slate-300 rounded-2xl p-8 text-center">
+          <Bookmark size={28} className="mx-auto mb-2 text-slate-300" />
+          <p className="text-sm text-slate-500">
+            아직 등록된 바로가기가 없습니다.
+          </p>
+          {isAdmin && (
+            <Link
+              to="/admin/shortcuts"
+              className="mt-3 inline-flex items-center gap-1.5 text-xs bg-myriad-primary hover:bg-myriad-primaryDark text-myriad-ink font-semibold px-3 py-1.5 rounded-lg"
+            >
+              + 첫 바로가기 등록
+            </Link>
+          )}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          {shortcuts.map((s) => {
+            const cc = getColorClasses(s.color)
+            return (
+              <a
+                key={s.id}
+                href={s.url}
+                target="_blank"
+                rel="noreferrer"
+                className={`bg-white border border-slate-200 ${cc.border} rounded-xl p-4 transition shadow-sm hover:shadow-md flex items-center gap-3 group`}
+              >
+                <div className={`w-11 h-11 rounded-lg ${cc.icon} flex items-center justify-center text-xl shrink-0`}>
+                  {s.icon || '🔗'}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-bold text-slate-900 truncate">{s.name}</span>
+                    <ExternalLink size={11} className="text-slate-400 shrink-0" />
+                  </div>
+                  {s.description && (
+                    <p className="text-xs text-slate-500 mt-0.5 truncate">{s.description}</p>
+                  )}
+                </div>
+              </a>
+            )
+          })}
+        </div>
+      )}
+    </section>
   )
 }
 

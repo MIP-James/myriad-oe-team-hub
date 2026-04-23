@@ -8,7 +8,7 @@ const BASE_NAV = [
   { to: '/memos', label: '메모', icon: StickyNote },
   { to: '/schedules', label: '일정', icon: CalendarDays },
   { to: '/sheets', label: '공용 시트', icon: FileSpreadsheet },
-  { to: '/reports', label: '월간 보고서', icon: BarChart3 },
+  { to: '/reports', label: '월간 동향 보고서', icon: BarChart3 },
   { to: '/utilities', label: '유틸리티', icon: Wrench },
   { to: '/launcher', label: '내 런처', icon: Cpu },
   { to: '/jobs', label: '작업 이력', icon: History },

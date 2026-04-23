@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { ShieldCheck, Wrench, FileSpreadsheet, Users, ChevronRight } from 'lucide-react'
+import { ShieldCheck, Wrench, FileSpreadsheet, Users, ExternalLink, ChevronRight } from 'lucide-react'
 
 const SECTIONS = [
   {
@@ -14,6 +14,13 @@ const SECTIONS = [
     label: '공용 시트 관리',
     desc: '팀이 함께 쓰는 Google Sheets 등록 / 편집',
     icon: FileSpreadsheet,
+    ready: true
+  },
+  {
+    to: '/admin/shortcuts',
+    label: '외부 바로가기 관리',
+    desc: '대시보드 하단 외부 사이트 바로가기 (KIPRIS 등) 등록',
+    icon: ExternalLink,
     ready: true
   },
   {
