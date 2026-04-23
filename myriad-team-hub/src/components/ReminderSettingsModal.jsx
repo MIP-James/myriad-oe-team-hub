@@ -104,10 +104,13 @@ export default function ReminderSettingsModal({ onClose, onSaved }) {
                 <span className="text-sm font-semibold text-slate-700">알림 활성화</span>
               </div>
               <button
+                type="button"
                 onClick={() => setEnabled((v) => !v)}
-                className={`relative w-10 h-6 rounded-full transition ${enabled ? 'bg-myriad-primary' : 'bg-slate-300'}`}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${enabled ? 'bg-myriad-primary' : 'bg-slate-300'}`}
               >
-                <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${enabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${enabled ? 'translate-x-6' : 'translate-x-1'}`}
+                />
               </button>
             </div>
 

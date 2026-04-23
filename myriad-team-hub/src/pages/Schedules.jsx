@@ -218,6 +218,11 @@ export default function Schedules() {
     return new Date(y, m - 1, d)
   }, [selectedDay])
   const selectedDailyRecord = dailyRecords[selectedDay]
+  // 선택한 날짜가 속한 주의 주간 계획
+  const selectedWeekInfo = useMemo(() => isoWeekOf(selectedDate), [selectedDate])
+  const selectedWeeklyPlan = weeklyPlans[`${selectedWeekInfo.year}-${selectedWeekInfo.week}`]
+  const selectedWeekStart = useMemo(() => isoWeekStart(selectedDate), [selectedDate])
+  const selectedWeekEnd = useMemo(() => isoWeekEnd(selectedDate), [selectedDate])
 
   return (
     <div className="p-8 max-w-7xl mx-auto">
@@ -289,21 +294,29 @@ export default function Schedules() {
               const wEnd = rowDays[6]
               return (
                 <div key={rowIdx}>
-                  {/* 주차 띠 */}
+                  {/* 주차 띠 — 밝은 myriad-primary 톤 */}
                   <button
                     onClick={() => openWeeklyPlan(rowDays)}
-                    className="w-full px-4 py-1.5 bg-slate-50/80 hover:bg-amber-50 transition border-b border-slate-100 flex items-center gap-2 text-xs text-left group"
+                    className={`w-full px-4 py-2 transition border-b border-amber-100 flex items-center gap-2 text-xs text-left group ${
+                      planCount > 0
+                        ? 'bg-myriad-primary/15 hover:bg-myriad-primary/25'
+                        : 'bg-amber-50/60 hover:bg-myriad-primary/15'
+                    }`}
                   >
-                    <NotebookPen size={11} className="text-slate-400 group-hover:text-myriad-ink" />
-                    <span className="font-semibold text-slate-700">Week {week}</span>
-                    <span className="text-slate-400">{formatMD(monday)} ~ {formatMD(wEnd)}</span>
+                    <NotebookPen size={12} className="text-myriad-ink" />
+                    <span className="font-bold text-myriad-ink">Week {week}</span>
+                    <span className="text-amber-700/80 font-medium">
+                      {formatMD(monday)} ~ {formatMD(wEnd)}
+                    </span>
                     <div className="flex-1" />
                     {planCount > 0 ? (
-                      <span className="text-myriad-ink font-semibold">📝 이번 주 계획 {planCount}개</span>
+                      <span className="text-myriad-ink font-bold inline-flex items-center gap-1 bg-white/70 px-2 py-0.5 rounded-full">
+                        📝 이번 주 계획 {planCount}개
+                      </span>
                     ) : (
-                      <span className="text-slate-400">+ 이번 주 할 일 적어두기</span>
+                      <span className="text-amber-700/70 font-medium">+ 이번 주 할 일 적어두기</span>
                     )}
-                    <Chevron size={11} className="text-slate-300 group-hover:text-myriad-ink" />
+                    <Chevron size={12} className="text-myriad-ink/50 group-hover:text-myriad-ink" />
                   </button>
 
                   {/* 7일 셀 */}
@@ -423,6 +436,41 @@ export default function Schedules() {
             >
               <Plus size={14} /> 이 날 일정 추가
             </button>
+          </div>
+
+          {/* 이번 주 계획 (선택한 날짜가 속한 주) */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-5">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-bold text-slate-900 flex items-center gap-1.5">
+                <NotebookPen size={14} className="text-myriad-ink" />
+                이번 주 계획
+              </h3>
+              <button
+                onClick={() => setWeeklyEditor({
+                  year: selectedWeekInfo.year,
+                  week: selectedWeekInfo.week,
+                  weekStart: selectedWeekStart,
+                  items: selectedWeeklyPlan?.items ?? []
+                })}
+                className="text-xs text-myriad-ink hover:underline font-semibold"
+              >
+                {selectedWeeklyPlan ? '편집' : '+ 계획'}
+              </button>
+            </div>
+            <div className="text-[11px] text-slate-400 mb-2">
+              Week {selectedWeekInfo.week} · {formatMD(selectedWeekStart)} ~ {formatMD(selectedWeekEnd)}
+            </div>
+            {selectedWeeklyPlan && selectedWeeklyPlan.items?.length > 0 ? (
+              <ol className="space-y-1.5 list-decimal list-inside text-sm text-slate-700">
+                {selectedWeeklyPlan.items.map((it, i) => (
+                  <li key={i} className="leading-relaxed">{it.text}</li>
+                ))}
+              </ol>
+            ) : (
+              <p className="text-sm text-slate-400">
+                아직 계획 없음. 이번 주 할 일을 가볍게 적어두세요.
+              </p>
+            )}
           </div>
 
           {/* 선택한 날짜의 일일 기록 */}
