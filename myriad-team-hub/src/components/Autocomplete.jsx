@@ -87,10 +87,15 @@ export default function Autocomplete({
       setHighlight((h) => Math.max(-1, h - 1))
     } else if (e.key === 'Enter') {
       // 폼 submit 방지가 핵심.
-      // 후보 하이라이트 있으면 선택, 없으면 그냥 현재 값 유지하고 닫기.
+      // 우선순위:
+      //  1) 사용자가 화살표로 명시적 하이라이트 → 그것 선택
+      //  2) 후보가 정확히 1개 → 자동 선택 (한번 더 화살표 누르는 수고 절약)
+      //  3) 그 외 (후보 0개 또는 2개 이상이고 미선택) → 현재 입력값 유지, 닫기만
       e.preventDefault()
       if (open && highlight >= 0 && filtered[highlight]) {
         onChange(filtered[highlight])
+      } else if (open && filtered.length === 1 && filtered[0] !== value) {
+        onChange(filtered[0])
       }
       setOpen(false)
       setHighlight(-1)
