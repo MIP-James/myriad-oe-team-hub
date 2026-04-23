@@ -591,10 +591,12 @@ function CommentsSection({ caseId, caseTitle, comments, profiles, user, isAdmin 
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           rows={2}
-          placeholder="이 케이스에 대한 의견/질문 남기기... (Ctrl+Enter 전송)"
+          placeholder="이 케이스에 대한 의견/질문 남기기... (Enter 전송 / Shift+Enter 줄바꿈)"
           className="flex-1 text-sm px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-myriad-primary/40 resize-none"
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+            // Enter 단독 → 전송. Shift+Enter → 기본 동작(줄바꿈).
+            // 한글 IME 조합 중에는 Enter 가 조합 확정용으로 사용되므로 무시.
+            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent?.isComposing) {
               e.preventDefault()
               submit()
             }

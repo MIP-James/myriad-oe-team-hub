@@ -28,6 +28,7 @@ import {
 } from '../lib/cases'
 import { extractGmailId, fetchMessage, gmailThreadUrl } from '../lib/gmail'
 import { GoogleAuthRequiredError } from '../lib/googleDrive'
+import Autocomplete from './Autocomplete'
 
 const EMPTY = {
   title: '',
@@ -254,8 +255,20 @@ export default function CaseEditor({
     }
   }
 
+  // 폼 안에서 Enter 키로 인한 자동 submit 방지.
+  // submit 은 오직 "등록"/"저장" 버튼 클릭 또는 button[type=submit] 으로만.
+  // textarea (TipTap 본문, 댓글 입력 같은) 줄바꿈은 정상 동작 유지.
+  function preventEnterSubmit(e) {
+    if (e.key !== 'Enter') return
+    if (e.nativeEvent?.isComposing) return     // 한글 IME 조합 중 무시
+    const tag = e.target.tagName
+    if (tag === 'TEXTAREA') return              // textarea 는 줄바꿈
+    if (tag === 'BUTTON') return                // 버튼은 Enter 로 클릭 정상
+    e.preventDefault()
+  }
+
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} onKeyDown={preventEnterSubmit} className="space-y-4">
       {error && (
         <div className="bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-lg p-3 flex items-start gap-2">
           <AlertTriangle size={14} className="mt-0.5 shrink-0" />
@@ -283,32 +296,22 @@ export default function CaseEditor({
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
             <label className="block text-xs font-semibold text-slate-600 mb-1">브랜드 (고객사) *</label>
-            <input
-              type="text"
+            <Autocomplete
               value={form.brand}
-              onChange={(e) => update('brand', e.target.value)}
-              list="brand-suggestions"
-              placeholder="예: Apple Inc."
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-myriad-primary/40"
+              onChange={(v) => update('brand', v)}
+              suggestions={brandSuggestions}
+              placeholder="예: Apple Inc. (목록에 없으면 직접 입력)"
             />
-            <datalist id="brand-suggestions">
-              {brandSuggestions.map((b) => <option key={b} value={b} />)}
-            </datalist>
           </div>
 
           <div>
             <label className="block text-xs font-semibold text-slate-600 mb-1">플랫폼 *</label>
-            <input
-              type="text"
+            <Autocomplete
               value={form.platform}
-              onChange={(e) => update('platform', e.target.value)}
-              list="platform-suggestions"
+              onChange={(v) => update('platform', v)}
+              suggestions={PLATFORMS}
               placeholder="예: 11st (목록에 없으면 직접 입력)"
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-myriad-primary/40"
             />
-            <datalist id="platform-suggestions">
-              {PLATFORMS.map((p) => <option key={p} value={p} />)}
-            </datalist>
           </div>
 
           <div>
