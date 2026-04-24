@@ -170,7 +170,7 @@ export default function NotificationBell() {
         const viewLabel =
           toast.type === 'case_help_requested' ? '케이스 열기'
           : toast.type === 'case_resolved' ? '케이스 열기'
-          : toast.type === 'case_task_assigned' ? '태스크 보기'
+          : toast.type === 'case_task_assigned' ? '조치 항목 보기'
           : '일정 보기'
         return (
         <div className="fixed bottom-6 right-6 z-[60] max-w-sm bg-white border border-slate-300 shadow-lg rounded-xl p-4 flex items-start gap-3 animate-slide-in">

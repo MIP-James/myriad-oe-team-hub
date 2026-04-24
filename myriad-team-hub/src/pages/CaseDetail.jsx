@@ -509,7 +509,7 @@ function ViewMode({
         onChanged={onHelpRequestsChanged}
       />
 
-      {/* 워크플로우 — Action Items 체크리스트 */}
+      {/* 조치 항목 체크리스트 */}
       <TasksSection
         caseId={c.id}
         tasks={tasks}
@@ -520,7 +520,7 @@ function ViewMode({
         onChanged={onTasksChanged}
       />
 
-      {/* 워크플로우 — 자유 노트 */}
+      {/* 처리 현황 (자유 노트) */}
       <WorkflowNotesSection
         caseId={c.id}
         wfNotes={wfNotes}
@@ -736,7 +736,7 @@ function HelpRequestsSection({ caseId, helpRequests, members, profiles, user, is
 }
 
 // ─────────────────────────────────────────────────────
-// 워크플로우 — Action Items (태스크 체크리스트)
+// 조치 항목 (체크리스트)
 // ─────────────────────────────────────────────────────
 
 function TasksSection({ caseId, tasks, members, profiles, user, isAdmin, onChanged }) {
@@ -766,7 +766,7 @@ function TasksSection({ caseId, tasks, members, profiles, user, isAdmin, onChang
       setAdding(false)
       onChanged?.()
     } catch (e) {
-      alert('태스크 추가 실패: ' + e.message)
+      alert('조치 항목 추가 실패: ' + e.message)
     } finally {
       setBusy(false)
     }
@@ -803,7 +803,7 @@ function TasksSection({ caseId, tasks, members, profiles, user, isAdmin, onChang
   }
 
   async function handleDelete(t) {
-    if (!window.confirm('이 태스크를 삭제할까요?')) return
+    if (!window.confirm('이 조치 항목을 삭제할까요?')) return
     try {
       await deleteCaseTask(t.id)
       onChanged?.()
@@ -824,7 +824,7 @@ function TasksSection({ caseId, tasks, members, profiles, user, isAdmin, onChang
     <div className="bg-white border border-slate-200 rounded-2xl p-5 mb-4">
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-          <ListChecks size={14} className="text-sky-600" /> Action Items
+          <ListChecks size={14} className="text-sky-600" /> 조치 항목
           {totalCount > 0 && (
             <span className="text-xs font-normal text-slate-500">
               {doneCount}/{totalCount} 완료 ({pct}%)
@@ -836,7 +836,7 @@ function TasksSection({ caseId, tasks, members, profiles, user, isAdmin, onChang
             onClick={() => setAdding(true)}
             className="inline-flex items-center gap-1 text-xs font-semibold text-slate-600 hover:text-myriad-ink bg-slate-100 hover:bg-slate-200 px-2.5 py-1 rounded-full"
           >
-            <Plus size={11} /> 태스크 추가
+            <Plus size={11} /> 항목 추가
           </button>
         )}
       </div>
@@ -851,10 +851,10 @@ function TasksSection({ caseId, tasks, members, profiles, user, isAdmin, onChang
         </div>
       )}
 
-      {/* 태스크 리스트 */}
+      {/* 조치 항목 리스트 */}
       {tasks.length === 0 && !adding ? (
         <p className="text-xs text-slate-400 py-2">
-          이 케이스의 조치 단계를 태스크로 쪼개어 담당자와 함께 관리하세요.
+          이 케이스의 조치 단계를 항목별로 쪼개어 담당자와 함께 관리하세요.
         </p>
       ) : (
         <ul className="space-y-1.5 mb-2">
@@ -966,14 +966,14 @@ function TasksSection({ caseId, tasks, members, profiles, user, isAdmin, onChang
         </ul>
       )}
 
-      {/* 신규 태스크 입력 */}
+      {/* 신규 조치 항목 입력 */}
       {adding && (
         <div className="border-t border-slate-100 pt-3 flex flex-col gap-2">
           <input
             autoFocus
             value={newContent}
             onChange={(e) => setNewContent(e.target.value)}
-            placeholder="태스크 내용 (예: 판매자 연락처 확인 후 DM 발송)"
+            placeholder="조치 내용 (예: 판매자 연락처 확인 후 DM 발송)"
             className="text-sm px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-myriad-primary/40"
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.nativeEvent?.isComposing) {
@@ -1018,7 +1018,7 @@ function TasksSection({ caseId, tasks, members, profiles, user, isAdmin, onChang
 }
 
 // ─────────────────────────────────────────────────────
-// 워크플로우 — 자유 노트 (TipTap)
+// 처리 현황 (자유 기록 — TipTap)
 // ─────────────────────────────────────────────────────
 
 function WorkflowNotesSection({ caseId, wfNotes, profiles, user, onChanged }) {
@@ -1032,7 +1032,7 @@ function WorkflowNotesSection({ caseId, wfNotes, profiles, user, onChanged }) {
       StarterKit.configure({ heading: { levels: [2, 3] } }),
       TiptapLink.configure({ openOnClick: false, autolink: true, HTMLAttributes: { rel: 'noopener' } }),
       Placeholder.configure({
-        placeholder: '이 케이스를 어떻게 해결할지 팀원과 자유롭게 논의·정리하는 공간입니다. (예: 접근 전략, 참고 링크, 타임라인, 결정사항 등)'
+        placeholder: '이 케이스가 현재 어떻게 처리되고 있는지 팀원과 자유롭게 정리하는 공간입니다. (예: 접근 전략, 참고 링크, 진행 상황, 결정사항 등)'
       })
     ],
     content: wfNotes?.body_html || '',
@@ -1084,7 +1084,7 @@ function WorkflowNotesSection({ caseId, wfNotes, profiles, user, onChanged }) {
     <div className="bg-white border border-slate-200 rounded-2xl p-5 mb-4">
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-          <NotebookPen size={14} className="text-purple-600" /> 워크플로우 노트
+          <NotebookPen size={14} className="text-purple-600" /> 처리 현황
           <span className="text-xs font-normal text-slate-400">(팀 공동 편집)</span>
         </h2>
         {!editing ? (
@@ -1125,7 +1125,7 @@ function WorkflowNotesSection({ caseId, wfNotes, profiles, user, onChanged }) {
         />
       ) : (
         <p className="text-xs text-slate-400 py-3">
-          아직 작성된 노트가 없습니다. 편집 버튼을 눌러 시작하세요.
+          아직 작성된 내용이 없습니다. 편집 버튼을 눌러 처리 상황을 기록해보세요.
         </p>
       )}
 
@@ -1224,11 +1224,11 @@ function HistoryTimeline({ caseData, statusLog, helpRequests, comments, tasks, p
     if (e.kind === 'task_created') {
       const preview = e.content?.length > 80 ? e.content.slice(0, 80) + '...' : e.content
       const assignSuffix = e.assignee ? <> (담당: <b>{nameOf(e.assignee)}</b>)</> : null
-      return <>📝 <b>{who}</b> 태스크 추가: <span className="text-slate-600">{preview}</span>{assignSuffix}</>
+      return <>📝 <b>{who}</b> 조치 항목 추가: <span className="text-slate-600">{preview}</span>{assignSuffix}</>
     }
     if (e.kind === 'task_done') {
       const preview = e.content?.length > 80 ? e.content.slice(0, 80) + '...' : e.content
-      return <>✅ <b>{who}</b> 태스크 완료: <span className="text-slate-600">{preview}</span></>
+      return <>✅ <b>{who}</b> 조치 항목 완료: <span className="text-slate-600">{preview}</span></>
     }
     if (e.kind === 'comment') {
       const preview = e.body?.length > 80 ? e.body.slice(0, 80) + '...' : e.body
