@@ -5,12 +5,13 @@
  *  - 편집 모드: CaseEditor 재사용
  *  - 권한: 작성자/관리자만 편집·삭제
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   ArrowLeft, Edit3, Loader2, Briefcase, Tag as TagIcon, Globe, Link as LinkIcon,
   Mail, Clock, Circle, CheckCircle2, Send, Trash2, MessageSquare, ExternalLink,
-  ChevronDown, AlertCircle
+  ChevronDown, AlertCircle, LifeBuoy, Users, X as XIcon, Plus, History,
+  UserPlus, UserMinus, MessageCircle
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
@@ -18,9 +19,12 @@ import {
   getCase, createCase, updateCase, deleteCase, changeCaseStatus,
   listCaseAttachments, commitTmpAttachments, getAttachmentSignedUrls,
   listCaseComments, createCaseComment, updateCaseComment, deleteCaseComment,
+  listCaseHelpRequests, addCaseHelpRequest, removeCaseHelpRequest,
+  listCaseStatusLog,
   STATUS_OPTIONS, STATUS_LABELS, STATUS_COLORS, INFRINGEMENT_COLORS
 } from '../lib/cases'
 import { getProfileShort } from '../lib/community'
+import { listAllProfiles } from '../lib/users'
 import CaseEditor from '../components/CaseEditor'
 
 export default function CaseDetail({ mode }) {
@@ -34,6 +38,9 @@ export default function CaseDetail({ mode }) {
   const [attachmentUrls, setAttachmentUrls] = useState({})
   const [comments, setComments] = useState([])
   const [profiles, setProfiles] = useState({})
+  const [helpRequests, setHelpRequests] = useState([])
+  const [statusLog, setStatusLog] = useState([])
+  const [members, setMembers] = useState([])
   const [loading, setLoading] = useState(!isNew)
   const [error, setError] = useState(null)
   const [editing, setEditing] = useState(isNew)
@@ -50,8 +57,9 @@ export default function CaseDetail({ mode }) {
     const ch = supabase
       .channel(`case-${id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'case_comments', filter: `case_id=eq.${id}` }, () => loadComments())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'cases', filter: `id=eq.${id}` }, () => loadCase())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cases', filter: `id=eq.${id}` }, () => { loadCase(); loadStatusLog() })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'case_attachments', filter: `case_id=eq.${id}` }, () => loadAttachments())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'case_help_requests', filter: `case_id=eq.${id}` }, () => loadHelpRequests())
       .subscribe()
     return () => supabase.removeChannel(ch)
   }, [id, isNew])
@@ -60,11 +68,45 @@ export default function CaseDetail({ mode }) {
     setLoading(true)
     setError(null)
     try {
-      await Promise.all([loadCase(), loadAttachments(), loadComments()])
+      await Promise.all([
+        loadCase(), loadAttachments(), loadComments(),
+        loadHelpRequests(), loadStatusLog(), loadMembers()
+      ])
     } catch (e) {
       setError(e.message)
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function loadHelpRequests() {
+    try {
+      const list = await listCaseHelpRequests(id)
+      setHelpRequests(list)
+      const ids = list.map((h) => h.recipient_id).filter(Boolean)
+      const reqIds = list.map((h) => h.requested_by).filter(Boolean)
+      await loadProfiles([...ids, ...reqIds])
+    } catch (e) {
+      console.warn('[helpRequests] load failed:', e)
+    }
+  }
+
+  async function loadStatusLog() {
+    try {
+      const list = await listCaseStatusLog(id)
+      setStatusLog(list)
+      await loadProfiles(list.map((s) => s.changed_by).filter(Boolean))
+    } catch (e) {
+      console.warn('[statusLog] load failed:', e)
+    }
+  }
+
+  async function loadMembers() {
+    try {
+      const list = await listAllProfiles()
+      setMembers(list)
+    } catch (e) {
+      console.warn('[members] load failed:', e)
     }
   }
 
@@ -248,6 +290,9 @@ export default function CaseDetail({ mode }) {
           attachmentUrls={attachmentUrls}
           comments={comments}
           profiles={profiles}
+          helpRequests={helpRequests}
+          statusLog={statusLog}
+          members={members}
           onEdit={() => setEditing(true)}
           canEdit={canEdit}
           statusMenuOpen={statusMenuOpen}
@@ -256,6 +301,7 @@ export default function CaseDetail({ mode }) {
           user={user}
           isAdmin={isAdmin}
           onCommentsChanged={loadComments}
+          onHelpRequestsChanged={loadHelpRequests}
         />
       )}
     </div>
@@ -268,8 +314,9 @@ export default function CaseDetail({ mode }) {
 
 function ViewMode({
   caseData, attachments, attachmentUrls, comments, profiles,
+  helpRequests, statusLog, members,
   onEdit, canEdit, statusMenuOpen, setStatusMenuOpen, onStatusChange,
-  user, isAdmin, onCommentsChanged
+  user, isAdmin, onCommentsChanged, onHelpRequestsChanged
 }) {
   const c = caseData
   const createdProfile = profiles[c.created_by]
@@ -410,6 +457,17 @@ function ViewMode({
         ) : null}
       </article>
 
+      {/* 도움 요청 섹션 */}
+      <HelpRequestsSection
+        caseId={c.id}
+        helpRequests={helpRequests}
+        members={members}
+        profiles={profiles}
+        user={user}
+        isAdmin={isAdmin}
+        onChanged={onHelpRequestsChanged}
+      />
+
       {/* 첨부 갤러리 */}
       {attachments.length > 0 && (
         <div className="bg-white border border-slate-200 rounded-2xl p-5 mb-4">
@@ -451,7 +509,276 @@ function ViewMode({
         isAdmin={isAdmin}
         onChanged={onCommentsChanged}
       />
+
+      {/* 히스토리 타임라인 */}
+      <HistoryTimeline
+        caseData={c}
+        statusLog={statusLog}
+        helpRequests={helpRequests}
+        comments={comments}
+        profiles={profiles}
+      />
     </>
+  )
+}
+
+// ─────────────────────────────────────────────────────
+// 도움 요청 섹션
+// ─────────────────────────────────────────────────────
+
+function HelpRequestsSection({ caseId, helpRequests, members, profiles, user, isAdmin, onChanged }) {
+  const [input, setInput] = useState('')
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
+
+  const existingIds = useMemo(
+    () => new Set(helpRequests.filter((h) => !h.is_team_all).map((h) => h.recipient_id)),
+    [helpRequests]
+  )
+  const hasTeamAll = helpRequests.some((h) => h.is_team_all)
+
+  const suggestions = useMemo(() => {
+    const base = []
+    if (!hasTeamAll) {
+      base.push({ id: 'team_all', label: '온라인팀 전체', isTeamAll: true })
+    }
+    for (const m of members) {
+      if (m.id === user?.id) continue             // 본인 제외
+      if (existingIds.has(m.id)) continue          // 이미 요청된 사람 제외
+      const name = m.full_name || m.email?.split('@')[0] || '?'
+      base.push({ id: m.id, label: name, email: m.email })
+    }
+    const q = input.trim().toLowerCase()
+    if (!q) return base
+    return base.filter((s) =>
+      s.label.toLowerCase().includes(q) || s.email?.toLowerCase().includes(q)
+    )
+  }, [members, hasTeamAll, existingIds, user?.id, input])
+
+  async function handleAdd(item) {
+    if (busy) return
+    setBusy(true)
+    try {
+      await addCaseHelpRequest(caseId, item.isTeamAll ? 'team_all' : item.id, user.id)
+      setInput('')
+      setPickerOpen(false)
+      onChanged?.()
+    } catch (e) {
+      alert('요청 추가 실패: ' + e.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleRemove(h) {
+    try {
+      await removeCaseHelpRequest(h.id)
+      onChanged?.()
+    } catch (e) {
+      alert('요청 해제 실패: ' + e.message)
+    }
+  }
+
+  const canRemove = (h) => h.requested_by === user?.id || isAdmin
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-2xl p-5 mb-4">
+      <h2 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
+        <LifeBuoy size={14} className="text-amber-600" /> 도움 요청
+        <span className="text-slate-400 font-normal text-xs">
+          {helpRequests.length === 0 ? '아직 없음' : `${helpRequests.length}건`}
+        </span>
+      </h2>
+
+      <div className="flex flex-wrap gap-2 items-center">
+        {helpRequests.map((h) => {
+          const label = h.is_team_all
+            ? '🌐 온라인팀 전체'
+            : (profiles[h.recipient_id]?.full_name
+               || profiles[h.recipient_id]?.email?.split('@')[0]
+               || '—')
+          return (
+            <span
+              key={h.id}
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${
+                h.is_team_all
+                  ? 'bg-purple-100 text-purple-800'
+                  : 'bg-amber-100 text-amber-800'
+              }`}
+            >
+              {!h.is_team_all && <Users size={11} />}
+              {label}
+              {canRemove(h) && (
+                <button
+                  onClick={() => handleRemove(h)}
+                  className="hover:bg-black/10 rounded-full p-0.5"
+                  title="요청 해제"
+                >
+                  <XIcon size={10} />
+                </button>
+              )}
+            </span>
+          )
+        })}
+
+        {/* 추가 버튼 / 피커 */}
+        <div className="relative">
+          {!pickerOpen ? (
+            <button
+              onClick={() => setPickerOpen(true)}
+              className="inline-flex items-center gap-1 text-xs font-semibold text-slate-600 hover:text-myriad-ink bg-slate-100 hover:bg-slate-200 px-2.5 py-1 rounded-full"
+            >
+              <Plus size={11} /> 요청 추가
+            </button>
+          ) : (
+            <div className="inline-flex items-center gap-1">
+              <input
+                autoFocus
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onBlur={() => setTimeout(() => setPickerOpen(false), 150)}
+                placeholder="이름 입력..."
+                className="text-xs px-2 py-1 border border-slate-300 rounded-full w-32 focus:outline-none focus:ring-2 focus:ring-myriad-primary/40"
+              />
+              {suggestions.length > 0 && (
+                <div className="absolute top-full left-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-10 w-56 max-h-60 overflow-auto">
+                  {suggestions.map((s) => (
+                    <button
+                      key={s.id}
+                      onMouseDown={(e) => { e.preventDefault(); handleAdd(s) }}
+                      className="w-full text-left px-3 py-1.5 text-xs hover:bg-slate-50 flex items-center gap-2"
+                    >
+                      {s.isTeamAll ? <span>🌐</span> : <UserPlus size={11} className="text-slate-400" />}
+                      <span className={s.isTeamAll ? 'font-semibold text-purple-700' : ''}>
+                        {s.label}
+                      </span>
+                      {s.email && !s.isTeamAll && (
+                        <span className="text-slate-400 ml-auto truncate">{s.email}</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {helpRequests.length === 0 && !pickerOpen && (
+        <p className="text-xs text-slate-400 mt-2">
+          조치가 필요한 케이스라면 도움을 요청할 팀원이나 전체팀을 지정하세요. 지정된 순간 알림이 발송됩니다.
+        </p>
+      )}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────
+// 히스토리 타임라인
+// ─────────────────────────────────────────────────────
+
+function HistoryTimeline({ caseData, statusLog, helpRequests, comments, profiles }) {
+  const events = useMemo(() => {
+    const list = []
+    // 생성
+    list.push({
+      kind: 'created',
+      at: caseData.created_at,
+      actor: caseData.created_by
+    })
+    // 상태 변경
+    for (const s of statusLog) {
+      list.push({
+        kind: 'status',
+        at: s.changed_at,
+        actor: s.changed_by,
+        from: s.from_status,
+        to: s.to_status
+      })
+    }
+    // 도움 요청
+    for (const h of helpRequests) {
+      list.push({
+        kind: 'help_request',
+        at: h.requested_at,
+        actor: h.requested_by,
+        recipient: h.recipient_id,
+        isTeamAll: h.is_team_all
+      })
+    }
+    // 댓글
+    for (const c of comments) {
+      list.push({
+        kind: 'comment',
+        at: c.created_at,
+        actor: c.author_id,
+        body: c.body
+      })
+    }
+    // 최신 → 과거
+    return list.sort((a, b) => new Date(b.at) - new Date(a.at))
+  }, [caseData, statusLog, helpRequests, comments])
+
+  function nameOf(id) {
+    const p = profiles[id]
+    return p?.full_name || p?.email?.split('@')[0] || '—'
+  }
+
+  function renderEvent(e) {
+    const who = nameOf(e.actor)
+    if (e.kind === 'created') {
+      return <>🆕 <b>{who}</b> 님이 케이스를 등록했습니다.</>
+    }
+    if (e.kind === 'status') {
+      const fromLabel = STATUS_LABELS[e.from] || e.from || '시작'
+      const toLabel = STATUS_LABELS[e.to] || e.to
+      return <>🔄 <b>{who}</b> 님이 상태를 <i>{fromLabel}</i> → <b>{toLabel}</b> 로 변경.</>
+    }
+    if (e.kind === 'help_request') {
+      const target = e.isTeamAll ? '온라인팀 전체' : nameOf(e.recipient)
+      return <>🆘 <b>{who}</b> 님이 <b>{target}</b> 에게 도움 요청.</>
+    }
+    if (e.kind === 'comment') {
+      const preview = e.body?.length > 80 ? e.body.slice(0, 80) + '...' : e.body
+      return <>💬 <b>{who}</b>: <span className="text-slate-600">{preview}</span></>
+    }
+    return null
+  }
+
+  function dotColor(kind) {
+    switch (kind) {
+      case 'created': return 'bg-sky-400'
+      case 'status': return 'bg-amber-400'
+      case 'help_request': return 'bg-purple-400'
+      case 'comment': return 'bg-slate-400'
+      default: return 'bg-slate-300'
+    }
+  }
+
+  if (events.length === 0) return null
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-2xl p-5 mt-4">
+      <h2 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
+        <History size={14} /> 히스토리
+        <span className="text-slate-400 font-normal text-xs">{events.length}개 이벤트</span>
+      </h2>
+      <ol className="space-y-3 border-l-2 border-slate-200 ml-2 pl-5 relative">
+        {events.map((e, i) => (
+          <li key={i} className="relative">
+            <span
+              className={`absolute -left-[27px] top-1.5 w-3 h-3 rounded-full ${dotColor(e.kind)} border-2 border-white ring-1 ring-slate-200`}
+            />
+            <p className="text-[11px] text-slate-400">
+              {new Date(e.at).toLocaleString('ko-KR')}
+            </p>
+            <p className="text-sm text-slate-800 leading-relaxed mt-0.5">
+              {renderEvent(e)}
+            </p>
+          </li>
+        ))}
+      </ol>
+    </div>
   )
 }
 

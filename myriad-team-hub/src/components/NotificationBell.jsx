@@ -3,7 +3,7 @@
  * Realtime 구독으로 즉시 뱃지 업데이트.
  */
 import { useEffect, useState, useRef, useCallback } from 'react'
-import { Bell, X, CalendarDays } from 'lucide-react'
+import { Bell, X, CalendarDays, LifeBuoy, CheckCircle2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import {
@@ -126,7 +126,9 @@ export default function NotificationBell() {
                 </div>
               ) : (
                 <ul className="divide-y divide-slate-100">
-                  {items.map((n) => (
+                  {items.map((n) => {
+                    const { Icon, bg, color } = iconForType(n.type)
+                    return (
                     <li key={n.id}>
                       <button
                         onClick={() => onClickItem(n)}
@@ -135,8 +137,8 @@ export default function NotificationBell() {
                         }`}
                       >
                         <div className="flex gap-3">
-                          <div className="w-8 h-8 rounded-full bg-sky-100 text-sky-700 flex items-center justify-center shrink-0">
-                            <CalendarDays size={14} />
+                          <div className={`w-8 h-8 rounded-full ${bg} ${color} flex items-center justify-center shrink-0`}>
+                            <Icon size={14} />
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="text-[13px] text-slate-900 font-semibold truncate">{n.title}</p>
@@ -153,7 +155,8 @@ export default function NotificationBell() {
                         </div>
                       </button>
                     </li>
-                  ))}
+                    )
+                  })}
                 </ul>
               )}
             </div>
@@ -162,10 +165,16 @@ export default function NotificationBell() {
       </div>
 
       {/* 실시간 수신 토스트 — 사이드바와 독립된 main 영역 우측 하단 */}
-      {toast && (
-        <div className="fixed bottom-6 right-6 z-[60] max-w-sm bg-white border border-sky-300 shadow-lg rounded-xl p-4 flex items-start gap-3 animate-slide-in">
-          <div className="w-9 h-9 rounded-full bg-sky-100 flex items-center justify-center shrink-0">
-            <CalendarDays size={16} className="text-sky-700" />
+      {toast && (() => {
+        const { Icon, bg, color } = iconForType(toast.type)
+        const viewLabel =
+          toast.type === 'case_help_requested' ? '케이스 열기'
+          : toast.type === 'case_resolved' ? '케이스 열기'
+          : '일정 보기'
+        return (
+        <div className="fixed bottom-6 right-6 z-[60] max-w-sm bg-white border border-slate-300 shadow-lg rounded-xl p-4 flex items-start gap-3 animate-slide-in">
+          <div className={`w-9 h-9 rounded-full ${bg} flex items-center justify-center shrink-0`}>
+            <Icon size={16} className={color} />
           </div>
           <div className="flex-1 min-w-0">
             <h4 className="font-semibold text-slate-900 text-sm">{toast.title}</h4>
@@ -180,7 +189,7 @@ export default function NotificationBell() {
                 }}
                 className="text-xs font-semibold bg-myriad-primary hover:bg-myriad-primaryDark text-myriad-ink px-3 py-1 rounded-lg"
               >
-                일정 보기
+                {viewLabel}
               </button>
               <button
                 onClick={() => setToast(null)}
@@ -197,9 +206,23 @@ export default function NotificationBell() {
             <X size={14} />
           </button>
         </div>
-      )}
+        )
+      })()}
     </>
   )
+}
+
+/** 알림 타입별 아이콘 + 색상 매핑 — 신규 타입 추가 시 여기에 한 줄 */
+function iconForType(type) {
+  switch (type) {
+    case 'case_help_requested':
+      return { Icon: LifeBuoy, bg: 'bg-amber-100', color: 'text-amber-700' }
+    case 'case_resolved':
+      return { Icon: CheckCircle2, bg: 'bg-emerald-100', color: 'text-emerald-700' }
+    case 'team_schedule':
+    default:
+      return { Icon: CalendarDays, bg: 'bg-sky-100', color: 'text-sky-700' }
+  }
 }
 
 function formatRelative(iso) {

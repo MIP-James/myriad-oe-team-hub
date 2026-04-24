@@ -60,6 +60,8 @@ export async function listCases({
   let q = supabase
     .from('cases')
     .select('*', { count: 'exact' })
+    // action_needed(sort_priority=0) 가 항상 최상단. 동일 우선순위 안에선 최신순.
+    .order('sort_priority', { ascending: true })
     .order('created_at', { ascending: false })
     .range(offset, offset + limit - 1)
 
@@ -402,6 +404,55 @@ export async function getAttachmentSignedUrls(paths, expiresIn = 60 * 60) {
     if (item.signedUrl && item.path) map[item.path] = item.signedUrl
   }
   return map
+}
+
+// ───── Help requests (Phase 11a) ────────────────────────────────
+
+/** 케이스의 현재 도움 요청 목록 (개별 수신자 + team_all). */
+export async function listCaseHelpRequests(caseId) {
+  const { data, error } = await supabase
+    .from('case_help_requests')
+    .select('*')
+    .eq('case_id', caseId)
+    .order('requested_at', { ascending: true })
+  if (error) throw error
+  return data ?? []
+}
+
+/**
+ * 도움 요청 추가.
+ * @param {string} caseId
+ * @param {string} target — 팀원 UUID 또는 'team_all' 문자열
+ * @param {string} userId — 요청자(현재 로그인 유저)
+ */
+export async function addCaseHelpRequest(caseId, target, userId) {
+  const row = target === 'team_all'
+    ? { case_id: caseId, recipient_id: null, is_team_all: true, requested_by: userId }
+    : { case_id: caseId, recipient_id: target, is_team_all: false, requested_by: userId }
+  const { data, error } = await supabase
+    .from('case_help_requests')
+    .insert(row)
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function removeCaseHelpRequest(id) {
+  const { error } = await supabase.from('case_help_requests').delete().eq('id', id)
+  if (error) throw error
+}
+
+// ───── Status log / history ─────────────────────────────────────
+
+export async function listCaseStatusLog(caseId) {
+  const { data, error } = await supabase
+    .from('case_status_log')
+    .select('*')
+    .eq('case_id', caseId)
+    .order('changed_at', { ascending: true })
+  if (error) throw error
+  return data ?? []
 }
 
 // ───── Brand autocomplete ───────────────────────────────────────

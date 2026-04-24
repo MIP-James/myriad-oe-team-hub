@@ -230,8 +230,16 @@ export default function CasesTab() {
                     const author = profile?.full_name || profile?.email?.split('@')[0] || '—'
                     const commentCount = commentCounts[c.id] || 0
                     const platformLabel = c.platform || '—'
+                    const isActionNeeded = c.status === 'action_needed'
                     return (
-                      <tr key={c.id} className="border-b border-slate-100 hover:bg-slate-50 transition">
+                      <tr
+                        key={c.id}
+                        className={`border-b border-slate-100 transition ${
+                          isActionNeeded
+                            ? 'bg-amber-50/60 hover:bg-amber-100/60 border-l-4 border-l-amber-500'
+                            : 'hover:bg-slate-50'
+                        }`}
+                      >
                         <td className="px-3 py-2.5 text-xs text-slate-400">
                           {total - (page * PAGE_SIZE + idx)}
                         </td>
