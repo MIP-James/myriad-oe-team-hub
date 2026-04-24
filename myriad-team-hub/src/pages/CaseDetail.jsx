@@ -7,11 +7,15 @@
  */
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
+import { useEditor, EditorContent } from '@tiptap/react'
+import StarterKit from '@tiptap/starter-kit'
+import TiptapLink from '@tiptap/extension-link'
+import Placeholder from '@tiptap/extension-placeholder'
 import {
   ArrowLeft, Edit3, Loader2, Briefcase, Tag as TagIcon, Globe, Link as LinkIcon,
   Mail, Clock, Circle, CheckCircle2, Send, Trash2, MessageSquare, ExternalLink,
   ChevronDown, AlertCircle, LifeBuoy, Users, X as XIcon, Plus, History,
-  UserPlus, UserMinus, MessageCircle
+  UserPlus, UserMinus, MessageCircle, ListChecks, NotebookPen, Save
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
@@ -21,6 +25,8 @@ import {
   listCaseComments, createCaseComment, updateCaseComment, deleteCaseComment,
   listCaseHelpRequests, addCaseHelpRequest, removeCaseHelpRequest,
   listCaseStatusLog,
+  listCaseTasks, createCaseTask, updateCaseTask, toggleCaseTask, deleteCaseTask,
+  getCaseWorkflowNotes, upsertCaseWorkflowNotes,
   STATUS_OPTIONS, STATUS_LABELS, STATUS_COLORS, INFRINGEMENT_COLORS
 } from '../lib/cases'
 import { getProfileShort } from '../lib/community'
@@ -41,6 +47,8 @@ export default function CaseDetail({ mode }) {
   const [helpRequests, setHelpRequests] = useState([])
   const [statusLog, setStatusLog] = useState([])
   const [members, setMembers] = useState([])
+  const [tasks, setTasks] = useState([])
+  const [wfNotes, setWfNotes] = useState(null)
   const [loading, setLoading] = useState(!isNew)
   const [error, setError] = useState(null)
   const [editing, setEditing] = useState(isNew)
@@ -60,6 +68,8 @@ export default function CaseDetail({ mode }) {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'cases', filter: `id=eq.${id}` }, () => { loadCase(); loadStatusLog() })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'case_attachments', filter: `case_id=eq.${id}` }, () => loadAttachments())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'case_help_requests', filter: `case_id=eq.${id}` }, () => loadHelpRequests())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'case_tasks', filter: `case_id=eq.${id}` }, () => loadTasks())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'case_workflow_notes', filter: `case_id=eq.${id}` }, () => loadWfNotes())
       .subscribe()
     return () => supabase.removeChannel(ch)
   }, [id, isNew])
@@ -70,12 +80,38 @@ export default function CaseDetail({ mode }) {
     try {
       await Promise.all([
         loadCase(), loadAttachments(), loadComments(),
-        loadHelpRequests(), loadStatusLog(), loadMembers()
+        loadHelpRequests(), loadStatusLog(), loadMembers(),
+        loadTasks(), loadWfNotes()
       ])
     } catch (e) {
       setError(e.message)
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function loadTasks() {
+    try {
+      const list = await listCaseTasks(id)
+      setTasks(list)
+      const ids = [
+        ...list.map((t) => t.assignee_id).filter(Boolean),
+        ...list.map((t) => t.created_by).filter(Boolean),
+        ...list.map((t) => t.completed_by).filter(Boolean)
+      ]
+      await loadProfiles(ids)
+    } catch (e) {
+      console.warn('[tasks] load failed:', e)
+    }
+  }
+
+  async function loadWfNotes() {
+    try {
+      const row = await getCaseWorkflowNotes(id)
+      setWfNotes(row)
+      if (row?.updated_by) await loadProfiles([row.updated_by])
+    } catch (e) {
+      console.warn('[wfNotes] load failed:', e)
     }
   }
 
@@ -293,6 +329,8 @@ export default function CaseDetail({ mode }) {
           helpRequests={helpRequests}
           statusLog={statusLog}
           members={members}
+          tasks={tasks}
+          wfNotes={wfNotes}
           onEdit={() => setEditing(true)}
           canEdit={canEdit}
           statusMenuOpen={statusMenuOpen}
@@ -302,6 +340,8 @@ export default function CaseDetail({ mode }) {
           isAdmin={isAdmin}
           onCommentsChanged={loadComments}
           onHelpRequestsChanged={loadHelpRequests}
+          onTasksChanged={loadTasks}
+          onWfNotesChanged={loadWfNotes}
         />
       )}
     </div>
@@ -314,9 +354,10 @@ export default function CaseDetail({ mode }) {
 
 function ViewMode({
   caseData, attachments, attachmentUrls, comments, profiles,
-  helpRequests, statusLog, members,
+  helpRequests, statusLog, members, tasks, wfNotes,
   onEdit, canEdit, statusMenuOpen, setStatusMenuOpen, onStatusChange,
-  user, isAdmin, onCommentsChanged, onHelpRequestsChanged
+  user, isAdmin, onCommentsChanged, onHelpRequestsChanged,
+  onTasksChanged, onWfNotesChanged
 }) {
   const c = caseData
   const createdProfile = profiles[c.created_by]
@@ -468,6 +509,26 @@ function ViewMode({
         onChanged={onHelpRequestsChanged}
       />
 
+      {/* 워크플로우 — Action Items 체크리스트 */}
+      <TasksSection
+        caseId={c.id}
+        tasks={tasks}
+        members={members}
+        profiles={profiles}
+        user={user}
+        isAdmin={isAdmin}
+        onChanged={onTasksChanged}
+      />
+
+      {/* 워크플로우 — 자유 노트 */}
+      <WorkflowNotesSection
+        caseId={c.id}
+        wfNotes={wfNotes}
+        profiles={profiles}
+        user={user}
+        onChanged={onWfNotesChanged}
+      />
+
       {/* 첨부 갤러리 */}
       {attachments.length > 0 && (
         <div className="bg-white border border-slate-200 rounded-2xl p-5 mb-4">
@@ -516,6 +577,7 @@ function ViewMode({
         statusLog={statusLog}
         helpRequests={helpRequests}
         comments={comments}
+        tasks={tasks}
         profiles={profiles}
       />
     </>
@@ -674,10 +736,413 @@ function HelpRequestsSection({ caseId, helpRequests, members, profiles, user, is
 }
 
 // ─────────────────────────────────────────────────────
+// 워크플로우 — Action Items (태스크 체크리스트)
+// ─────────────────────────────────────────────────────
+
+function TasksSection({ caseId, tasks, members, profiles, user, isAdmin, onChanged }) {
+  const [newContent, setNewContent] = useState('')
+  const [newAssignee, setNewAssignee] = useState('')
+  const [adding, setAdding] = useState(false)
+  const [editingId, setEditingId] = useState(null)
+  const [editDraft, setEditDraft] = useState({ content: '', assignee_id: '' })
+  const [busy, setBusy] = useState(false)
+
+  const doneCount = tasks.filter((t) => t.status === 'done').length
+  const totalCount = tasks.length
+  const pct = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0
+
+  async function handleAdd() {
+    const content = newContent.trim()
+    if (!content || busy) return
+    setBusy(true)
+    try {
+      // 신규 태스크는 맨 뒤에 붙이기
+      const nextOrder = tasks.length > 0
+        ? Math.max(...tasks.map((t) => t.sort_order ?? 0)) + 1
+        : 0
+      await createCaseTask(caseId, content, newAssignee || null, user.id, nextOrder)
+      setNewContent('')
+      setNewAssignee('')
+      setAdding(false)
+      onChanged?.()
+    } catch (e) {
+      alert('태스크 추가 실패: ' + e.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleToggle(t) {
+    const next = t.status === 'done' ? 'pending' : 'done'
+    try {
+      await toggleCaseTask(t.id, next)
+      onChanged?.()
+    } catch (e) {
+      alert('상태 변경 실패: ' + e.message)
+    }
+  }
+
+  function startEdit(t) {
+    setEditingId(t.id)
+    setEditDraft({ content: t.content, assignee_id: t.assignee_id || '' })
+  }
+
+  async function saveEdit(t) {
+    const content = editDraft.content.trim()
+    if (!content) return
+    try {
+      await updateCaseTask(t.id, {
+        content,
+        assignee_id: editDraft.assignee_id || null
+      })
+      setEditingId(null)
+      onChanged?.()
+    } catch (e) {
+      alert('수정 실패: ' + e.message)
+    }
+  }
+
+  async function handleDelete(t) {
+    if (!window.confirm('이 태스크를 삭제할까요?')) return
+    try {
+      await deleteCaseTask(t.id)
+      onChanged?.()
+    } catch (e) {
+      alert('삭제 실패: ' + e.message)
+    }
+  }
+
+  const canDelete = (t) => t.created_by === user?.id || isAdmin
+
+  function nameOf(id) {
+    if (!id) return null
+    const p = profiles[id] || members.find((m) => m.id === id)
+    return p?.full_name || p?.email?.split('@')[0] || '—'
+  }
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-2xl p-5 mb-4">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+          <ListChecks size={14} className="text-sky-600" /> Action Items
+          {totalCount > 0 && (
+            <span className="text-xs font-normal text-slate-500">
+              {doneCount}/{totalCount} 완료 ({pct}%)
+            </span>
+          )}
+        </h2>
+        {!adding && (
+          <button
+            onClick={() => setAdding(true)}
+            className="inline-flex items-center gap-1 text-xs font-semibold text-slate-600 hover:text-myriad-ink bg-slate-100 hover:bg-slate-200 px-2.5 py-1 rounded-full"
+          >
+            <Plus size={11} /> 태스크 추가
+          </button>
+        )}
+      </div>
+
+      {/* 진행도 막대 */}
+      {totalCount > 0 && (
+        <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden mb-3">
+          <div
+            className="h-full bg-emerald-400 transition-all"
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      )}
+
+      {/* 태스크 리스트 */}
+      {tasks.length === 0 && !adding ? (
+        <p className="text-xs text-slate-400 py-2">
+          이 케이스의 조치 단계를 태스크로 쪼개어 담당자와 함께 관리하세요.
+        </p>
+      ) : (
+        <ul className="space-y-1.5 mb-2">
+          {tasks.map((t) => {
+            const isEditing = editingId === t.id
+            const isDone = t.status === 'done'
+            const assigneeName = nameOf(t.assignee_id)
+            return (
+              <li
+                key={t.id}
+                className={`flex items-start gap-2 px-2 py-1.5 rounded-lg ${
+                  isDone ? 'bg-slate-50' : 'hover:bg-slate-50'
+                }`}
+              >
+                <button
+                  onClick={() => handleToggle(t)}
+                  className={`mt-0.5 w-4 h-4 rounded border flex items-center justify-center shrink-0 transition ${
+                    isDone
+                      ? 'bg-emerald-500 border-emerald-500 text-white'
+                      : 'border-slate-300 hover:border-emerald-400'
+                  }`}
+                  title={isDone ? '완료 해제' : '완료 체크'}
+                >
+                  {isDone && <CheckCircle2 size={10} />}
+                </button>
+
+                {isEditing ? (
+                  <div className="flex-1 flex flex-col gap-1.5">
+                    <input
+                      value={editDraft.content}
+                      onChange={(e) => setEditDraft({ ...editDraft, content: e.target.value })}
+                      className="text-sm px-2 py-1 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-myriad-primary/40"
+                      autoFocus
+                    />
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={editDraft.assignee_id}
+                        onChange={(e) => setEditDraft({ ...editDraft, assignee_id: e.target.value })}
+                        className="text-xs px-2 py-1 border border-slate-300 rounded bg-white"
+                      >
+                        <option value="">담당자 없음</option>
+                        {members.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.full_name || m.email?.split('@')[0]}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={() => saveEdit(t)}
+                        className="text-[11px] px-2 py-1 bg-myriad-primary text-myriad-ink rounded font-semibold"
+                      >
+                        저장
+                      </button>
+                      <button
+                        onClick={() => setEditingId(null)}
+                        className="text-[11px] px-2 py-1 border border-slate-300 rounded"
+                      >
+                        취소
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex-1 min-w-0">
+                      <p
+                        className={`text-sm leading-relaxed ${
+                          isDone ? 'text-slate-400 line-through' : 'text-slate-800'
+                        }`}
+                      >
+                        {t.content}
+                      </p>
+                      <div className="flex items-center gap-2 mt-0.5 text-[10px] text-slate-500">
+                        {assigneeName && (
+                          <span className="inline-flex items-center gap-0.5 bg-sky-50 text-sky-700 px-1.5 py-0.5 rounded font-semibold">
+                            <UserPlus size={9} /> {assigneeName}
+                          </span>
+                        )}
+                        {isDone && t.completed_at && (
+                          <span className="text-slate-400">
+                            · 완료 {new Date(t.completed_at).toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' })}
+                            {t.completed_by && ` · ${nameOf(t.completed_by)}`}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        onClick={() => startEdit(t)}
+                        className="text-slate-400 hover:text-slate-700 p-1"
+                        title="편집"
+                      >
+                        <Edit3 size={11} />
+                      </button>
+                      {canDelete(t) && (
+                        <button
+                          onClick={() => handleDelete(t)}
+                          className="text-rose-400 hover:text-rose-600 p-1"
+                          title="삭제"
+                        >
+                          <Trash2 size={11} />
+                        </button>
+                      )}
+                    </div>
+                  </>
+                )}
+              </li>
+            )
+          })}
+        </ul>
+      )}
+
+      {/* 신규 태스크 입력 */}
+      {adding && (
+        <div className="border-t border-slate-100 pt-3 flex flex-col gap-2">
+          <input
+            autoFocus
+            value={newContent}
+            onChange={(e) => setNewContent(e.target.value)}
+            placeholder="태스크 내용 (예: 판매자 연락처 확인 후 DM 발송)"
+            className="text-sm px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-myriad-primary/40"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.nativeEvent?.isComposing) {
+                e.preventDefault()
+                handleAdd()
+              } else if (e.key === 'Escape') {
+                setAdding(false); setNewContent(''); setNewAssignee('')
+              }
+            }}
+          />
+          <div className="flex items-center gap-2">
+            <select
+              value={newAssignee}
+              onChange={(e) => setNewAssignee(e.target.value)}
+              className="text-xs px-2 py-1.5 border border-slate-300 rounded bg-white"
+            >
+              <option value="">담당자 없음</option>
+              {members.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.full_name || m.email?.split('@')[0]}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={handleAdd}
+              disabled={busy || !newContent.trim()}
+              className="text-xs font-semibold bg-myriad-primary hover:bg-myriad-primaryDark disabled:bg-slate-200 text-myriad-ink px-3 py-1.5 rounded-lg"
+            >
+              {busy ? <Loader2 size={11} className="animate-spin" /> : '추가'}
+            </button>
+            <button
+              onClick={() => { setAdding(false); setNewContent(''); setNewAssignee('') }}
+              className="text-xs text-slate-500 hover:text-slate-700 px-2"
+            >
+              취소
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────
+// 워크플로우 — 자유 노트 (TipTap)
+// ─────────────────────────────────────────────────────
+
+function WorkflowNotesSection({ caseId, wfNotes, profiles, user, onChanged }) {
+  const [editing, setEditing] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [draftHtml, setDraftHtml] = useState('')
+  const [draftText, setDraftText] = useState('')
+
+  const editor = useEditor({
+    extensions: [
+      StarterKit.configure({ heading: { levels: [2, 3] } }),
+      TiptapLink.configure({ openOnClick: false, autolink: true, HTMLAttributes: { rel: 'noopener' } }),
+      Placeholder.configure({
+        placeholder: '이 케이스를 어떻게 해결할지 팀원과 자유롭게 논의·정리하는 공간입니다. (예: 접근 전략, 참고 링크, 타임라인, 결정사항 등)'
+      })
+    ],
+    content: wfNotes?.body_html || '',
+    onUpdate: ({ editor }) => {
+      setDraftHtml(editor.getHTML())
+      setDraftText(editor.getText())
+    },
+    editorProps: {
+      attributes: { class: 'case-prose max-w-none focus:outline-none px-4 py-3 min-h-[120px]' }
+    },
+    editable: editing
+  }, [editing, wfNotes?.body_html])
+
+  // 편집 시작 시 현재 저장된 내용을 에디터에 주입
+  useEffect(() => {
+    if (editing && editor) {
+      editor.commands.setContent(wfNotes?.body_html || '')
+      setDraftHtml(wfNotes?.body_html || '')
+      setDraftText('')
+    }
+  }, [editing, editor])
+
+  async function handleSave() {
+    setSaving(true)
+    try {
+      await upsertCaseWorkflowNotes(caseId, draftHtml, draftText, user.id)
+      setEditing(false)
+      onChanged?.()
+    } catch (e) {
+      alert('저장 실패: ' + e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function handleCancel() {
+    setEditing(false)
+    setDraftHtml('')
+    setDraftText('')
+  }
+
+  const lastEditor = wfNotes?.updated_by ? profiles[wfNotes.updated_by] : null
+  const lastEditorName =
+    lastEditor?.full_name || lastEditor?.email?.split('@')[0] || '—'
+
+  const hasContent = wfNotes?.body_html && wfNotes.body_html !== '<p></p>'
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-2xl p-5 mb-4">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+          <NotebookPen size={14} className="text-purple-600" /> 워크플로우 노트
+          <span className="text-xs font-normal text-slate-400">(팀 공동 편집)</span>
+        </h2>
+        {!editing ? (
+          <button
+            onClick={() => setEditing(true)}
+            className="inline-flex items-center gap-1 text-xs font-semibold text-slate-600 hover:text-myriad-ink bg-slate-100 hover:bg-slate-200 px-2.5 py-1 rounded-full"
+          >
+            <Edit3 size={11} /> 편집
+          </button>
+        ) : (
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="inline-flex items-center gap-1 text-xs font-semibold bg-myriad-primary hover:bg-myriad-primaryDark disabled:bg-slate-200 text-myriad-ink px-3 py-1 rounded-lg"
+            >
+              {saving ? <Loader2 size={11} className="animate-spin" /> : <Save size={11} />}
+              저장
+            </button>
+            <button
+              onClick={handleCancel}
+              className="text-xs text-slate-500 hover:text-slate-700 px-2 py-1"
+            >
+              취소
+            </button>
+          </div>
+        )}
+      </div>
+
+      {editing ? (
+        <div className="border border-slate-200 rounded-lg overflow-hidden focus-within:ring-2 focus-within:ring-myriad-primary/40">
+          <EditorContent editor={editor} />
+        </div>
+      ) : hasContent ? (
+        <div
+          className="case-prose"
+          dangerouslySetInnerHTML={{ __html: wfNotes.body_html }}
+        />
+      ) : (
+        <p className="text-xs text-slate-400 py-3">
+          아직 작성된 노트가 없습니다. 편집 버튼을 눌러 시작하세요.
+        </p>
+      )}
+
+      {wfNotes?.updated_at && !editing && (
+        <p className="text-[10px] text-slate-400 mt-3">
+          마지막 편집: {lastEditorName} · {new Date(wfNotes.updated_at).toLocaleString('ko-KR')}
+        </p>
+      )}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────
 // 히스토리 타임라인
 // ─────────────────────────────────────────────────────
 
-function HistoryTimeline({ caseData, statusLog, helpRequests, comments, profiles }) {
+function HistoryTimeline({ caseData, statusLog, helpRequests, comments, tasks, profiles }) {
   const events = useMemo(() => {
     const list = []
     // 생성
@@ -706,6 +1171,24 @@ function HistoryTimeline({ caseData, statusLog, helpRequests, comments, profiles
         isTeamAll: h.is_team_all
       })
     }
+    // 태스크 생성 + 완료
+    for (const t of tasks || []) {
+      list.push({
+        kind: 'task_created',
+        at: t.created_at,
+        actor: t.created_by,
+        content: t.content,
+        assignee: t.assignee_id
+      })
+      if (t.status === 'done' && t.completed_at) {
+        list.push({
+          kind: 'task_done',
+          at: t.completed_at,
+          actor: t.completed_by,
+          content: t.content
+        })
+      }
+    }
     // 댓글
     for (const c of comments) {
       list.push({
@@ -717,7 +1200,7 @@ function HistoryTimeline({ caseData, statusLog, helpRequests, comments, profiles
     }
     // 최신 → 과거
     return list.sort((a, b) => new Date(b.at) - new Date(a.at))
-  }, [caseData, statusLog, helpRequests, comments])
+  }, [caseData, statusLog, helpRequests, comments, tasks])
 
   function nameOf(id) {
     const p = profiles[id]
@@ -738,6 +1221,15 @@ function HistoryTimeline({ caseData, statusLog, helpRequests, comments, profiles
       const target = e.isTeamAll ? '온라인팀 전체' : nameOf(e.recipient)
       return <>🆘 <b>{who}</b> 님이 <b>{target}</b> 에게 도움 요청.</>
     }
+    if (e.kind === 'task_created') {
+      const preview = e.content?.length > 80 ? e.content.slice(0, 80) + '...' : e.content
+      const assignSuffix = e.assignee ? <> (담당: <b>{nameOf(e.assignee)}</b>)</> : null
+      return <>📝 <b>{who}</b> 태스크 추가: <span className="text-slate-600">{preview}</span>{assignSuffix}</>
+    }
+    if (e.kind === 'task_done') {
+      const preview = e.content?.length > 80 ? e.content.slice(0, 80) + '...' : e.content
+      return <>✅ <b>{who}</b> 태스크 완료: <span className="text-slate-600">{preview}</span></>
+    }
     if (e.kind === 'comment') {
       const preview = e.body?.length > 80 ? e.body.slice(0, 80) + '...' : e.body
       return <>💬 <b>{who}</b>: <span className="text-slate-600">{preview}</span></>
@@ -750,6 +1242,8 @@ function HistoryTimeline({ caseData, statusLog, helpRequests, comments, profiles
       case 'created': return 'bg-sky-400'
       case 'status': return 'bg-amber-400'
       case 'help_request': return 'bg-purple-400'
+      case 'task_created': return 'bg-cyan-400'
+      case 'task_done': return 'bg-emerald-500'
       case 'comment': return 'bg-slate-400'
       default: return 'bg-slate-300'
     }

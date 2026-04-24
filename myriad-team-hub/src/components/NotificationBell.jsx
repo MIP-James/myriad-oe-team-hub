@@ -3,7 +3,7 @@
  * Realtime 구독으로 즉시 뱃지 업데이트.
  */
 import { useEffect, useState, useRef, useCallback } from 'react'
-import { Bell, X, CalendarDays, LifeBuoy, CheckCircle2 } from 'lucide-react'
+import { Bell, X, CalendarDays, LifeBuoy, CheckCircle2, ListChecks } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import {
@@ -170,6 +170,7 @@ export default function NotificationBell() {
         const viewLabel =
           toast.type === 'case_help_requested' ? '케이스 열기'
           : toast.type === 'case_resolved' ? '케이스 열기'
+          : toast.type === 'case_task_assigned' ? '태스크 보기'
           : '일정 보기'
         return (
         <div className="fixed bottom-6 right-6 z-[60] max-w-sm bg-white border border-slate-300 shadow-lg rounded-xl p-4 flex items-start gap-3 animate-slide-in">
@@ -219,6 +220,8 @@ function iconForType(type) {
       return { Icon: LifeBuoy, bg: 'bg-amber-100', color: 'text-amber-700' }
     case 'case_resolved':
       return { Icon: CheckCircle2, bg: 'bg-emerald-100', color: 'text-emerald-700' }
+    case 'case_task_assigned':
+      return { Icon: ListChecks, bg: 'bg-sky-100', color: 'text-sky-700' }
     case 'team_schedule':
     default:
       return { Icon: CalendarDays, bg: 'bg-sky-100', color: 'text-sky-700' }

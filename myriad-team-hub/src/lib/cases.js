@@ -455,6 +455,105 @@ export async function listCaseStatusLog(caseId) {
   return data ?? []
 }
 
+// ───── Tasks (Phase 11b) ────────────────────────────────────────
+
+export async function listCaseTasks(caseId) {
+  const { data, error } = await supabase
+    .from('case_tasks')
+    .select('*')
+    .eq('case_id', caseId)
+    .order('sort_order', { ascending: true })
+    .order('created_at', { ascending: true })
+  if (error) throw error
+  return data ?? []
+}
+
+export async function createCaseTask(caseId, content, assigneeId, userId, sortOrder = 0) {
+  const { data, error } = await supabase
+    .from('case_tasks')
+    .insert({
+      case_id: caseId,
+      content: content.trim(),
+      assignee_id: assigneeId || null,
+      sort_order: sortOrder,
+      created_by: userId
+    })
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function updateCaseTask(id, patch) {
+  const allowed = {}
+  if ('content' in patch) allowed.content = patch.content.trim()
+  if ('assignee_id' in patch) allowed.assignee_id = patch.assignee_id || null
+  if ('status' in patch) allowed.status = patch.status
+  if ('sort_order' in patch) allowed.sort_order = patch.sort_order
+  const { error } = await supabase.from('case_tasks').update(allowed).eq('id', id)
+  if (error) throw error
+}
+
+export async function toggleCaseTask(id, nextStatus) {
+  const { error } = await supabase
+    .from('case_tasks')
+    .update({ status: nextStatus })
+    .eq('id', id)
+  if (error) throw error
+}
+
+export async function deleteCaseTask(id) {
+  const { error } = await supabase.from('case_tasks').delete().eq('id', id)
+  if (error) throw error
+}
+
+/**
+ * 여러 케이스의 태스크 집계 — 목록에서 "3/5 완료" 표시용.
+ * @param {string[]} caseIds
+ * @returns {Object<caseId, { total, done }>}
+ */
+export async function listTaskSummaries(caseIds) {
+  if (!caseIds?.length) return {}
+  const { data, error } = await supabase
+    .from('case_tasks')
+    .select('case_id, status')
+    .in('case_id', caseIds)
+  if (error) throw error
+  const map = {}
+  for (const r of data ?? []) {
+    const s = map[r.case_id] ?? { total: 0, done: 0 }
+    s.total += 1
+    if (r.status === 'done') s.done += 1
+    map[r.case_id] = s
+  }
+  return map
+}
+
+// ───── Workflow notes (Phase 11b) ───────────────────────────────
+
+export async function getCaseWorkflowNotes(caseId) {
+  const { data, error } = await supabase
+    .from('case_workflow_notes')
+    .select('*')
+    .eq('case_id', caseId)
+    .maybeSingle()
+  if (error) throw error
+  return data || null
+}
+
+export async function upsertCaseWorkflowNotes(caseId, bodyHtml, bodyText, userId) {
+  const { error } = await supabase
+    .from('case_workflow_notes')
+    .upsert({
+      case_id: caseId,
+      body_html: bodyHtml || '',
+      body_text: bodyText || '',
+      updated_by: userId,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'case_id' })
+  if (error) throw error
+}
+
 // ───── Brand autocomplete ───────────────────────────────────────
 
 /**

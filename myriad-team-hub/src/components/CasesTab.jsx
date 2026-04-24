@@ -13,7 +13,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import {
-  listCases, listBrandSuggestions,
+  listCases, listBrandSuggestions, listTaskSummaries,
   PLATFORMS, INFRINGEMENT_TYPES, STATUS_OPTIONS, STATUS_LABELS, STATUS_COLORS,
   INFRINGEMENT_COLORS
 } from '../lib/cases'
@@ -40,6 +40,7 @@ export default function CasesTab() {
 
   const [brandSuggestions, setBrandSuggestions] = useState([])
   const [commentCounts, setCommentCounts] = useState({})
+  const [taskSummaries, setTaskSummaries] = useState({})
 
   useEffect(() => {
     listBrandSuggestions().then(setBrandSuggestions).catch(() => {})
@@ -84,18 +85,20 @@ export default function CasesTab() {
       )
       setProfiles(pmap)
 
-      // 댓글 개수 집계
+      // 댓글 개수 + 태스크 진행도 집계
       if (rows.length > 0) {
         const ids = rows.map((r) => r.id)
-        const { data: comments } = await supabase
-          .from('case_comments')
-          .select('case_id')
-          .in('case_id', ids)
+        const [commentsRes, tasks] = await Promise.all([
+          supabase.from('case_comments').select('case_id').in('case_id', ids),
+          listTaskSummaries(ids)
+        ])
         const counts = {}
-        for (const c of comments ?? []) counts[c.case_id] = (counts[c.case_id] ?? 0) + 1
+        for (const c of commentsRes.data ?? []) counts[c.case_id] = (counts[c.case_id] ?? 0) + 1
         setCommentCounts(counts)
+        setTaskSummaries(tasks)
       } else {
         setCommentCounts({})
+        setTaskSummaries({})
       }
     } catch (e) {
       setError(e.message)
@@ -229,6 +232,7 @@ export default function CasesTab() {
                     const profile = profiles[c.created_by]
                     const author = profile?.full_name || profile?.email?.split('@')[0] || '—'
                     const commentCount = commentCounts[c.id] || 0
+                    const taskSummary = taskSummaries[c.id]
                     const platformLabel = c.platform || '—'
                     const isActionNeeded = c.status === 'action_needed'
                     return (
@@ -253,6 +257,18 @@ export default function CasesTab() {
                             {commentCount > 0 && (
                               <span className="text-[10px] text-slate-500 bg-slate-100 px-1.5 rounded-full shrink-0">
                                 💬 {commentCount}
+                              </span>
+                            )}
+                            {taskSummary && taskSummary.total > 0 && (
+                              <span
+                                className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full shrink-0 ${
+                                  taskSummary.done === taskSummary.total
+                                    ? 'bg-emerald-100 text-emerald-700'
+                                    : 'bg-sky-100 text-sky-700'
+                                }`}
+                                title={`${taskSummary.done}/${taskSummary.total} 완료`}
+                              >
+                                ✓ {taskSummary.done}/{taskSummary.total}
                               </span>
                             )}
                           </Link>
