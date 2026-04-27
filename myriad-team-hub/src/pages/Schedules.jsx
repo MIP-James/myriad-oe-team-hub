@@ -310,7 +310,8 @@ export default function Schedules() {
 
   // ─── 주간 계획 / 일일 기록 ────────
   function openWeeklyPlan(rowDays) {
-    const monday = rowDays[0]
+    // 일요일 시작 그리드 → 월요일은 [1] (ISO 주 기준)
+    const monday = rowDays[1]
     const { year, week } = isoWeekOf(monday)
     const plan = weeklyPlans[`${year}-${week}`]
     setWeeklyEditor({
@@ -376,11 +377,21 @@ export default function Schedules() {
     listDailyRecordsInRange(user.id, pastWeekStartKey, pastWeekEndKey)
       .then((records) => {
         if (cancelled) return
+        // 진단용 로그 — 데이터 안 보이는 이유 추적 (확인 후 제거 예정)
+        console.log('[지난 주 한 일] fetch', {
+          range: `${pastWeekStartKey} ~ ${pastWeekEndKey}`,
+          count: records.length,
+          dates: records.map((r) => r.log_date)
+        })
         const map = {}
         for (const r of records) map[r.log_date] = r
         setPastWeekRecords(map)
       })
-      .catch(() => { if (!cancelled) setPastWeekRecords({}) })
+      .catch((err) => {
+        if (cancelled) return
+        console.warn('[지난 주 한 일] fetch error:', err)
+        setPastWeekRecords({})
+      })
       .finally(() => { if (!cancelled) setPastWeekLoading(false) })
     return () => { cancelled = true }
   }, [user?.id, pastWeekStartKey, pastWeekEndKey])
@@ -797,7 +808,9 @@ export default function Schedules() {
               </div>
             ) : (
               <p className="text-sm text-slate-400">
-                이 주에는 기록이 없습니다. ◀ 버튼으로 더 이전 주를 찾아보세요.
+                이 주({formatMD(pastWeekStart)} ~ {formatMD(pastWeekEnd)})에는 기록이 없습니다.
+                <br />
+                ◀ 버튼으로 더 이전 주를 찾아보세요.
               </p>
             )}
           </div>
