@@ -13,7 +13,7 @@ import { useSearchParams } from 'react-router-dom'
 import {
   CalendarDays, ChevronLeft, ChevronRight, Plus, X, Trash2, Save, Loader2,
   Lock, Users as UsersIcon, Bell, BellOff, NotebookPen, ChevronRight as Chevron,
-  CheckCircle2
+  CheckCircle2, History
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
@@ -107,6 +107,11 @@ export default function Schedules() {
   const [weeklyEditor, setWeeklyEditor] = useState(null)   // { year, week, weekStart, items }
   const [dailyEditor, setDailyEditor] = useState(null)     // { date, items }
   const [reminderModalOpen, setReminderModalOpen] = useState(false)
+
+  // "지난 주 한 일" 탐색 — 선택한 주 기준 N주 전 (1 = 지난 주)
+  const [pastWeekOffset, setPastWeekOffset] = useState(1)
+  const [pastWeekRecords, setPastWeekRecords] = useState({})    // { 'YYYY-MM-DD' : record }
+  const [pastWeekLoading, setPastWeekLoading] = useState(false)
 
   const grid = useMemo(
     () => getMonthGridSundayStart(cursor.getFullYear(), cursor.getMonth()),
@@ -348,6 +353,56 @@ export default function Schedules() {
     () => selectedWeekDoneByDay.reduce((sum, g) => sum + g.items.length, 0),
     [selectedWeekDoneByDay]
   )
+
+  // ── 지난 주 한 일 (selectedWeekStart - 7*offset) ─────────────
+  const pastWeekStart = useMemo(() => {
+    const d = new Date(selectedWeekStart)
+    d.setDate(d.getDate() - 7 * pastWeekOffset)
+    return d
+  }, [selectedWeekStart, pastWeekOffset])
+  const pastWeekEnd = useMemo(() => {
+    const d = new Date(pastWeekStart)
+    d.setDate(d.getDate() + 6)
+    return d
+  }, [pastWeekStart])
+  const pastWeekInfo = useMemo(() => isoWeekOf(pastWeekStart), [pastWeekStart])
+  const pastWeekStartKey = dateKey(pastWeekStart)
+  const pastWeekEndKey = dateKey(pastWeekEnd)
+
+  useEffect(() => {
+    if (!user?.id) return
+    let cancelled = false
+    setPastWeekLoading(true)
+    listDailyRecordsInRange(user.id, pastWeekStartKey, pastWeekEndKey)
+      .then((records) => {
+        if (cancelled) return
+        const map = {}
+        for (const r of records) map[r.log_date] = r
+        setPastWeekRecords(map)
+      })
+      .catch(() => { if (!cancelled) setPastWeekRecords({}) })
+      .finally(() => { if (!cancelled) setPastWeekLoading(false) })
+    return () => { cancelled = true }
+  }, [user?.id, pastWeekStartKey, pastWeekEndKey])
+
+  const pastWeekDoneByDay = useMemo(() => {
+    const out = []
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(pastWeekStart)
+      d.setDate(pastWeekStart.getDate() + i)
+      const k = dateKey(d)
+      const rec = pastWeekRecords[k]
+      if (rec?.items?.length > 0) out.push({ date: d, key: k, items: rec.items })
+    }
+    return out
+  }, [pastWeekStart, pastWeekRecords])
+  const pastWeekDoneCount = useMemo(
+    () => pastWeekDoneByDay.reduce((sum, g) => sum + g.items.length, 0),
+    [pastWeekDoneByDay]
+  )
+
+  // 선택한 주가 바뀌면 offset 리셋 (직관적: 새 기준점 = 직전 주 다시 보기)
+  useEffect(() => { setPastWeekOffset(1) }, [dateKey(selectedWeekStart)])
 
   return (
     <div className="p-8 max-w-7xl mx-auto">
@@ -672,6 +727,77 @@ export default function Schedules() {
             ) : (
               <p className="text-sm text-slate-400">
                 아직 이번 주 기록 없음. '오늘 한 일'을 채우면 여기 누적돼요.
+              </p>
+            )}
+          </div>
+
+          {/* 지난 주 한 일 — N주 전 탐색 */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-5">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-bold text-slate-900 flex items-center gap-1.5">
+                <History size={14} className="text-slate-500" />
+                지난 주 한 일
+              </h3>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setPastWeekOffset((o) => o + 1)}
+                  className="p-1 rounded hover:bg-slate-100 text-slate-500"
+                  title="더 이전 주"
+                >
+                  <ChevronLeft size={14} />
+                </button>
+                <button
+                  onClick={() => setPastWeekOffset((o) => Math.max(1, o - 1))}
+                  disabled={pastWeekOffset <= 1}
+                  className="p-1 rounded hover:bg-slate-100 text-slate-500 disabled:opacity-30 disabled:cursor-not-allowed"
+                  title="다음 주"
+                >
+                  <ChevronRight size={14} />
+                </button>
+              </div>
+            </div>
+            <div className="text-[11px] text-slate-400 mb-2 flex items-center gap-2 flex-wrap">
+              <span className="font-semibold">Week {pastWeekInfo.week}</span>
+              <span>{formatMD(pastWeekStart)} ~ {formatMD(pastWeekEnd)}</span>
+              <span className="text-slate-400">· {pastWeekOffset}주 전</span>
+              {pastWeekDoneCount > 0 && (
+                <span className="ml-auto font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full">
+                  총 {pastWeekDoneCount}개
+                </span>
+              )}
+            </div>
+            {pastWeekLoading ? (
+              <div className="text-sm text-slate-400 flex items-center gap-2 py-2">
+                <Loader2 size={14} className="animate-spin" /> 불러오는 중...
+              </div>
+            ) : pastWeekDoneByDay.length > 0 ? (
+              <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+                {pastWeekDoneByDay.map((g) => (
+                  <div key={g.key}>
+                    <button
+                      onClick={() => {
+                        setCursor(new Date(g.date.getFullYear(), g.date.getMonth(), 1))
+                        setSelectedDay(g.key)
+                        openDailyRecord(g.date)
+                      }}
+                      className="w-full text-left text-[11px] font-bold mb-1 flex items-center gap-1.5 px-1.5 py-0.5 rounded text-slate-500 hover:text-slate-800 hover:bg-slate-50 transition"
+                      title="이 날짜로 이동 + 기록 열기"
+                    >
+                      <span>{WEEKDAYS_MON[g.date.getDay() === 0 ? 6 : g.date.getDay() - 1]}</span>
+                      <span className="text-slate-400">{formatMD(g.date)}</span>
+                      <span className="text-slate-400 font-medium">· {g.items.length}개</span>
+                    </button>
+                    <ol className="space-y-1 list-decimal list-inside text-sm text-slate-700 pl-1">
+                      {g.items.map((it, i) => (
+                        <li key={i} className="leading-relaxed">{it.text}</li>
+                      ))}
+                    </ol>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-slate-400">
+                이 주에는 기록이 없습니다. ◀ 버튼으로 더 이전 주를 찾아보세요.
               </p>
             )}
           </div>
