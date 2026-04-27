@@ -237,6 +237,10 @@ class Launcher:
         self.last_job_info = "(아직 없음)"
         self.online = False
         self.icon: pystray.Icon | None = None
+        # heartbeat / poll 스레드가 만료 직후 동시에 supabase 호출 → 둘 다 401 →
+        # supabase-py 자동 refresh 가 양쪽에서 동시 실행되며 refresh_token chain
+        # 이 두 갈래로 갈라지는 race 방지. RLock 으로 handle_job 재진입 허용.
+        self._sb_lock = threading.RLock()
 
     # ------------------------------------------------------------------
     # 초기화
@@ -265,13 +269,27 @@ class Launcher:
         try:
             def _on_auth_change(event, session):
                 try:
-                    if session and getattr(session, "refresh_token", None):
-                        sb2 = self.config["supabase"]
-                        if sb2.get("refresh_token") != session.refresh_token:
-                            sb2["access_token"] = session.access_token
-                            sb2["refresh_token"] = session.refresh_token
-                            save_config(self.config)
-                            logging.info(f"[auth] {event} — rotated token saved")
+                    if not session or not getattr(session, "refresh_token", None):
+                        return
+                    sb2 = self.config["supabase"]
+                    # 응답 도착 순서 ≠ 서버 발급 순서일 수 있어 단순 덮어쓰기는 위험.
+                    # expires_at 으로 신선도 비교해서 오래된 토큰 저장 차단.
+                    new_exp = getattr(session, "expires_at", None) or 0
+                    cur_exp = sb2.get("expires_at") or 0
+                    if new_exp and cur_exp and new_exp < cur_exp:
+                        logging.info(
+                            f"[auth] {event} — older token ignored "
+                            f"(exp {new_exp} < {cur_exp})"
+                        )
+                        return
+                    if sb2.get("refresh_token") == session.refresh_token:
+                        return
+                    sb2["access_token"] = session.access_token
+                    sb2["refresh_token"] = session.refresh_token
+                    if new_exp:
+                        sb2["expires_at"] = new_exp
+                    save_config(self.config)
+                    logging.info(f"[auth] {event} — rotated token saved (exp {new_exp})")
                 except Exception as ex:
                     logging.warning(f"auth_state_change save 실패: {ex}")
             self.client.auth.on_auth_state_change(_on_auth_change)
@@ -300,6 +318,9 @@ class Launcher:
                 if new_session and new_session.access_token:
                     sb["access_token"] = new_session.access_token
                     sb["refresh_token"] = new_session.refresh_token
+                    new_exp = getattr(new_session, "expires_at", None) or 0
+                    if new_exp:
+                        sb["expires_at"] = new_exp
                     save_config(self.config)
                     logging.info("토큰 갱신 & 저장 완료 (PC 재부팅 복구)")
                 rr_user = getattr(rresp, "user", None)
@@ -330,19 +351,26 @@ class Launcher:
     def _persist_refreshed_session(self):
         try:
             session = self.client.auth.get_session()
-            if session and session.access_token:
-                sb = self.config["supabase"]
-                # access_token 또는 refresh_token 둘 중 하나라도 바뀌면 저장.
-                # refresh_token 만 rotate 되는 케이스(드물지만 존재)도 포착.
-                changed = (
-                    sb.get("access_token") != session.access_token
-                    or sb.get("refresh_token") != session.refresh_token
-                )
-                if changed:
-                    sb["access_token"] = session.access_token
-                    sb["refresh_token"] = session.refresh_token
-                    save_config(self.config)
-                    logging.info("Token refreshed & saved (polling)")
+            if not (session and session.access_token):
+                return
+            sb = self.config["supabase"]
+            new_exp = getattr(session, "expires_at", None) or 0
+            cur_exp = sb.get("expires_at") or 0
+            # 오래된 토큰으로 덮어쓰기 차단 (race 보호).
+            if new_exp and cur_exp and new_exp < cur_exp:
+                return
+            # access_token 또는 refresh_token 둘 중 하나라도 바뀌면 저장.
+            changed = (
+                sb.get("access_token") != session.access_token
+                or sb.get("refresh_token") != session.refresh_token
+            )
+            if changed:
+                sb["access_token"] = session.access_token
+                sb["refresh_token"] = session.refresh_token
+                if new_exp:
+                    sb["expires_at"] = new_exp
+                save_config(self.config)
+                logging.info("Token refreshed & saved (polling)")
         except Exception as e:
             logging.warning(f"Persist session: {e}")
 
@@ -374,86 +402,100 @@ class Launcher:
     def mark_offline(self):
         if not self.client or not self.device_id:
             return
-        try:
-            self.client.table("launcher_devices").update(
-                {"is_online": False, "last_seen_at": utcnow_iso()}
-            ).eq("id", self.device_id).execute()
-            logging.info("Marked offline")
-        except Exception as e:
-            logging.warning(f"Mark offline failed: {e}")
+        with self._sb_lock:
+            try:
+                self.client.table("launcher_devices").update(
+                    {"is_online": False, "last_seen_at": utcnow_iso()}
+                ).eq("id", self.device_id).execute()
+                logging.info("Marked offline")
+            except Exception as e:
+                logging.warning(f"Mark offline failed: {e}")
 
     # ------------------------------------------------------------------
     # 백그라운드 루프
     # ------------------------------------------------------------------
     def heartbeat_loop(self):
         while not self.stop_event.wait(HEARTBEAT_INTERVAL_SEC):
-            try:
-                self.client.table("launcher_devices").update(
-                    {"last_seen_at": utcnow_iso(), "is_online": True}
-                ).eq("id", self.device_id).execute()
-            except Exception as e:
-                logging.warning(f"Heartbeat: {e}")
-            # 안전망 — 이벤트 리스너가 미동작하는 supabase-py 버전 대비.
-            # get_session() 은 메모리 조회라 비용 거의 없음.
-            try:
-                self._persist_refreshed_session()
-            except Exception as e:
-                logging.warning(f"Heartbeat persist: {e}")
+            # _sb_lock 으로 poll_loop 와의 동시 호출 차단 — supabase-py 자동
+            # refresh 가 양쪽에서 동시 트리거되어 token rotation 이 분기되는 race 방지.
+            with self._sb_lock:
+                try:
+                    self.client.table("launcher_devices").update(
+                        {"last_seen_at": utcnow_iso(), "is_online": True}
+                    ).eq("id", self.device_id).execute()
+                except Exception as e:
+                    logging.warning(f"Heartbeat: {e}")
+                # 안전망 — 이벤트 리스너가 미동작하는 supabase-py 버전 대비.
+                # get_session() 은 메모리 조회라 비용 거의 없음.
+                try:
+                    self._persist_refreshed_session()
+                except Exception as e:
+                    logging.warning(f"Heartbeat persist: {e}")
 
     def poll_loop(self):
         self._update_status("온라인 - 대기 중")
         while not self.stop_event.wait(POLL_INTERVAL_SEC):
-            try:
-                resp = (
-                    self.client.table("launcher_jobs")
-                    .select("*")
-                    .eq("user_id", self.user_id)
-                    .eq("status", "pending")
-                    .order("requested_at")
-                    .limit(1)
-                    .execute()
-                )
-                jobs = resp.data or []
-                if jobs:
+            jobs = []
+            with self._sb_lock:
+                try:
+                    resp = (
+                        self.client.table("launcher_jobs")
+                        .select("*")
+                        .eq("user_id", self.user_id)
+                        .eq("status", "pending")
+                        .order("requested_at")
+                        .limit(1)
+                        .execute()
+                    )
+                    jobs = resp.data or []
+                except Exception as e:
+                    logging.warning(f"Poll: {e}")
+            # handle_job 은 lock 밖에서 — subprocess.run (최대 4시간) 동안
+            # heartbeat 가 막혀 디바이스가 offline 으로 보이는 걸 막기 위함.
+            # handle_job 내부의 짧은 supabase 호출은 각자 _sb_lock 으로 보호.
+            if jobs:
+                try:
                     self.handle_job(jobs[0])
-            except Exception as e:
-                logging.warning(f"Poll: {e}")
+                except Exception as e:
+                    logging.warning(f"handle_job: {e}")
 
     # ------------------------------------------------------------------
     # 작업 실행
     # ------------------------------------------------------------------
     def _push_output(self, job_id: str, message: str):
         """진행 상황을 launcher_jobs.output 에 append (최근 MAX_OUTPUT_CHARS 자 유지)."""
-        try:
-            current = (
-                self.client.table("launcher_jobs")
-                .select("output")
-                .eq("id", job_id)
-                .single()
-                .execute()
-            ).data or {}
-            existing = current.get("output") or ""
-            line = f"[{datetime.now().strftime('%H:%M:%S')}] {message}"
-            combined = (existing + ("\n" if existing else "") + line)[-MAX_OUTPUT_CHARS:]
-            self.client.table("launcher_jobs").update({"output": combined}).eq(
-                "id", job_id
-            ).execute()
-        except Exception as e:
-            logging.warning(f"Output update: {e}")
+        with self._sb_lock:
+            try:
+                current = (
+                    self.client.table("launcher_jobs")
+                    .select("output")
+                    .eq("id", job_id)
+                    .single()
+                    .execute()
+                ).data or {}
+                existing = current.get("output") or ""
+                line = f"[{datetime.now().strftime('%H:%M:%S')}] {message}"
+                combined = (existing + ("\n" if existing else "") + line)[-MAX_OUTPUT_CHARS:]
+                self.client.table("launcher_jobs").update({"output": combined}).eq(
+                    "id", job_id
+                ).execute()
+            except Exception as e:
+                logging.warning(f"Output update: {e}")
 
     def _fetch_utility(self, slug: str) -> dict | None:
-        try:
-            resp = (
-                self.client.table("utilities")
-                .select("slug,name,download_url,current_version,entry_exe,utility_type")
-                .eq("slug", slug)
-                .single()
-                .execute()
-            )
-            return resp.data
-        except Exception as e:
-            logging.error(f"fetch utility '{slug}' failed: {e}")
-            return None
+        with self._sb_lock:
+            try:
+                resp = (
+                    self.client.table("utilities")
+                    .select("slug,name,download_url,current_version,entry_exe,utility_type")
+                    .eq("slug", slug)
+                    .single()
+                    .execute()
+                )
+                return resp.data
+            except Exception as e:
+                logging.error(f"fetch utility '{slug}' failed: {e}")
+                return None
 
     def _resolve_exe_for_job(
         self, job_id: str, slug: str, name: str, utility: dict
@@ -491,18 +533,19 @@ class Launcher:
         logging.info(f"[Job {job_id[:8]}] Received: {slug}")
         self._update_status(f"실행 중: {name}")
 
-        try:
-            self.client.table("launcher_jobs").update(
-                {
-                    "status": "dispatched",
-                    "device_id": self.device_id,
-                    "dispatched_at": utcnow_iso(),
-                }
-            ).eq("id", job_id).eq("status", "pending").execute()
-        except Exception as e:
-            logging.warning(f"Dispatch mark: {e}")
-            self._update_status("온라인 - 대기 중")
-            return
+        with self._sb_lock:
+            try:
+                self.client.table("launcher_jobs").update(
+                    {
+                        "status": "dispatched",
+                        "device_id": self.device_id,
+                        "dispatched_at": utcnow_iso(),
+                    }
+                ).eq("id", job_id).eq("status", "pending").execute()
+            except Exception as e:
+                logging.warning(f"Dispatch mark: {e}")
+                self._update_status("온라인 - 대기 중")
+                return
 
         utility = self._fetch_utility(slug)
         if not utility:
@@ -517,26 +560,29 @@ class Launcher:
         # download_only: Downloads 폴더로 내려주고 작업 종료
         # ─────────────────────────────────────────────
         if utype == "download_only":
-            try:
-                self.client.table("launcher_jobs").update(
-                    {"status": "running", "started_at": utcnow_iso()}
-                ).eq("id", job_id).execute()
-            except Exception as e:
-                logging.warning(f"Running mark: {e}")
+            with self._sb_lock:
+                try:
+                    self.client.table("launcher_jobs").update(
+                        {"status": "running", "started_at": utcnow_iso()}
+                    ).eq("id", job_id).execute()
+                except Exception as e:
+                    logging.warning(f"Running mark: {e}")
 
             try:
+                # 다운로드는 lock 밖 (네트워크 IO). 진행 상황 push 는 _push_output
+                # 안에서 자체적으로 lock 잡음.
                 saved = deliver_to_downloads(
                     utility,
                     progress_cb=lambda msg: self._push_output(job_id, msg),
                 )
-                # 완료 처리
-                self.client.table("launcher_jobs").update(
-                    {
-                        "status": "done",
-                        "finished_at": utcnow_iso(),
-                        "exit_code": 0,
-                    }
-                ).eq("id", job_id).execute()
+                with self._sb_lock:
+                    self.client.table("launcher_jobs").update(
+                        {
+                            "status": "done",
+                            "finished_at": utcnow_iso(),
+                            "exit_code": 0,
+                        }
+                    ).eq("id", job_id).execute()
                 self.last_job_info = f"{name}: Downloads 에 저장"
                 notify(
                     f"{name} 다운로드 완료",
@@ -559,15 +605,18 @@ class Launcher:
             self._update_status("온라인 - 대기 중")
             return
 
-        try:
-            self.client.table("launcher_jobs").update(
-                {"status": "running", "started_at": utcnow_iso()}
-            ).eq("id", job_id).execute()
-        except Exception as e:
-            logging.warning(f"Running mark: {e}")
+        with self._sb_lock:
+            try:
+                self.client.table("launcher_jobs").update(
+                    {"status": "running", "started_at": utcnow_iso()}
+                ).eq("id", job_id).execute()
+            except Exception as e:
+                logging.warning(f"Running mark: {e}")
 
         logging.info(f"[Job {job_id[:8]}] Exec {exe}")
         try:
+            # subprocess.run 은 최대 4시간 — 반드시 lock 밖에서 실행해서
+            # heartbeat 가 정상 동작하게 유지.
             proc = subprocess.run(
                 [str(exe)],
                 cwd=str(exe.parent),
@@ -586,17 +635,18 @@ class Launcher:
             status = "done" if exit_code == 0 else "error"
             logging.info(f"[Job {job_id[:8]}] exit={exit_code} status={status}")
 
-            self.client.table("launcher_jobs").update(
-                {
-                    "status": status,
-                    "finished_at": utcnow_iso(),
-                    "output": output or None,
-                    "exit_code": exit_code,
-                    "error_message": (
-                        stderr[-500:] if status == "error" and stderr else None
-                    ),
-                }
-            ).eq("id", job_id).execute()
+            with self._sb_lock:
+                self.client.table("launcher_jobs").update(
+                    {
+                        "status": status,
+                        "finished_at": utcnow_iso(),
+                        "output": output or None,
+                        "exit_code": exit_code,
+                        "error_message": (
+                            stderr[-500:] if status == "error" and stderr else None
+                        ),
+                    }
+                ).eq("id", job_id).execute()
             self.last_job_info = f"{name}: {'완료' if status == 'done' else '오류'}"
             if status == "done":
                 notify(f"{name} 완료", "실행이 정상 종료되었습니다.", success=True)
@@ -619,16 +669,17 @@ class Launcher:
 
     def _fail_job(self, job_id: str, message: str):
         logging.error(f"[Job {job_id[:8]}] FAIL: {message}")
-        try:
-            self.client.table("launcher_jobs").update(
-                {
-                    "status": "error",
-                    "finished_at": utcnow_iso(),
-                    "error_message": message,
-                }
-            ).eq("id", job_id).execute()
-        except Exception as e:
-            logging.warning(f"Fail mark: {e}")
+        with self._sb_lock:
+            try:
+                self.client.table("launcher_jobs").update(
+                    {
+                        "status": "error",
+                        "finished_at": utcnow_iso(),
+                        "error_message": message,
+                    }
+                ).eq("id", job_id).execute()
+            except Exception as e:
+                logging.warning(f"Fail mark: {e}")
 
     # ------------------------------------------------------------------
     # Tray 메뉴
