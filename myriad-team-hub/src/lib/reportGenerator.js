@@ -794,10 +794,10 @@ function writeIssueBox(ws, startRow, startCol, title, widthCols) {
   return contentRow
 }
 
-// ---------------- Enhanced 이슈 섹션 (6개 박스) ----------------
-const MANUAL_FILL = 'FFFEF9E7'         // 연한 노란색 — 수기 입력 영역
-const MANUAL_TEXT_COLOR = 'FF7F7F7F'   // 회색 — 수기 placeholder
+// ---------------- Enhanced 이슈 섹션 (큰 박스 + 6개 서브 섹션) ----------------
+const MANUAL_TEXT_COLOR = 'FF7F7F7F'   // 회색 — 수기 입력 영역 텍스트
 const MANUAL_PLACEHOLDER = '[수기 입력]'
+const SUB_HEADER_FILL = 'FFF2F2F2'     // 옅은 회색 — 서브 섹션 헤더 음영
 
 /**
  * 단일 이슈 섹션 박스. autoLines (자동 생성), manualLines (수기 영역) 각각 별도 행.
@@ -807,21 +807,21 @@ function writeIssueSection(ws, startRow, startCol, widthCols, sectionTitle, auto
   const left = startCol
   const right = startCol + widthCols - 1
 
-  // 헤더
+  // 서브 섹션 헤더 — 옅은 회색 음영 + 검정 굵은 글씨 + 왼쪽 정렬
   ws.mergeCells(startRow, left, startRow, right)
   const hdr = ws.getCell(startRow, left)
   hdr.value = sectionTitle
-  hdr.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: HEADER_BLUE } }
-  hdr.font = { color: { argb: 'FFFFFFFF' }, bold: true }
-  hdr.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }
-  ws.getRow(startRow).height = HEADER_ROW_HEIGHT
+  hdr.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: SUB_HEADER_FILL } }
+  hdr.font = { color: { argb: 'FF000000' }, bold: true }
+  hdr.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true }
+  ws.getRow(startRow).height = BASE_DATA_ROW_HEIGHT
   for (let c = left; c <= right; c++) ws.getCell(startRow, c).border = THIN_BORDER
   if (!titleRowsByWs.has(ws)) titleRowsByWs.set(ws, new Set())
   titleRowsByWs.get(ws).add(startRow)
 
   let curRow = startRow + 1
 
-  // 자동 영역
+  // 자동 영역 — 흰 배경 + 검정 + 왼쪽 정렬
   if (autoLines && autoLines.length) {
     ws.mergeCells(curRow, left, curRow, right)
     const cell = ws.getCell(curRow, left)
@@ -831,21 +831,14 @@ function writeIssueSection(ws, startRow, startCol, widthCols, sectionTitle, auto
     curRow++
   }
 
-  // 수기 영역
+  // 수기 영역 — 흰 배경 + 회색 일반 텍스트 + 왼쪽 정렬 (이탤릭/음영 제거)
   if (manualLines && manualLines.length) {
     ws.mergeCells(curRow, left, curRow, right)
     const cell = ws.getCell(curRow, left)
     cell.value = manualLines.join('\n')
     cell.alignment = { horizontal: 'left', vertical: 'top', wrapText: true }
-    cell.font = { color: { argb: MANUAL_TEXT_COLOR }, italic: true }
-    for (let c = left; c <= right; c++) {
-      ws.getCell(curRow, c).fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: MANUAL_FILL }
-      }
-      ws.getCell(curRow, c).border = THIN_BORDER
-    }
+    cell.font = { color: { argb: MANUAL_TEXT_COLOR } }
+    for (let c = left; c <= right; c++) ws.getCell(curRow, c).border = THIN_BORDER
     curRow++
   }
 
@@ -854,7 +847,22 @@ function writeIssueSection(ws, startRow, startCol, widthCols, sectionTitle, auto
 
 function writeEnhancedIssueSections(ws, startRow, startCol, widthCols, ctx) {
   const { prevRows, currRows, currSummary, cmp2, cmp3, useDivision, topN, label } = ctx
-  let cur = startRow
+  const left = startCol
+  const right = startCol + widthCols - 1
+
+  // ===== 외곽 큰 박스 헤더: '이슈 사항' =====
+  ws.mergeCells(startRow, left, startRow, right)
+  const bigHdr = ws.getCell(startRow, left)
+  bigHdr.value = '이슈 사항'
+  bigHdr.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: HEADER_BLUE } }
+  bigHdr.font = { color: { argb: 'FFFFFFFF' }, bold: true }
+  bigHdr.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }
+  ws.getRow(startRow).height = HEADER_ROW_HEIGHT
+  for (let c = left; c <= right; c++) ws.getCell(startRow, c).border = THIN_BORDER
+  if (!titleRowsByWs.has(ws)) titleRowsByWs.set(ws, new Set())
+  titleRowsByWs.get(ws).add(startRow)
+
+  let cur = startRow + 1
 
   // ===== 1. Keyword (전부 수기) =====
   cur = writeIssueSection(ws, cur, startCol, widthCols, '■ Keyword', null, [
@@ -862,7 +870,7 @@ function writeEnhancedIssueSections(ws, startRow, startCol, widthCols, ctx) {
     `· 사라진 키워드 (사유 포함): ${MANUAL_PLACEHOLDER}`,
     `· 가장 많이 발견되는 키워드: ${MANUAL_PLACEHOLDER}`
   ])
-  cur += 2
+  cur += 1
 
   // ===== 2. Trend (자동 + 사유 수기) =====
   const auto2 = []
@@ -916,7 +924,7 @@ function writeEnhancedIssueSections(ws, startRow, startCol, widthCols, ctx) {
   cur = writeIssueSection(ws, cur, startCol, widthCols, '■ Trend', auto2, [
     `· 변동 사유 / 시즌·콜라보 영향: ${MANUAL_PLACEHOLDER}`
   ])
-  cur += 2
+  cur += 1
 
   // ===== 3. Product Category (자동) =====
   const auto3 = []
@@ -956,21 +964,21 @@ function writeEnhancedIssueSections(ws, startRow, startCol, widthCols, ctx) {
     }
   }
   cur = writeIssueSection(ws, cur, startCol, widthCols, '■ Product Category', auto3, null)
-  cur += 2
+  cur += 1
 
   // ===== 4. Pending (전부 수기) =====
   cur = writeIssueSection(ws, cur, startCol, widthCols, '■ Pending', null, [
     `· 신고 미처리 / 처리 지연 사유: ${MANUAL_PLACEHOLDER}`,
     `· 미처리 건 향후 처리 방안: ${MANUAL_PLACEHOLDER}`
   ])
-  cur += 2
+  cur += 1
 
   // ===== 5. Infringing Trend (전부 수기) =====
   cur = writeIssueSection(ws, cur, startCol, widthCols, '■ Infringing Trend', null, [
     `· 유사 범위 내 디자인 소폭 변형: ${MANUAL_PLACEHOLDER}`,
     `· 새로 발견된 침해 모티프 / 디자인: ${MANUAL_PLACEHOLDER}`
   ])
-  cur += 2
+  cur += 1
 
   // ===== 6. Infringer (자동 + 조치방안 수기) =====
   const auto6 = []
@@ -1224,7 +1232,6 @@ export async function buildReportWorkbook(prev, curr, opt) {
   const issueStart = compareBottom + 2
 
   const issueLabel = useDivision ? '사업부' : '상품'
-  const issueTopRow = issueStart + 1
   try {
     writeEnhancedIssueSections(ws0, issueStart, L, 5, {
       prevRows,
@@ -1247,8 +1254,9 @@ export async function buildReportWorkbook(prev, curr, opt) {
       issueText = `이슈 자동 생성 중 오류: ${e.message} / ${e2.message}`
     }
     writeIssueBox(ws0, issueStart, L, '이슈 사항', 5)
-    ws0.getCell(issueTopRow, L).value = '\n' + issueText
-    ws0.getCell(issueTopRow, L).alignment = { horizontal: 'left', vertical: 'top', wrapText: true }
+    const fallbackRow = issueStart + 1
+    ws0.getCell(fallbackRow, L).value = '\n' + issueText
+    ws0.getCell(fallbackRow, L).alignment = { horizontal: 'left', vertical: 'top', wrapText: true }
   }
 
   // 열 너비 고정
@@ -1263,11 +1271,10 @@ export async function buildReportWorkbook(prev, curr, opt) {
   ws0.getColumn(9).width = 14    // I
   ws0.getColumn(10).width = 18   // J
 
-  centerWrap(ws0, 1, ws0.rowCount, 1, 10)
+  // 이슈 박스 영역은 left/top 정렬을 보존해야 하므로 centerWrap 범위에서 제외
+  centerWrap(ws0, 1, issueStart - 1, 1, 10)
   autosizeRows(ws0, 1, ws0.rowCount, 10)
-  // 이슈 셀은 왼쪽 상단 정렬 유지
-  ws0.getCell(issueTopRow, L).alignment = { horizontal: 'left', vertical: 'top', wrapText: true }
-  // 전체 셀 vertical 강제 center (이슈 박스처럼 top 으로 명시된 건 유지)
+  // forceCenterAlignment 는 vertical='top' 셀을 건드리지 않으므로 이슈 영역은 유지됨
   forceCenterAlignment(ws0)
 
   // ---- 상세 시트 ----
