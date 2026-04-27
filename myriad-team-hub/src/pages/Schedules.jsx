@@ -377,21 +377,11 @@ export default function Schedules() {
     listDailyRecordsInRange(user.id, pastWeekStartKey, pastWeekEndKey)
       .then((records) => {
         if (cancelled) return
-        // 진단용 로그 — 데이터 안 보이는 이유 추적 (확인 후 제거 예정)
-        console.log('[지난 주 한 일] fetch', {
-          range: `${pastWeekStartKey} ~ ${pastWeekEndKey}`,
-          count: records.length,
-          dates: records.map((r) => r.log_date)
-        })
         const map = {}
         for (const r of records) map[r.log_date] = r
         setPastWeekRecords(map)
       })
-      .catch((err) => {
-        if (cancelled) return
-        console.warn('[지난 주 한 일] fetch error:', err)
-        setPastWeekRecords({})
-      })
+      .catch(() => { if (!cancelled) setPastWeekRecords({}) })
       .finally(() => { if (!cancelled) setPastWeekLoading(false) })
     return () => { cancelled = true }
   }, [user?.id, pastWeekStartKey, pastWeekEndKey])
