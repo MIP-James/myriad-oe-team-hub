@@ -69,6 +69,12 @@ function formatDateKeyKorean(dateStr) {
   return `${m}/${d} (${weekday})`
 }
 
+// 팀 공개 일정 작성자 라벨 (full_name 우선, 없으면 email 앞부분)
+function authorLabel(profile) {
+  if (!profile) return null
+  return profile.full_name || profile.email?.split('@')[0] || null
+}
+
 // 선택한 날짜에 해당하는 일정 표시용 시간 문자열
 function getItemTimeForDay(item, selectedKey) {
   if (Array.isArray(item.daily_times) && item.daily_times.length > 0) {
@@ -104,6 +110,7 @@ export default function Schedules() {
   const [weeklyPlans, setWeeklyPlans] = useState({})       // { 'YYYY-W' : plan }
   const [dailyRecords, setDailyRecords] = useState({})     // { 'YYYY-MM-DD' : record }
   const [reminderSettings, setReminderSettings] = useState(null)
+  const [profileMap, setProfileMap] = useState({})         // { user_id : { full_name, email } } — 팀 공개 작성자 표시용
   const [weeklyEditor, setWeeklyEditor] = useState(null)   // { year, week, weekStart, items }
   const [dailyEditor, setDailyEditor] = useState(null)     // { date, items }
   const [reminderModalOpen, setReminderModalOpen] = useState(false)
@@ -173,6 +180,26 @@ export default function Schedules() {
       ])
       if (schedulesRes.error) setError(schedulesRes.error.message)
       else setItems(schedulesRes.data ?? [])
+
+      // 팀 공개 일정의 작성자 프로필 한 번에 조회 (본인 제외)
+      const teamAuthorIds = [
+        ...new Set(
+          (schedulesRes.data ?? [])
+            .filter((s) => s.visibility === 'team' && s.user_id !== user.id)
+            .map((s) => s.user_id)
+        )
+      ]
+      if (teamAuthorIds.length > 0) {
+        const { data: profileRows } = await supabase
+          .from('profiles')
+          .select('id,full_name,email')
+          .in('id', teamAuthorIds)
+        const pmap = {}
+        for (const p of (profileRows ?? [])) pmap[p.id] = p
+        setProfileMap(pmap)
+      } else {
+        setProfileMap({})
+      }
 
       // 인덱싱
       const planMap = {}
@@ -589,27 +616,37 @@ export default function Schedules() {
               <p className="text-sm text-slate-400">이 날 일정이 없습니다.</p>
             ) : (
               <ul className="space-y-2">
-                {selectedDayItems.map((it) => (
-                  <li key={it.id}>
-                    <button
-                      onClick={() => openEdit(it)}
-                      className="w-full text-left p-3 rounded-lg border border-slate-200 hover:border-myriad-primary hover:bg-amber-50 transition"
-                    >
-                      <div className="flex items-center gap-2">
-                        {it.visibility === 'team'
-                          ? <UsersIcon size={14} className="text-sky-500 shrink-0" />
-                          : <Lock size={14} className="text-amber-500 shrink-0" />}
-                        <span className="font-semibold text-slate-900 truncate">{it.title}</span>
-                      </div>
-                      <div className="text-xs text-slate-500 mt-1">
-                        {getItemTimeForDay(it, selectedDay)}
-                      </div>
-                      {it.description && (
-                        <div className="text-xs text-slate-600 mt-1 whitespace-pre-wrap line-clamp-2">{it.description}</div>
-                      )}
-                    </button>
-                  </li>
-                ))}
+                {selectedDayItems.map((it) => {
+                  const author = it.visibility === 'team' && it.user_id !== user.id
+                    ? authorLabel(profileMap[it.user_id])
+                    : null
+                  return (
+                    <li key={it.id}>
+                      <button
+                        onClick={() => openEdit(it)}
+                        className="w-full text-left p-3 rounded-lg border border-slate-200 hover:border-myriad-primary hover:bg-amber-50 transition"
+                      >
+                        <div className="flex items-center gap-2">
+                          {it.visibility === 'team'
+                            ? <UsersIcon size={14} className="text-sky-500 shrink-0" />
+                            : <Lock size={14} className="text-amber-500 shrink-0" />}
+                          <span className="font-semibold text-slate-900 truncate">{it.title}</span>
+                          {author && (
+                            <span className="text-[11px] font-medium text-sky-700 bg-sky-50 border border-sky-200 px-1.5 py-0.5 rounded shrink-0">
+                              by {author}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs text-slate-500 mt-1">
+                          {getItemTimeForDay(it, selectedDay)}
+                        </div>
+                        {it.description && (
+                          <div className="text-xs text-slate-600 mt-1 whitespace-pre-wrap line-clamp-2">{it.description}</div>
+                        )}
+                      </button>
+                    </li>
+                  )
+                })}
               </ul>
             )}
             <button
@@ -812,6 +849,7 @@ export default function Schedules() {
         <ScheduleEditor
           editor={editor} setEditor={setEditor}
           isMine={isEditorMine} saving={saving} error={error}
+          authorProfile={!isEditorMine ? profileMap[editor.user_id] : null}
           onSave={saveSchedule} onDelete={removeSchedule}
           onClose={() => setEditor(null)}
         />
@@ -874,7 +912,8 @@ function ReminderButton({ settings, onClick }) {
 // 일정 편집 모달 (기존 로직 그대로, 컴포넌트로 분리)
 // ─────────────────────────────────────────────────────
 
-function ScheduleEditor({ editor, setEditor, isMine, saving, error, onSave, onDelete, onClose }) {
+function ScheduleEditor({ editor, setEditor, isMine, saving, error, authorProfile, onSave, onDelete, onClose }) {
+  const authorName = authorLabel(authorProfile)
   const dayKeys = enumerateDateKeys(editor.startDate, editor.endDate)
   const isMultiDay = dayKeys.length > 1
   const singleKey = dayKeys[0] || editor.startDate
@@ -902,10 +941,15 @@ function ScheduleEditor({ editor, setEditor, isMine, saving, error, onSave, onDe
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[92vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-        <div className="px-6 py-4 border-b border-slate-200 flex items-center shrink-0">
+        <div className="px-6 py-4 border-b border-slate-200 flex items-center shrink-0 gap-2">
           <h2 className="font-bold text-slate-900">
             {editor.id ? (isMine ? '일정 편집' : '일정 보기') : '새 일정'}
           </h2>
+          {!isMine && authorName && (
+            <span className="text-[11px] font-medium text-sky-700 bg-sky-50 border border-sky-200 px-2 py-0.5 rounded">
+              by {authorName}
+            </span>
+          )}
           <div className="flex-1" />
           <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded">
             <X size={18} />
@@ -1051,7 +1095,7 @@ function ScheduleEditor({ editor, setEditor, isMine, saving, error, onSave, onDe
           </div>
           {!isMine && (
             <p className="text-xs text-slate-500 bg-slate-50 rounded-lg p-3">
-              다른 팀원이 등록한 팀 공개 일정입니다. 수정/삭제는 작성자만 가능합니다.
+              <span className="font-semibold text-slate-700">{authorName ?? '다른 팀원'}</span> 님이 등록한 팀 공개 일정입니다. 수정/삭제는 작성자만 가능합니다.
             </p>
           )}
           {error && <div className="text-xs text-rose-600">{error}</div>}
