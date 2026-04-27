@@ -132,6 +132,11 @@ export async function parseExcelFile(file) {
     r['침해유형(표시)'] = displayValue(r['Infringement Type'])
     r['상품유형(정규화)'] = normalizeModelType(r['Model Type'])
     r['사업부(정규화)'] = clean(r['Business Division'] || '')
+    r['셀러명(정규화)'] = clean(r['Seller Name'] || '')
+    r['셀러ID(정규화)'] = clean(r['Seller Id'] || '')
+    r['셀러이메일(정규화)'] = clean(r['Seller E-mail'] || '').toLowerCase()
+    r['셀러폰(정규화)'] = clean(r['Seller Phone Number'] || '').replace(/[^\d]/g, '')
+    r['제품명(정규화)'] = clean(r['Product Name'] || '')
   }
 
   return { rows, hasBusinessDivision: headerSet.has('Business Division') }
@@ -248,6 +253,306 @@ function buildCompareDf(prevRows, currRows, key) {
   })
   rows.sort((a, b) => b.이번달 - a.이번달 || a.항목.localeCompare(b.항목))
   return rows
+}
+
+// ---------------- 셀러/제품 분석 (Enhanced 이슈 섹션용) ----------------
+const PRODUCT_STOPWORDS = new Set([
+  'the', 'a', 'an', 'of', 'for', 'to', 'with', 'and', 'or', 'on', 'in', 'at', 'by',
+  'pro', 'plus', 'mini', 'max', 'ultra', 'series', 'gen', 'generation',
+  '호환', '용', '신상', '신형', '정품', '국내산', '특가', '무료배송', '정식', '새상품',
+  'mm', 'cm', 'inch'
+])
+
+const COMMON_EMAIL_DOMAINS = new Set([
+  'gmail.com', 'naver.com', 'daum.net', 'hanmail.net', 'hotmail.com',
+  'yahoo.com', 'outlook.com', 'icloud.com', 'kakao.com', 'nate.com',
+  'yahoo.co.jp', 'qq.com', '163.com'
+])
+
+function tokenizeProductName(name, modelTypeWords) {
+  if (!name) return []
+  let s = String(name).replace(/[()[\]{}]/g, ' ')
+  s = s.replace(/\d+(\.\d+)?\s*(mm|cm|inch|in)/gi, ' ')
+  s = s.replace(/\b\d+\b/g, ' ')
+  s = s.replace(/[\/\\|\-_,;:.!?'"`~@#$%^&*+=]/g, ' ')
+  const tokens = s.split(/\s+/).filter(Boolean)
+  const result = []
+  for (const t of tokens) {
+    const lower = t.toLowerCase()
+    if (PRODUCT_STOPWORDS.has(lower)) continue
+    if (modelTypeWords.has(lower)) continue
+    const isHangul = /^[가-힣]+$/.test(t)
+    const isAlpha = /^[a-zA-Z]+$/.test(t)
+    if (isHangul && t.length < 2) continue
+    if (isAlpha && t.length < 3) continue
+    if (!isHangul && !isAlpha && /^[0-9]+$/.test(t)) continue
+    result.push(t)
+  }
+  return result
+}
+
+function extractProductTokens(rows, modelType, topN = 5) {
+  const target = String(modelType || '').toLowerCase()
+  if (!target) return []
+  const filtered = rows.filter(
+    (r) => String(r['상품유형(정규화)'] || '').toLowerCase() === target
+  )
+  if (!filtered.length) return []
+  const mtWords = new Set(
+    String(modelType).toLowerCase().split(/\s+/).filter(Boolean)
+  )
+  const counts = new Map()
+  for (const r of filtered) {
+    const tokens = tokenizeProductName(r['제품명(정규화)'], mtWords)
+    const seen = new Set()
+    for (const t of tokens) {
+      const k = t.toLowerCase()
+      if (seen.has(k)) continue
+      seen.add(k)
+      counts.set(t, (counts.get(t) || 0) + 1)
+    }
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, topN)
+    .map(([토큰, 건수]) => ({ 토큰, 건수 }))
+}
+
+function getSellerKey(r) {
+  return (
+    r['셀러이메일(정규화)'] ||
+    r['셀러폰(정규화)'] ||
+    r['셀러ID(정규화)'] ||
+    r['셀러명(정규화)'] ||
+    ''
+  )
+}
+
+function getEmailDomain(email) {
+  if (!email) return ''
+  const idx = email.indexOf('@')
+  return idx >= 0 ? email.slice(idx + 1).toLowerCase() : ''
+}
+
+function commonPrefixLen(a, b) {
+  let i = 0
+  const min = Math.min(a.length, b.length)
+  while (i < min && a[i] === b[i]) i++
+  return i
+}
+
+function analyzeTopSellers(rows, topN = 3) {
+  const map = new Map()
+  for (const r of rows) {
+    const key = getSellerKey(r)
+    if (!key) continue
+    if (!map.has(key)) {
+      map.set(key, {
+        key,
+        name: r['셀러명(정규화)'] || r['셀러ID(정규화)'] || key,
+        platforms: new Set(),
+        count: 0
+      })
+    }
+    const e = map.get(key)
+    e.count++
+    if (r['플랫폼(표시)']) e.platforms.add(r['플랫폼(표시)'])
+  }
+  return [...map.values()]
+    .sort((a, b) => b.count - a.count)
+    .slice(0, topN)
+    .map((e) => ({ 이름: e.name, 건수: e.count, 플랫폼: [...e.platforms] }))
+}
+
+function analyzeMultiPlatformSellers(rows, topN = 5, minPlatforms = 2) {
+  const map = new Map()
+  for (const r of rows) {
+    const key = getSellerKey(r)
+    if (!key) continue
+    if (!map.has(key)) {
+      map.set(key, { key, names: new Set(), platforms: new Set(), count: 0 })
+    }
+    const e = map.get(key)
+    e.count++
+    if (r['셀러명(정규화)']) e.names.add(r['셀러명(정규화)'])
+    if (r['플랫폼(표시)']) e.platforms.add(r['플랫폼(표시)'])
+  }
+  return [...map.values()]
+    .filter((e) => e.platforms.size >= minPlatforms)
+    .sort((a, b) => b.platforms.size - a.platforms.size || b.count - a.count)
+    .slice(0, topN)
+    .map((e) => ({
+      식별자: e.key,
+      이름: [...e.names].slice(0, 2).join(' / ') || e.key,
+      플랫폼: [...e.platforms],
+      건수: e.count
+    }))
+}
+
+function analyzeHeavyVolumeSellers(rows, threshold = 5, topN = 5) {
+  const map = new Map()
+  for (const r of rows) {
+    const platform = r['플랫폼(표시)']
+    const sellerKey = r['셀러ID(정규화)'] || r['셀러명(정규화)']
+    if (!platform || !sellerKey) continue
+    const key = `${platform}|${sellerKey}`
+    if (!map.has(key)) {
+      map.set(key, {
+        platform,
+        name: r['셀러명(정규화)'] || sellerKey,
+        count: 0
+      })
+    }
+    map.get(key).count++
+  }
+  return [...map.values()]
+    .filter((e) => e.count >= threshold)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, topN)
+}
+
+function analyzeRelatedSellers(rows, topN = 3) {
+  const sellersMap = new Map()
+  for (const r of rows) {
+    const id = r['셀러ID(정규화)'] || r['셀러명(정규화)']
+    if (!id) continue
+    if (!sellersMap.has(id)) {
+      sellersMap.set(id, {
+        id,
+        name: r['셀러명(정규화)'] || id,
+        emails: new Set(),
+        phones: new Set(),
+        platforms: new Set(),
+        count: 0
+      })
+    }
+    const e = sellersMap.get(id)
+    e.count++
+    if (r['셀러이메일(정규화)']) e.emails.add(r['셀러이메일(정규화)'])
+    if (r['셀러폰(정규화)']) e.phones.add(r['셀러폰(정규화)'])
+    if (r['플랫폼(표시)']) e.platforms.add(r['플랫폼(표시)'])
+  }
+
+  const arr = [...sellersMap.values()]
+  const visited = new Set()
+  const clusters = []
+
+  for (let i = 0; i < arr.length; i++) {
+    if (visited.has(i)) continue
+    const cluster = [arr[i]]
+    visited.add(i)
+    const seedDomains = new Set(
+      [...arr[i].emails].map(getEmailDomain).filter((d) => d && !COMMON_EMAIL_DOMAINS.has(d))
+    )
+    const seedPhones = arr[i].phones
+    const seedName = arr[i].name || ''
+
+    for (let j = i + 1; j < arr.length; j++) {
+      if (visited.has(j)) continue
+      const other = arr[j]
+      const otherDomains = new Set(
+        [...other.emails].map(getEmailDomain).filter((d) => d && !COMMON_EMAIL_DOMAINS.has(d))
+      )
+      const otherName = other.name || ''
+
+      const phoneMatch = [...seedPhones].some((p) => p && other.phones.has(p))
+      const domainMatch = [...seedDomains].some((d) => otherDomains.has(d))
+      const prefixLen = commonPrefixLen(seedName, otherName)
+      const prefixMatch = seedName && otherName && prefixLen >= 4
+
+      if (phoneMatch || (domainMatch && prefixMatch)) {
+        cluster.push(other)
+        visited.add(j)
+      }
+    }
+
+    if (cluster.length >= 2) clusters.push(cluster)
+  }
+
+  return clusters
+    .map((c) => ({
+      sellers: c.map((s) => s.name).slice(0, 4),
+      total: c.length,
+      totalCount: c.reduce((sum, s) => sum + s.count, 0),
+      domains: [
+        ...new Set(
+          c.flatMap((s) =>
+            [...s.emails].map(getEmailDomain).filter((d) => d && !COMMON_EMAIL_DOMAINS.has(d))
+          )
+        )
+      ]
+    }))
+    .sort((a, b) => b.total - a.total || b.totalCount - a.totalCount)
+    .slice(0, topN)
+}
+
+function analyzeNewSellers(prevRows, currRows, topN = 5) {
+  const prevKeys = new Set()
+  for (const r of prevRows) {
+    const k = getSellerKey(r)
+    if (k) prevKeys.add(k)
+  }
+  const map = new Map()
+  for (const r of currRows) {
+    const k = getSellerKey(r)
+    if (!k || prevKeys.has(k)) continue
+    if (!map.has(k)) {
+      map.set(k, {
+        key: k,
+        name: r['셀러명(정규화)'] || r['셀러ID(정규화)'] || k,
+        platforms: new Set(),
+        count: 0
+      })
+    }
+    const e = map.get(k)
+    e.count++
+    if (r['플랫폼(표시)']) e.platforms.add(r['플랫폼(표시)'])
+  }
+  return [...map.values()]
+    .sort((a, b) => b.count - a.count)
+    .slice(0, topN)
+    .map((e) => ({ 이름: e.name, 건수: e.count, 플랫폼: [...e.platforms] }))
+}
+
+function analyzeRateChanges(cmp, threshold = 30, minPrev = 10) {
+  const surgeUp = cmp
+    .filter(
+      (r) =>
+        typeof r['증감률(%)'] === 'number' &&
+        r['증감률(%)'] >= threshold &&
+        r.직전달 >= minPrev
+    )
+    .sort((a, b) => b['증감률(%)'] - a['증감률(%)'])
+    .slice(0, 5)
+  const surgeDown = cmp
+    .filter(
+      (r) =>
+        typeof r['증감률(%)'] === 'number' &&
+        r['증감률(%)'] <= -threshold &&
+        r.직전달 >= minPrev
+    )
+    .sort((a, b) => a['증감률(%)'] - b['증감률(%)'])
+    .slice(0, 5)
+  return { surgeUp, surgeDown }
+}
+
+function analyzeGoneCategories(cmp, topN = 5) {
+  return cmp
+    .filter((r) => r.직전달 > 0 && r.이번달 === 0)
+    .sort((a, b) => b.직전달 - a.직전달)
+    .slice(0, topN)
+}
+
+function analyzeTopShare(currSummary) {
+  if (!currSummary?.length) return null
+  const top = currSummary[0]
+  const total = currSummary.reduce((sum, r) => sum + r['전체 침해 건수'], 0)
+  if (!total) return null
+  return {
+    item: top.항목,
+    count: top['전체 침해 건수'],
+    share: Math.round((top['전체 침해 건수'] / total) * 1000) / 10
+  }
 }
 
 // ---------------- 이슈 텍스트 자동 생성 ----------------
@@ -489,6 +794,242 @@ function writeIssueBox(ws, startRow, startCol, title, widthCols) {
   return contentRow
 }
 
+// ---------------- Enhanced 이슈 섹션 (6개 박스) ----------------
+const MANUAL_FILL = 'FFFEF9E7'         // 연한 노란색 — 수기 입력 영역
+const MANUAL_TEXT_COLOR = 'FF7F7F7F'   // 회색 — 수기 placeholder
+const MANUAL_PLACEHOLDER = '[수기 입력]'
+
+/**
+ * 단일 이슈 섹션 박스. autoLines (자동 생성), manualLines (수기 영역) 각각 별도 행.
+ * 수기 행은 노란 음영 + 회색 이탤릭으로 시각적 구분.
+ */
+function writeIssueSection(ws, startRow, startCol, widthCols, sectionTitle, autoLines, manualLines) {
+  const left = startCol
+  const right = startCol + widthCols - 1
+
+  // 헤더
+  ws.mergeCells(startRow, left, startRow, right)
+  const hdr = ws.getCell(startRow, left)
+  hdr.value = sectionTitle
+  hdr.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: HEADER_BLUE } }
+  hdr.font = { color: { argb: 'FFFFFFFF' }, bold: true }
+  hdr.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }
+  ws.getRow(startRow).height = HEADER_ROW_HEIGHT
+  for (let c = left; c <= right; c++) ws.getCell(startRow, c).border = THIN_BORDER
+  if (!titleRowsByWs.has(ws)) titleRowsByWs.set(ws, new Set())
+  titleRowsByWs.get(ws).add(startRow)
+
+  let curRow = startRow + 1
+
+  // 자동 영역
+  if (autoLines && autoLines.length) {
+    ws.mergeCells(curRow, left, curRow, right)
+    const cell = ws.getCell(curRow, left)
+    cell.value = autoLines.join('\n')
+    cell.alignment = { horizontal: 'left', vertical: 'top', wrapText: true }
+    for (let c = left; c <= right; c++) ws.getCell(curRow, c).border = THIN_BORDER
+    curRow++
+  }
+
+  // 수기 영역
+  if (manualLines && manualLines.length) {
+    ws.mergeCells(curRow, left, curRow, right)
+    const cell = ws.getCell(curRow, left)
+    cell.value = manualLines.join('\n')
+    cell.alignment = { horizontal: 'left', vertical: 'top', wrapText: true }
+    cell.font = { color: { argb: MANUAL_TEXT_COLOR }, italic: true }
+    for (let c = left; c <= right; c++) {
+      ws.getCell(curRow, c).fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: MANUAL_FILL }
+      }
+      ws.getCell(curRow, c).border = THIN_BORDER
+    }
+    curRow++
+  }
+
+  return curRow - 1
+}
+
+function writeEnhancedIssueSections(ws, startRow, startCol, widthCols, ctx) {
+  const { prevRows, currRows, currSummary, cmp2, cmp3, useDivision, topN, label } = ctx
+  let cur = startRow
+
+  // ===== 1. Keyword (전부 수기) =====
+  cur = writeIssueSection(ws, cur, startCol, widthCols, '■ Keyword', null, [
+    `· 신규 추가된 키워드: ${MANUAL_PLACEHOLDER}`,
+    `· 사라진 키워드 (사유 포함): ${MANUAL_PLACEHOLDER}`,
+    `· 가장 많이 발견되는 키워드: ${MANUAL_PLACEHOLDER}`
+  ])
+  cur += 2
+
+  // ===== 2. Trend (자동 + 사유 수기) =====
+  const auto2 = []
+  if (currSummary.세번째 && currSummary.세번째.length) {
+    const top3 = currSummary.세번째.slice(0, Math.min(topN, 3))
+    auto2.push(
+      `· 이번달 Top ${top3.length} ${label}: ` +
+        top3.map((r) => `${r.항목}(${r['전체 침해 건수']}건)`).join(', ')
+    )
+  }
+  const rateChanges = analyzeRateChanges(cmp3, 30, 10)
+  if (rateChanges.surgeUp.length) {
+    auto2.push(
+      `· 급증 (+30% 이상): ` +
+        rateChanges.surgeUp
+          .slice(0, 3)
+          .map((r) => `${r.항목}(+${r['증감률(%)']}%, +${r.증감}건)`)
+          .join(', ')
+    )
+  } else {
+    auto2.push(`· 급증 (+30% 이상): 해당 항목 없음`)
+  }
+  if (rateChanges.surgeDown.length) {
+    auto2.push(
+      `· 급감 (-30% 이상): ` +
+        rateChanges.surgeDown
+          .slice(0, 3)
+          .map((r) => `${r.항목}(${r['증감률(%)']}%, ${r.증감}건)`)
+          .join(', ')
+    )
+  } else {
+    auto2.push(`· 급감 (-30% 이상): 해당 항목 없음`)
+  }
+  const prevTypeTop = [...cmp2]
+    .filter((r) => r.직전달 > 0)
+    .sort((a, b) => b.직전달 - a.직전달)[0]
+  const currTypeTop = [...cmp2]
+    .filter((r) => r.이번달 > 0)
+    .sort((a, b) => b.이번달 - a.이번달)[0]
+  if (prevTypeTop && currTypeTop) {
+    if (prevTypeTop.항목 === currTypeTop.항목) {
+      auto2.push(
+        `· 침해유형 1위: ${currTypeTop.항목} (이번달 ${currTypeTop.이번달}건, 변화 없음)`
+      )
+    } else {
+      auto2.push(
+        `· 침해유형 1위 변화: ${prevTypeTop.항목}(${prevTypeTop.직전달}건) → ${currTypeTop.항목}(${currTypeTop.이번달}건)`
+      )
+    }
+  }
+  cur = writeIssueSection(ws, cur, startCol, widthCols, '■ Trend', auto2, [
+    `· 변동 사유 / 시즌·콜라보 영향: ${MANUAL_PLACEHOLDER}`
+  ])
+  cur += 2
+
+  // ===== 3. Product Category (자동) =====
+  const auto3 = []
+  const topShare = analyzeTopShare(currSummary.세번째)
+  if (topShare) {
+    auto3.push(
+      `· 침해 비중 1위 ${label}: ${topShare.item} (${topShare.count}건, ${topShare.share}%)`
+    )
+  }
+  const newItems = cmp3
+    .filter((r) => r.직전달 === 0 && r.이번달 > 0)
+    .sort((a, b) => b.이번달 - a.이번달)
+    .slice(0, 3)
+  if (newItems.length) {
+    auto3.push(
+      `· 신규 발견 ${label}: ` + newItems.map((r) => `${r.항목}(${r.이번달}건)`).join(', ')
+    )
+  } else {
+    auto3.push(`· 신규 발견 ${label}: 없음`)
+  }
+  const goneItems = analyzeGoneCategories(cmp3, 3)
+  if (goneItems.length) {
+    auto3.push(
+      `· 사라진 ${label}: ` +
+        goneItems.map((r) => `${r.항목}(전월 ${r.직전달}건 → 0건)`).join(', ')
+    )
+  } else {
+    auto3.push(`· 사라진 ${label}: 없음`)
+  }
+  if (topShare && !useDivision) {
+    const tokens = extractProductTokens(currRows, topShare.item, 5)
+    if (tokens.length) {
+      auto3.push(
+        `· "${topShare.item}" 세부 발견 항목: ` +
+          tokens.map((t) => `${t.토큰}(${t.건수}건)`).join(', ')
+      )
+    }
+  }
+  cur = writeIssueSection(ws, cur, startCol, widthCols, '■ Product Category', auto3, null)
+  cur += 2
+
+  // ===== 4. Pending (전부 수기) =====
+  cur = writeIssueSection(ws, cur, startCol, widthCols, '■ Pending', null, [
+    `· 신고 미처리 / 처리 지연 사유: ${MANUAL_PLACEHOLDER}`,
+    `· 미처리 건 향후 처리 방안: ${MANUAL_PLACEHOLDER}`
+  ])
+  cur += 2
+
+  // ===== 5. Infringing Trend (전부 수기) =====
+  cur = writeIssueSection(ws, cur, startCol, widthCols, '■ Infringing Trend', null, [
+    `· 유사 범위 내 디자인 소폭 변형: ${MANUAL_PLACEHOLDER}`,
+    `· 새로 발견된 침해 모티프 / 디자인: ${MANUAL_PLACEHOLDER}`
+  ])
+  cur += 2
+
+  // ===== 6. Infringer (자동 + 조치방안 수기) =====
+  const auto6 = []
+  const topSellers = analyzeTopSellers(currRows, 3)
+  if (topSellers.length) {
+    auto6.push(
+      `· Top 침해 셀러: ` + topSellers.map((s) => `${s.이름}(${s.건수}건)`).join(', ')
+    )
+  } else {
+    auto6.push(`· Top 침해 셀러: 데이터 없음`)
+  }
+  const multiSellers = analyzeMultiPlatformSellers(currRows, 5, 2)
+  if (multiSellers.length) {
+    auto6.push(`· 다수 플랫폼 동시 침해 (${multiSellers.length}건):`)
+    for (const s of multiSellers.slice(0, 3)) {
+      auto6.push(`   - ${s.이름} → ${s.플랫폼.join(', ')} (총 ${s.건수}건)`)
+    }
+  } else {
+    auto6.push(`· 다수 플랫폼 동시 침해: 없음`)
+  }
+  const heavySellers = analyzeHeavyVolumeSellers(currRows, 5, 5)
+  if (heavySellers.length) {
+    auto6.push(
+      `· 동일 플랫폼 5건 이상 셀러: ` +
+        heavySellers
+          .slice(0, 3)
+          .map((s) => `${s.name}(${s.platform} ${s.count}건)`)
+          .join(', ')
+    )
+  } else {
+    auto6.push(`· 동일 플랫폼 5건 이상 셀러: 없음`)
+  }
+  const related = analyzeRelatedSellers(currRows, 3)
+  if (related.length) {
+    auto6.push(`· 연계 판매자 의심군 (${related.length}개 그룹):`)
+    for (const c of related) {
+      const domain = c.domains.length ? ` [${c.domains[0]}]` : ''
+      auto6.push(`   - ${c.sellers.join(' / ')} (${c.total}명, 총 ${c.totalCount}건)${domain}`)
+    }
+  } else {
+    auto6.push(`· 연계 판매자 의심군: 없음`)
+  }
+  const newSellers = analyzeNewSellers(prevRows, currRows, 3)
+  if (newSellers.length) {
+    auto6.push(
+      `· 신규 등장 셀러: ` + newSellers.map((s) => `${s.이름}(${s.건수}건)`).join(', ')
+    )
+  } else {
+    auto6.push(`· 신규 등장 셀러: 없음`)
+  }
+  cur = writeIssueSection(ws, cur, startCol, widthCols, '■ Infringer', auto6, [
+    `· 다수 플랫폼 셀러 조치 방안: ${MANUAL_PLACEHOLDER}`,
+    `· 동일 플랫폼 셀러 조치 방안: ${MANUAL_PLACEHOLDER}`,
+    `· 연계 판매자 향후 모니터링 방안: ${MANUAL_PLACEHOLDER}`
+  ])
+
+  return cur
+}
+
 function buildInfrColorMap(blocksByPlatform) {
   const names = []
   for (const blocks of Object.values(blocksByPlatform)) {
@@ -683,17 +1224,32 @@ export async function buildReportWorkbook(prev, curr, opt) {
   const issueStart = compareBottom + 2
 
   const issueLabel = useDivision ? '사업부' : '상품'
-  let issueText = ''
-  try {
-    issueText = makeIssueText(currSummary.세번째, cmp3, opt.topN, issueLabel)
-  } catch (e) {
-    issueText = `이슈 자동 생성 중 오류가 발생했습니다: ${e.message}`
-  }
-
-  writeIssueBox(ws0, issueStart, L, '이슈 사항', 5)
   const issueTopRow = issueStart + 1
-  ws0.getCell(issueTopRow, L).value = '\n' + issueText
-  ws0.getCell(issueTopRow, L).alignment = { horizontal: 'left', vertical: 'top', wrapText: true }
+  try {
+    writeEnhancedIssueSections(ws0, issueStart, L, 5, {
+      prevRows,
+      currRows,
+      prevSummary,
+      currSummary,
+      cmp1,
+      cmp2,
+      cmp3,
+      useDivision,
+      topN: opt.topN,
+      label: issueLabel
+    })
+  } catch (e) {
+    // 폴백: 기존 단일 박스로 표시 (Enhanced 로직에서 오류 발생 시)
+    let issueText = ''
+    try {
+      issueText = makeIssueText(currSummary.세번째, cmp3, opt.topN, issueLabel)
+    } catch (e2) {
+      issueText = `이슈 자동 생성 중 오류: ${e.message} / ${e2.message}`
+    }
+    writeIssueBox(ws0, issueStart, L, '이슈 사항', 5)
+    ws0.getCell(issueTopRow, L).value = '\n' + issueText
+    ws0.getCell(issueTopRow, L).alignment = { horizontal: 'left', vertical: 'top', wrapText: true }
+  }
 
   // 열 너비 고정
   ws0.getColumn(1).width = 1.5   // A
