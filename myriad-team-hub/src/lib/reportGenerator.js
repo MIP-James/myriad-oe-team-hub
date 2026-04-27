@@ -1200,6 +1200,7 @@ export async function buildReportWorkbook(prev, curr, opt) {
   wb.created = new Date()
 
   const ws0 = wb.addWorksheet('요약')
+  ws0.views = [{ showGridLines: false }]
 
   const L = 2   // B
   const R = 8   // H
@@ -1322,7 +1323,7 @@ export async function buildReportWorkbook(prev, curr, opt) {
   for (const [platform, blocks] of Object.entries(currBlocks)) {
     const ws = wb.addWorksheet(safeSheetName(`${sheetPrefix}_${platform}`))
     setHeaderCells(ws, 1, 1, detailHeaders)
-    ws.views = [{ state: 'frozen', ySplit: 1 }]
+    ws.views = [{ state: 'frozen', ySplit: 1, showGridLines: false }]
     ws.getColumn(2).width = 13
 
     let curRow = 2
