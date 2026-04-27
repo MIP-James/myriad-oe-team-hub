@@ -17,14 +17,16 @@ import TextAlign from '@tiptap/extension-text-align'
 import {
   Bold, Italic, Underline as UnderlineIcon, Strikethrough, Heading1, Heading2,
   List, ListOrdered, Quote, Code, Link as LinkIcon, AlignLeft, AlignCenter, AlignRight,
-  Undo2, Redo2, Loader2, X, Image as ImageIcon, Upload, Mail, AlertTriangle, Trash2
+  Undo2, Redo2, Loader2, X, Image as ImageIcon, Upload, Mail, AlertTriangle, Trash2,
+  Plus
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 import {
   PLATFORMS, INFRINGEMENT_TYPES, STATUS_OPTIONS,
   uploadCaseAttachment, deleteCaseAttachment,
-  listBrandSuggestions, getAttachmentSignedUrls
+  listBrandSuggestions, getAttachmentSignedUrls,
+  sanitizeStringArray
 } from '../lib/cases'
 import { extractGmailId, fetchMessage, gmailThreadUrl } from '../lib/gmail'
 import { GoogleAuthRequiredError } from '../lib/googleDrive'
@@ -32,10 +34,10 @@ import Autocomplete from './Autocomplete'
 
 const EMPTY = {
   title: '',
-  brand: '',
-  platform: '',
-  postUrl: '',
-  infringementType: '상표권 침해',
+  brands: [],
+  platforms: [],
+  postUrls: [],
+  infringementTypes: ['상표권 침해'],
   status: 'share',
   bodyHtml: '',
   bodyText: '',
@@ -242,12 +244,21 @@ export default function CaseEditor({
   async function handleSubmit(e) {
     e?.preventDefault()
     if (!form.title.trim()) { setError('제목을 입력하세요.'); return }
-    if (!form.brand.trim()) { setError('브랜드(고객사)를 입력하세요.'); return }
-    if (!form.platform.trim()) { setError('플랫폼을 입력하세요.'); return }
+    const brands = sanitizeStringArray(form.brands)
+    const platforms = sanitizeStringArray(form.platforms)
+    const infringementTypes = sanitizeStringArray(form.infringementTypes)
+    const postUrls = sanitizeStringArray(form.postUrls)
+    if (brands.length === 0) { setError('브랜드(고객사)를 1개 이상 입력하세요.'); return }
+    if (platforms.length === 0) { setError('플랫폼을 1개 이상 입력하세요.'); return }
+    if (infringementTypes.length === 0) { setError('침해 유형을 1개 이상 선택하세요.'); return }
     setError(null)
     try {
       await onSubmit({
         ...form,
+        brands,
+        platforms,
+        infringementTypes,
+        postUrls,
         _tmpAttachments: tmpAttachments
       })
     } catch (e) {
@@ -296,33 +307,33 @@ export default function CaseEditor({
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
             <label className="block text-xs font-semibold text-slate-600 mb-1">브랜드 (고객사) *</label>
-            <Autocomplete
-              value={form.brand}
-              onChange={(v) => update('brand', v)}
+            <MultiChipAutocomplete
+              values={form.brands}
+              onChange={(v) => update('brands', v)}
               suggestions={brandSuggestions}
-              placeholder="예: Apple Inc. (목록에 없으면 직접 입력)"
+              placeholder="브랜드 입력 후 Enter 또는 추가 — 여러 개 가능"
+              chipColor="bg-myriad-primary/25 text-myriad-ink"
             />
           </div>
 
           <div>
             <label className="block text-xs font-semibold text-slate-600 mb-1">플랫폼 *</label>
-            <Autocomplete
-              value={form.platform}
-              onChange={(v) => update('platform', v)}
+            <MultiChipAutocomplete
+              values={form.platforms}
+              onChange={(v) => update('platforms', v)}
               suggestions={PLATFORMS}
-              placeholder="예: 11st (목록에 없으면 직접 입력)"
+              placeholder="플랫폼 입력 후 Enter 또는 추가 — 여러 개 가능"
+              chipColor="bg-sky-100 text-sky-800"
             />
           </div>
 
           <div>
             <label className="block text-xs font-semibold text-slate-600 mb-1">침해 유형 *</label>
-            <select
-              value={form.infringementType}
-              onChange={(e) => update('infringementType', e.target.value)}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-myriad-primary/40"
-            >
-              {INFRINGEMENT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
+            <ToggleChips
+              options={INFRINGEMENT_TYPES}
+              values={form.infringementTypes}
+              onChange={(v) => update('infringementTypes', v)}
+            />
           </div>
 
           <div>
@@ -338,13 +349,12 @@ export default function CaseEditor({
         </div>
 
         <div>
-          <label className="block text-xs font-semibold text-slate-600 mb-1">게시물 URL (선택)</label>
-          <input
-            type="url"
-            value={form.postUrl}
-            onChange={(e) => update('postUrl', e.target.value)}
-            placeholder="https://..."
-            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-myriad-primary/40"
+          <label className="block text-xs font-semibold text-slate-600 mb-1">
+            게시물 URL (선택, 여러 개 가능)
+          </label>
+          <MultiUrlInput
+            values={form.postUrls}
+            onChange={(v) => update('postUrls', v)}
           />
         </div>
       </div>
@@ -664,6 +674,214 @@ function AttachmentsGallery({ tmp, tmpPreviewUrls, existing, existingUrls, onRem
           </div>
         </div>
       ))}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────
+// 다중 칩 입력 (Autocomplete + Enter/추가 버튼) — 브랜드, 플랫폼용
+// ─────────────────────────────────────────────────────
+function MultiChipAutocomplete({ values, onChange, suggestions, placeholder, chipColor = 'bg-slate-100 text-slate-700' }) {
+  const [draft, setDraft] = useState('')
+  const list = Array.isArray(values) ? values : []
+  // list 의 closure stale 회피용 — Autocomplete 의 onChange 가 list 를 갱신한 직후
+  // 같은 이벤트 cycle 안의 wrapper Enter 핸들러가 이전 list 를 참조하는 race 차단.
+  const listRef = useRef(list)
+  useEffect(() => { listRef.current = list }, [list])
+
+  function addValue(raw) {
+    const v = (raw || '').trim()
+    if (!v) return
+    const cur = listRef.current
+    if (cur.includes(v)) return
+    onChange([...cur, v])
+  }
+
+  function remove(idx) {
+    onChange(list.filter((_, i) => i !== idx))
+  }
+
+  // Autocomplete 가 명시적 선택(클릭/Enter 자동선택) 시 정확한 suggestion 값으로
+  // onChange 호출 → 즉시 칩으로 commit + draft 비움.
+  function handleAutocompleteChange(v) {
+    if (v && suggestions.includes(v)) {
+      addValue(v)
+      setDraft('')
+      return
+    }
+    setDraft(v)
+  }
+
+  // 자유 입력값(suggestions 에 없는 신규) Enter 처리.
+  // setDraft functional 로 받아서 Autocomplete 가 같은 cycle 에 비웠다면 no-op.
+  function handleKeyDown(e) {
+    if (e.key !== 'Enter') return
+    if (e.nativeEvent?.isComposing) return
+    e.preventDefault()
+    setDraft((current) => {
+      const v = current.trim()
+      if (!v) return ''
+      addValue(v)
+      return ''
+    })
+  }
+
+  return (
+    <div className="space-y-2">
+      <div onKeyDown={handleKeyDown} className="flex gap-2">
+        <div className="flex-1">
+          <Autocomplete
+            value={draft}
+            onChange={handleAutocompleteChange}
+            suggestions={suggestions.filter((s) => !list.includes(s))}
+            placeholder={placeholder}
+          />
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            addValue(draft)
+            setDraft('')
+          }}
+          disabled={!draft.trim()}
+          className="flex items-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 rounded-lg text-xs font-semibold disabled:opacity-40"
+        >
+          <Plus size={12} /> 추가
+        </button>
+      </div>
+      {list.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {list.map((v, idx) => (
+            <span
+              key={`${v}-${idx}`}
+              className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-bold ${chipColor}`}
+            >
+              {v}
+              <button
+                type="button"
+                onClick={() => remove(idx)}
+                className="hover:bg-black/10 rounded-full p-0.5"
+                title="제거"
+              >
+                <X size={10} />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────
+// 토글 칩 (enum 다중 선택) — 침해 유형용
+// ─────────────────────────────────────────────────────
+function ToggleChips({ options, values, onChange }) {
+  const list = Array.isArray(values) ? values : []
+  function toggle(v) {
+    if (list.includes(v)) onChange(list.filter((x) => x !== v))
+    else onChange([...list, v])
+  }
+  return (
+    <div className="flex flex-wrap gap-1.5 px-1 py-1.5 border border-slate-300 rounded-lg bg-white min-h-[42px]">
+      {options.map((opt) => {
+        const active = list.includes(opt)
+        return (
+          <button
+            key={opt}
+            type="button"
+            onClick={() => toggle(opt)}
+            className={`px-2.5 py-1 rounded-md text-xs font-bold transition ${
+              active
+                ? 'bg-myriad-primary/30 text-myriad-ink ring-1 ring-myriad-primary/50'
+                : 'bg-slate-50 text-slate-500 hover:bg-slate-100'
+            }`}
+          >
+            {opt}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────
+// 다중 URL 입력 — 게시물 URL 용
+// ─────────────────────────────────────────────────────
+function MultiUrlInput({ values, onChange }) {
+  const [draft, setDraft] = useState('')
+  const list = Array.isArray(values) ? values : []
+
+  function commit() {
+    const v = draft.trim()
+    if (!v) return
+    if (list.includes(v)) {
+      setDraft('')
+      return
+    }
+    onChange([...list, v])
+    setDraft('')
+  }
+
+  function remove(idx) {
+    onChange(list.filter((_, i) => i !== idx))
+  }
+
+  function handleKeyDown(e) {
+    if (e.key !== 'Enter') return
+    if (e.nativeEvent?.isComposing) return
+    e.preventDefault()
+    commit()
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex gap-2">
+        <input
+          type="url"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="https://..."
+          className="flex-1 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-myriad-primary/40"
+        />
+        <button
+          type="button"
+          onClick={commit}
+          disabled={!draft.trim()}
+          className="flex items-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 rounded-lg text-xs font-semibold disabled:opacity-40"
+        >
+          <Plus size={12} /> 추가
+        </button>
+      </div>
+      {list.length > 0 && (
+        <ul className="space-y-1">
+          {list.map((u, idx) => (
+            <li
+              key={`${u}-${idx}`}
+              className="flex items-center gap-2 bg-sky-50 border border-sky-200 rounded-lg px-2.5 py-1.5"
+            >
+              <LinkIcon size={11} className="text-sky-600 shrink-0" />
+              <a
+                href={u}
+                target="_blank"
+                rel="noreferrer"
+                className="flex-1 text-xs text-sky-800 hover:text-sky-900 underline truncate"
+              >
+                {u}
+              </a>
+              <button
+                type="button"
+                onClick={() => remove(idx)}
+                className="text-rose-500 hover:bg-rose-100 rounded p-0.5"
+                title="제거"
+              >
+                <X size={11} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   )
 }

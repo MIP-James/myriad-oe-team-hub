@@ -27,6 +27,7 @@ import {
   listCaseStatusLog,
   listCaseTasks, createCaseTask, updateCaseTask, toggleCaseTask, deleteCaseTask,
   getCaseWorkflowNotes, upsertCaseWorkflowNotes,
+  getCaseBrands, getCasePlatforms, getCaseInfringementTypes, getCasePostUrls,
   STATUS_OPTIONS, STATUS_LABELS, STATUS_COLORS, INFRINGEMENT_COLORS
 } from '../lib/cases'
 import { getProfileShort } from '../lib/community'
@@ -296,12 +297,11 @@ export default function CaseDetail({ mode }) {
           initial={isNew ? null : {
             id: caseData.id,
             title: caseData.title,
-            brand: caseData.brand,
-            // migration 014 에서 platform_other 가 platform 으로 통합됨.
-            // 만약 아직 마이그레이션 전 데이터면 platform_other 로 폴백.
-            platform: caseData.platform || caseData.platform_other || '',
-            postUrl: caseData.post_url || '',
-            infringementType: caseData.infringement_type,
+            // migration 025 — 새 배열 컬럼 우선, 비어있으면 deprecated 단일값으로 폴백
+            brands: getCaseBrands(caseData),
+            platforms: getCasePlatforms(caseData),
+            postUrls: getCasePostUrls(caseData),
+            infringementTypes: getCaseInfringementTypes(caseData),
             status: caseData.status,
             bodyHtml: caseData.body_html,
             bodyText: caseData.body_text,
@@ -362,8 +362,11 @@ function ViewMode({
   const c = caseData
   const createdProfile = profiles[c.created_by]
   const createdName = createdProfile?.full_name || createdProfile?.email?.split('@')[0] || '—'
-  // migration 014 이후엔 platform 에 다 들어감. 이전 데이터 폴백.
-  const platformLabel = c.platform || c.platform_other || '—'
+  // migration 025 — 다중값 배열. 빈 경우 deprecated 단일 컬럼으로 폴백.
+  const brands = getCaseBrands(c)
+  const platforms = getCasePlatforms(c)
+  const infringementTypes = getCaseInfringementTypes(c)
+  const postUrls = getCasePostUrls(c)
 
   return (
     <>
@@ -398,15 +401,24 @@ function ViewMode({
                   </div>
                 )}
               </div>
-              <span className="text-xs font-bold bg-myriad-primary/25 text-myriad-ink px-2.5 py-1 rounded-md flex items-center gap-1">
-                <TagIcon size={11} /> {c.brand}
-              </span>
-              <span className="text-xs font-bold bg-sky-100 text-sky-800 px-2.5 py-1 rounded-md flex items-center gap-1">
-                <Globe size={11} /> {platformLabel}
-              </span>
-              <span className={`text-xs font-bold px-2.5 py-1 rounded-md flex items-center gap-1 ${INFRINGEMENT_COLORS[c.infringement_type] || 'bg-slate-100 text-slate-700'}`}>
-                <AlertCircle size={11} /> {c.infringement_type}
-              </span>
+              {brands.map((b) => (
+                <span key={`b-${b}`} className="text-xs font-bold bg-myriad-primary/25 text-myriad-ink px-2.5 py-1 rounded-md flex items-center gap-1">
+                  <TagIcon size={11} /> {b}
+                </span>
+              ))}
+              {platforms.map((p) => (
+                <span key={`p-${p}`} className="text-xs font-bold bg-sky-100 text-sky-800 px-2.5 py-1 rounded-md flex items-center gap-1">
+                  <Globe size={11} /> {p}
+                </span>
+              ))}
+              {infringementTypes.map((t) => (
+                <span
+                  key={`t-${t}`}
+                  className={`text-xs font-bold px-2.5 py-1 rounded-md flex items-center gap-1 ${INFRINGEMENT_COLORS[t] || 'bg-slate-100 text-slate-700'}`}
+                >
+                  <AlertCircle size={11} /> {t}
+                </span>
+              ))}
             </div>
             <h1 className="text-2xl font-bold text-slate-900">{c.title}</h1>
             <div className="text-xs text-slate-500 mt-2 flex items-center gap-3 flex-wrap">
@@ -421,18 +433,22 @@ function ViewMode({
               )}
             </div>
 
-            {(c.post_url || c.gmail_thread_url) && (
+            {(postUrls.length > 0 || c.gmail_thread_url) && (
               <div className="mt-3 flex flex-wrap items-center gap-3">
-                {c.post_url && (
+                {postUrls.map((u, idx) => (
                   <a
-                    href={c.post_url}
+                    key={`u-${idx}`}
+                    href={u}
                     target="_blank"
                     rel="noreferrer"
                     className="text-xs inline-flex items-center gap-1 text-sky-700 hover:text-sky-900 bg-sky-50 border border-sky-200 rounded-lg px-2.5 py-1"
+                    title={u}
                   >
-                    <LinkIcon size={11} /> 원본 게시물 열기 <ExternalLink size={10} />
+                    <LinkIcon size={11} />
+                    원본 게시물{postUrls.length > 1 ? ` ${idx + 1}` : ''} 열기
+                    <ExternalLink size={10} />
                   </a>
-                )}
+                ))}
                 {c.gmail_thread_url && (
                   <a
                     href={c.gmail_thread_url}

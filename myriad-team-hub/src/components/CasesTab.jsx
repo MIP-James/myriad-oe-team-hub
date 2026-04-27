@@ -15,7 +15,8 @@ import { supabase } from '../lib/supabase'
 import {
   listCases, listBrandSuggestions, listTaskSummaries,
   PLATFORMS, INFRINGEMENT_TYPES, STATUS_OPTIONS, STATUS_LABELS, STATUS_COLORS,
-  INFRINGEMENT_COLORS
+  INFRINGEMENT_COLORS,
+  getCaseBrands, getCasePlatforms, getCaseInfringementTypes, getCasePostUrls
 } from '../lib/cases'
 import { getProfileShort } from '../lib/community'
 
@@ -233,7 +234,10 @@ export default function CasesTab() {
                     const author = profile?.full_name || profile?.email?.split('@')[0] || '—'
                     const commentCount = commentCounts[c.id] || 0
                     const taskSummary = taskSummaries[c.id]
-                    const platformLabel = c.platform || '—'
+                    const brands = getCaseBrands(c)
+                    const platforms = getCasePlatforms(c)
+                    const infTypes = getCaseInfringementTypes(c)
+                    const postUrls = getCasePostUrls(c)
                     const isActionNeeded = c.status === 'action_needed'
                     return (
                       <tr
@@ -253,7 +257,17 @@ export default function CasesTab() {
                             className="font-semibold text-slate-900 hover:text-myriad-ink flex items-center gap-1.5"
                           >
                             <span className="truncate">{c.title}</span>
-                            {c.post_url && <LinkIcon size={10} className="text-sky-500 shrink-0" />}
+                            {postUrls.length > 0 && (
+                              <span
+                                title={postUrls.length > 1 ? `게시물 URL ${postUrls.length}개` : postUrls[0]}
+                                className="inline-flex items-center text-sky-500 shrink-0"
+                              >
+                                <LinkIcon size={10} />
+                                {postUrls.length > 1 && (
+                                  <span className="text-[9px] font-bold ml-0.5">{postUrls.length}</span>
+                                )}
+                              </span>
+                            )}
                             {commentCount > 0 && (
                               <span className="text-[10px] text-slate-500 bg-slate-100 px-1.5 rounded-full shrink-0">
                                 💬 {commentCount}
@@ -274,21 +288,25 @@ export default function CasesTab() {
                           </Link>
                         </td>
                         <td className="px-3 py-2.5">
-                          <span className="inline-flex items-center gap-1 bg-myriad-primary/25 text-myriad-ink font-bold px-2 py-0.5 rounded-md text-[11px]">
-                            <TagIcon size={10} />
-                            {c.brand}
-                          </span>
+                          <MultiBadge
+                            items={brands}
+                            icon={TagIcon}
+                            className="bg-myriad-primary/25 text-myriad-ink"
+                          />
                         </td>
                         <td className="px-3 py-2.5">
-                          <span className="inline-flex items-center gap-1 bg-sky-100 text-sky-800 font-bold px-2 py-0.5 rounded-md text-[11px]">
-                            <Globe size={10} />
-                            {platformLabel}
-                          </span>
+                          <MultiBadge
+                            items={platforms}
+                            icon={Globe}
+                            className="bg-sky-100 text-sky-800"
+                          />
                         </td>
                         <td className="px-3 py-2.5">
-                          <span className={`inline-flex items-center gap-1 font-bold px-2 py-0.5 rounded-md text-[11px] ${INFRINGEMENT_COLORS[c.infringement_type] || 'bg-slate-100 text-slate-700'}`}>
-                            {c.infringement_type}
-                          </span>
+                          <MultiBadge
+                            items={infTypes}
+                            colorMap={INFRINGEMENT_COLORS}
+                            fallbackClass="bg-slate-100 text-slate-700"
+                          />
                         </td>
                         <td className="px-3 py-2.5">
                           <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full inline-flex items-center gap-1 ${STATUS_COLORS[c.status]}`}>
@@ -340,6 +358,36 @@ export default function CasesTab() {
         )}
       </div>
     </>
+  )
+}
+
+/**
+ * 다중값 배열을 좁은 셀에 표시 — 첫 값만 칩으로 + 추가가 있으면 "+N" 배지.
+ * 호버 시 전체 목록 tooltip.
+ *
+ * 사용 케이스 1: 단색 — icon + className 지정
+ * 사용 케이스 2: 값마다 색이 다른 enum (예: 침해 유형) — colorMap + fallbackClass
+ */
+function MultiBadge({ items, icon: Icon, className, colorMap, fallbackClass }) {
+  if (!items || items.length === 0) {
+    return <span className="text-xs text-slate-400">—</span>
+  }
+  const first = items[0]
+  const rest = items.length - 1
+  const tooltip = items.join(', ')
+  const cls = colorMap ? (colorMap[first] || fallbackClass || '') : (className || '')
+  return (
+    <span className="inline-flex items-center gap-1" title={tooltip}>
+      <span className={`inline-flex items-center gap-1 font-bold px-2 py-0.5 rounded-md text-[11px] ${cls}`}>
+        {Icon && <Icon size={10} />}
+        <span className="truncate max-w-[80px]">{first}</span>
+      </span>
+      {rest > 0 && (
+        <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded-full">
+          +{rest}
+        </span>
+      )}
+    </span>
   )
 }
 

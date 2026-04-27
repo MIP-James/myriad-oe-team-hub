@@ -45,7 +45,8 @@ export const INFRINGEMENT_COLORS = {
 /**
  * 케이스 목록. 필터 파라미터 선택적.
  * @param {Object} opts
- *   - brand, platform, infringementType, status, search (제목/본문/브랜드 ILIKE)
+ *   - brand, platform, infringementType: 단일값 — 케이스의 다중값 배열 안에 포함되면 매치 (.contains)
+ *   - status, search (제목/본문 ILIKE)
  *   - limit, offset
  */
 export async function listCases({
@@ -65,13 +66,13 @@ export async function listCases({
     .order('created_at', { ascending: false })
     .range(offset, offset + limit - 1)
 
-  if (brand) q = q.eq('brand', brand)
-  if (platform) q = q.eq('platform', platform)
-  if (infringementType) q = q.eq('infringement_type', infringementType)
+  if (brand) q = q.contains('brands', [brand])
+  if (platform) q = q.contains('platforms', [platform])
+  if (infringementType) q = q.contains('infringement_types', [infringementType])
   if (status) q = q.eq('status', status)
   if (search && search.trim()) {
     const pat = `%${search.trim()}%`
-    q = q.or(`title.ilike.${pat},body_text.ilike.${pat},brand.ilike.${pat}`)
+    q = q.or(`title.ilike.${pat},body_text.ilike.${pat}`)
   }
 
   const { data, error, count } = await q
@@ -92,21 +93,37 @@ export async function getCase(id) {
 export async function listRecentCases(limit = 5) {
   const { data, error } = await supabase
     .from('cases')
-    .select('id,title,brand,platform,platform_other,infringement_type,status,created_at,created_by')
+    .select('id,title,brand,brands,platform,platform_other,platforms,infringement_type,infringement_types,status,created_at,created_by')
     .order('created_at', { ascending: false })
     .limit(limit)
   if (error) throw error
   return data ?? []
 }
 
+/**
+ * payload 에는 다중값 배열을 보내야 함:
+ *   brands, platforms, infringementTypes, postUrls (각각 string[])
+ * 기존 단일 컬럼 (brand/platform/infringement_type/post_url) 도 1번째 값으로
+ * 함께 채워서 deprecated 경로(목록 폴백 표시 등)와의 호환을 유지.
+ */
 export async function createCase(payload, userId) {
+  const brands = sanitizeStringArray(payload.brands)
+  const platforms = sanitizeStringArray(payload.platforms)
+  const infringementTypes = sanitizeStringArray(payload.infringementTypes)
+  const postUrls = sanitizeStringArray(payload.postUrls)
+
   const row = {
     title: (payload.title || '').trim(),
-    brand: (payload.brand || '').trim(),
-    platform: (payload.platform || '').trim(),
-    platform_other: null,    // deprecated — migration 014 에서 platform 으로 통합
-    post_url: payload.postUrl ? payload.postUrl.trim() : null,
-    infringement_type: payload.infringementType,
+    brands,
+    platforms,
+    infringement_types: infringementTypes,
+    post_urls: postUrls,
+    // deprecated 단일 컬럼 — 첫 값으로 미러링 (구 코드 폴백용)
+    brand: brands[0] || '',
+    platform: platforms[0] || '',
+    platform_other: null,
+    post_url: postUrls[0] || null,
+    infringement_type: infringementTypes[0] || null,
     status: payload.status || 'share',
     body_html: payload.bodyHtml || '',
     body_text: payload.bodyText || '',
@@ -129,19 +146,28 @@ export async function createCase(payload, userId) {
   await logActivity('case_created', {
     target_type: 'case',
     target_id: data.id,
-    payload: { title: data.title, brand: data.brand, platform: data.platform }
+    payload: { title: data.title, brand: brands[0] || '', platform: platforms[0] || '' }
   })
   return data
 }
 
 export async function updateCase(id, payload, userId) {
+  const brands = sanitizeStringArray(payload.brands)
+  const platforms = sanitizeStringArray(payload.platforms)
+  const infringementTypes = sanitizeStringArray(payload.infringementTypes)
+  const postUrls = sanitizeStringArray(payload.postUrls)
+
   const row = {
     title: (payload.title || '').trim(),
-    brand: (payload.brand || '').trim(),
-    platform: (payload.platform || '').trim(),
-    platform_other: null,    // deprecated — migration 014 에서 platform 으로 통합
-    post_url: payload.postUrl ? payload.postUrl.trim() : null,
-    infringement_type: payload.infringementType,
+    brands,
+    platforms,
+    infringement_types: infringementTypes,
+    post_urls: postUrls,
+    brand: brands[0] || '',
+    platform: platforms[0] || '',
+    platform_other: null,
+    post_url: postUrls[0] || null,
+    infringement_type: infringementTypes[0] || null,
     body_html: payload.bodyHtml || '',
     body_text: payload.bodyText || '',
     gmail_message_id: payload.gmailMessageId || null,
@@ -163,7 +189,7 @@ export async function updateCase(id, payload, userId) {
   await logActivity('case_updated', {
     target_type: 'case',
     target_id: data.id,
-    payload: { title: data.title, brand: data.brand }
+    payload: { title: data.title, brand: brands[0] || '' }
   })
   return data
 }
@@ -557,19 +583,79 @@ export async function upsertCaseWorkflowNotes(caseId, bodyHtml, bodyText, userId
 // ───── Brand autocomplete ───────────────────────────────────────
 
 /**
- * 브랜드 제안 목록 — 마스터 리스트(엑셀) + cases.brand + brand_reports.brand_name 통합.
+ * 브랜드 제안 목록 — 마스터 리스트(엑셀) + cases.brands(배열) + brand_reports.brand_name 통합.
  * 자유 입력 허용이라 마스터에 없는 신규 값도 사용자가 직접 타이핑 가능.
  */
 export async function listBrandSuggestions() {
   const [casesRes, reportsRes] = await Promise.all([
-    supabase.from('cases').select('brand').limit(500),
+    // brand(deprecated 단일) + brands(배열) 둘 다 가져와서 폴백 호환
+    supabase.from('cases').select('brand,brands').limit(500),
     supabase.from('brand_reports').select('brand_name').limit(500)
   ])
   const set = new Set(BRAND_LIST)        // 마스터 시작점
-  for (const r of casesRes.data ?? []) if (r.brand) set.add(r.brand)
+  for (const r of casesRes.data ?? []) {
+    if (Array.isArray(r.brands)) {
+      for (const b of r.brands) if (b) set.add(b)
+    } else if (r.brand) {
+      set.add(r.brand)
+    }
+  }
   for (const r of reportsRes.data ?? []) if (r.brand_name) set.add(r.brand_name)
   return [...set].sort((a, b) => a.localeCompare(b, 'ko'))
 }
+
+// ───── Multi-value helpers (Phase 14, 2026-04-27) ────────────────
+
+/**
+ * 사용자 입력 배열을 정규화: trim, 빈 값 제거, 중복 제거, 순서 보존.
+ * 신규 케이스 INSERT / UPDATE 시 사용.
+ */
+export function sanitizeStringArray(arr) {
+  if (!arr) return []
+  if (typeof arr === 'string') arr = [arr]   // 단일값 호환
+  const seen = new Set()
+  const out = []
+  for (const v of arr) {
+    if (v == null) continue
+    const t = String(v).trim()
+    if (!t) continue
+    if (seen.has(t)) continue
+    seen.add(t)
+    out.push(t)
+  }
+  return out
+}
+
+/**
+ * DB 행에서 "표시용" 다중값 배열을 안전하게 추출.
+ * - 새 컬럼(brands/platforms/...) 우선
+ * - 비어 있으면 deprecated 단일 컬럼(brand/platform/...) 으로 폴백
+ *   (마이그레이션 전 데이터 또는 구버전 클라이언트가 단일값만 넣은 경우)
+ */
+export function getCaseBrands(row) {
+  if (Array.isArray(row?.brands) && row.brands.length > 0) return row.brands
+  if (row?.brand) return [row.brand]
+  return []
+}
+export function getCasePlatforms(row) {
+  if (Array.isArray(row?.platforms) && row.platforms.length > 0) return row.platforms
+  if (row?.platform) return [row.platform]
+  if (row?.platform_other) return [row.platform_other]
+  return []
+}
+export function getCaseInfringementTypes(row) {
+  if (Array.isArray(row?.infringement_types) && row.infringement_types.length > 0) {
+    return row.infringement_types
+  }
+  if (row?.infringement_type) return [row.infringement_type]
+  return []
+}
+export function getCasePostUrls(row) {
+  if (Array.isArray(row?.post_urls) && row.post_urls.length > 0) return row.post_urls
+  if (row?.post_url) return [row.post_url]
+  return []
+}
+
 
 // ───── helpers ──────────────────────────────────────────────────
 

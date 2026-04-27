@@ -8,7 +8,7 @@ import {
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { listAnnouncements, getMyReadIds } from '../lib/community'
-import { listRecentCases, STATUS_LABELS, STATUS_COLORS } from '../lib/cases'
+import { listRecentCases, STATUS_LABELS, STATUS_COLORS, getCaseBrands, getCasePlatforms } from '../lib/cases'
 import { listActiveShortcuts, getColorClasses } from '../lib/externalShortcuts'
 
 export default function Dashboard() {
@@ -182,25 +182,38 @@ export default function Dashboard() {
           loading={loading}
         >
           <ul className="space-y-2">
-            {recentCases.map((c) => (
-              <li key={c.id}>
-                <Link to={`/community/cases/${c.id}`} className="block p-2 rounded-lg hover:bg-slate-50 transition">
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-medium text-slate-900 truncate flex-1">{c.title}</span>
-                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full shrink-0 ${STATUS_COLORS[c.status] || 'bg-slate-100 text-slate-600'}`}>
-                      {STATUS_LABELS[c.status] || c.status}
-                    </span>
-                  </div>
-                  <div className="text-xs text-slate-500 mt-0.5 flex items-center gap-1.5 flex-wrap">
-                    <span className="inline-flex items-center gap-0.5 text-[10px] bg-myriad-primary/20 text-myriad-ink px-1.5 py-0.5 rounded-full">
-                      <TagIcon size={8} /> {c.brand}
-                    </span>
-                    <span className="text-[10px] text-slate-500">{c.platform || c.platform_other || '—'}</span>
-                    <span className="text-slate-400 ml-auto">{relativeTime(c.created_at)}</span>
-                  </div>
-                </Link>
-              </li>
-            ))}
+            {recentCases.map((c) => {
+              const brands = getCaseBrands(c)
+              const platforms = getCasePlatforms(c)
+              const brandFirst = brands[0] || '—'
+              const brandRest = brands.length - 1
+              const platformFirst = platforms[0] || '—'
+              const platformRest = platforms.length - 1
+              return (
+                <li key={c.id}>
+                  <Link to={`/community/cases/${c.id}`} className="block p-2 rounded-lg hover:bg-slate-50 transition">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-medium text-slate-900 truncate flex-1">{c.title}</span>
+                      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full shrink-0 ${STATUS_COLORS[c.status] || 'bg-slate-100 text-slate-600'}`}>
+                        {STATUS_LABELS[c.status] || c.status}
+                      </span>
+                    </div>
+                    <div className="text-xs text-slate-500 mt-0.5 flex items-center gap-1.5 flex-wrap">
+                      <span
+                        title={brands.join(', ')}
+                        className="inline-flex items-center gap-0.5 text-[10px] bg-myriad-primary/20 text-myriad-ink px-1.5 py-0.5 rounded-full"
+                      >
+                        <TagIcon size={8} /> {brandFirst}{brandRest > 0 ? ` +${brandRest}` : ''}
+                      </span>
+                      <span title={platforms.join(', ')} className="text-[10px] text-slate-500">
+                        {platformFirst}{platformRest > 0 ? ` +${platformRest}` : ''}
+                      </span>
+                      <span className="text-slate-400 ml-auto">{relativeTime(c.created_at)}</span>
+                    </div>
+                  </Link>
+                </li>
+              )
+            })}
           </ul>
         </Widget>
       </div>
