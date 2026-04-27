@@ -795,7 +795,6 @@ function writeIssueBox(ws, startRow, startCol, title, widthCols) {
 }
 
 // ---------------- Enhanced 이슈 섹션 (큰 박스 + 6개 서브 섹션) ----------------
-const MANUAL_TEXT_COLOR = 'FF7F7F7F'   // 회색 — 수기 입력 영역 텍스트
 const MANUAL_PLACEHOLDER = '[수기 입력]'
 const SUB_HEADER_FILL = 'FFF2F2F2'     // 옅은 회색 — 서브 섹션 헤더 음영
 
@@ -803,7 +802,7 @@ const SUB_HEADER_FILL = 'FFF2F2F2'     // 옅은 회색 — 서브 섹션 헤더
  * 단일 이슈 섹션 박스. autoLines (자동 생성), manualLines (수기 영역) 각각 별도 행.
  * 수기 행은 노란 음영 + 회색 이탤릭으로 시각적 구분.
  */
-function writeIssueSection(ws, startRow, startCol, widthCols, sectionTitle, autoLines, manualLines) {
+function writeIssueSection(ws, startRow, startCol, widthCols, sectionTitle, lines) {
   const left = startCol
   const right = startCol + widthCols - 1
 
@@ -819,30 +818,16 @@ function writeIssueSection(ws, startRow, startCol, widthCols, sectionTitle, auto
   if (!titleRowsByWs.has(ws)) titleRowsByWs.set(ws, new Set())
   titleRowsByWs.get(ws).add(startRow)
 
-  let curRow = startRow + 1
+  // 본문 — 자동/수기 한 덩어리, 검정 통일, 왼쪽 정렬
+  // 첫줄/마지막줄 빈 줄 + 항목 간 빈 줄 (Alt+Enter 효과)
+  const body = startRow + 1
+  ws.mergeCells(body, left, body, right)
+  const cell = ws.getCell(body, left)
+  cell.value = lines && lines.length ? '\n' + lines.join('\n\n') + '\n' : ''
+  cell.alignment = { horizontal: 'left', vertical: 'top', wrapText: true }
+  for (let c = left; c <= right; c++) ws.getCell(body, c).border = THIN_BORDER
 
-  // 자동 영역 — 흰 배경 + 검정 + 왼쪽 정렬
-  if (autoLines && autoLines.length) {
-    ws.mergeCells(curRow, left, curRow, right)
-    const cell = ws.getCell(curRow, left)
-    cell.value = autoLines.join('\n')
-    cell.alignment = { horizontal: 'left', vertical: 'top', wrapText: true }
-    for (let c = left; c <= right; c++) ws.getCell(curRow, c).border = THIN_BORDER
-    curRow++
-  }
-
-  // 수기 영역 — 흰 배경 + 회색 일반 텍스트 + 왼쪽 정렬 (이탤릭/음영 제거)
-  if (manualLines && manualLines.length) {
-    ws.mergeCells(curRow, left, curRow, right)
-    const cell = ws.getCell(curRow, left)
-    cell.value = manualLines.join('\n')
-    cell.alignment = { horizontal: 'left', vertical: 'top', wrapText: true }
-    cell.font = { color: { argb: MANUAL_TEXT_COLOR } }
-    for (let c = left; c <= right; c++) ws.getCell(curRow, c).border = THIN_BORDER
-    curRow++
-  }
-
-  return curRow - 1
+  return body
 }
 
 function writeEnhancedIssueSections(ws, startRow, startCol, widthCols, ctx) {
@@ -865,25 +850,25 @@ function writeEnhancedIssueSections(ws, startRow, startCol, widthCols, ctx) {
   let cur = startRow + 1
 
   // ===== 1. Keyword (전부 수기) =====
-  cur = writeIssueSection(ws, cur, startCol, widthCols, '■ Keyword', null, [
+  cur = writeIssueSection(ws, cur, startCol, widthCols, '■ Keyword', [
     `· 신규 추가된 키워드: ${MANUAL_PLACEHOLDER}`,
     `· 사라진 키워드 (사유 포함): ${MANUAL_PLACEHOLDER}`,
     `· 가장 많이 발견되는 키워드: ${MANUAL_PLACEHOLDER}`
   ])
   cur += 1
 
-  // ===== 2. Trend (자동 + 사유 수기) =====
-  const auto2 = []
+  // ===== 2. Trend (자동 + 변동 사유 수기 통합) =====
+  const lines2 = []
   if (currSummary.세번째 && currSummary.세번째.length) {
     const top3 = currSummary.세번째.slice(0, Math.min(topN, 3))
-    auto2.push(
+    lines2.push(
       `· 이번달 Top ${top3.length} ${label}: ` +
         top3.map((r) => `${r.항목}(${r['전체 침해 건수']}건)`).join(', ')
     )
   }
   const rateChanges = analyzeRateChanges(cmp3, 30, 10)
   if (rateChanges.surgeUp.length) {
-    auto2.push(
+    lines2.push(
       `· 급증 (+30% 이상): ` +
         rateChanges.surgeUp
           .slice(0, 3)
@@ -891,10 +876,10 @@ function writeEnhancedIssueSections(ws, startRow, startCol, widthCols, ctx) {
           .join(', ')
     )
   } else {
-    auto2.push(`· 급증 (+30% 이상): 해당 항목 없음`)
+    lines2.push(`· 급증 (+30% 이상): 해당 항목 없음`)
   }
   if (rateChanges.surgeDown.length) {
-    auto2.push(
+    lines2.push(
       `· 급감 (-30% 이상): ` +
         rateChanges.surgeDown
           .slice(0, 3)
@@ -902,7 +887,7 @@ function writeEnhancedIssueSections(ws, startRow, startCol, widthCols, ctx) {
           .join(', ')
     )
   } else {
-    auto2.push(`· 급감 (-30% 이상): 해당 항목 없음`)
+    lines2.push(`· 급감 (-30% 이상): 해당 항목 없음`)
   }
   const prevTypeTop = [...cmp2]
     .filter((r) => r.직전달 > 0)
@@ -912,25 +897,24 @@ function writeEnhancedIssueSections(ws, startRow, startCol, widthCols, ctx) {
     .sort((a, b) => b.이번달 - a.이번달)[0]
   if (prevTypeTop && currTypeTop) {
     if (prevTypeTop.항목 === currTypeTop.항목) {
-      auto2.push(
+      lines2.push(
         `· 침해유형 1위: ${currTypeTop.항목} (이번달 ${currTypeTop.이번달}건, 변화 없음)`
       )
     } else {
-      auto2.push(
+      lines2.push(
         `· 침해유형 1위 변화: ${prevTypeTop.항목}(${prevTypeTop.직전달}건) → ${currTypeTop.항목}(${currTypeTop.이번달}건)`
       )
     }
   }
-  cur = writeIssueSection(ws, cur, startCol, widthCols, '■ Trend', auto2, [
-    `· 변동 사유 / 시즌·콜라보 영향: ${MANUAL_PLACEHOLDER}`
-  ])
+  lines2.push(`· 변동 사유: ${MANUAL_PLACEHOLDER}`)
+  cur = writeIssueSection(ws, cur, startCol, widthCols, '■ Trend', lines2)
   cur += 1
 
   // ===== 3. Product Category (자동) =====
-  const auto3 = []
+  const lines3 = []
   const topShare = analyzeTopShare(currSummary.세번째)
   if (topShare) {
-    auto3.push(
+    lines3.push(
       `· 침해 비중 1위 ${label}: ${topShare.item} (${topShare.count}건, ${topShare.share}%)`
     )
   }
@@ -939,69 +923,69 @@ function writeEnhancedIssueSections(ws, startRow, startCol, widthCols, ctx) {
     .sort((a, b) => b.이번달 - a.이번달)
     .slice(0, 3)
   if (newItems.length) {
-    auto3.push(
+    lines3.push(
       `· 신규 발견 ${label}: ` + newItems.map((r) => `${r.항목}(${r.이번달}건)`).join(', ')
     )
   } else {
-    auto3.push(`· 신규 발견 ${label}: 없음`)
+    lines3.push(`· 신규 발견 ${label}: 없음`)
   }
   const goneItems = analyzeGoneCategories(cmp3, 3)
   if (goneItems.length) {
-    auto3.push(
+    lines3.push(
       `· 사라진 ${label}: ` +
         goneItems.map((r) => `${r.항목}(전월 ${r.직전달}건 → 0건)`).join(', ')
     )
   } else {
-    auto3.push(`· 사라진 ${label}: 없음`)
+    lines3.push(`· 사라진 ${label}: 없음`)
   }
   if (topShare && !useDivision) {
     const tokens = extractProductTokens(currRows, topShare.item, 5)
     if (tokens.length) {
-      auto3.push(
+      lines3.push(
         `· "${topShare.item}" 세부 발견 항목: ` +
           tokens.map((t) => `${t.토큰}(${t.건수}건)`).join(', ')
       )
     }
   }
-  cur = writeIssueSection(ws, cur, startCol, widthCols, '■ Product Category', auto3, null)
+  cur = writeIssueSection(ws, cur, startCol, widthCols, '■ Product Category', lines3)
   cur += 1
 
   // ===== 4. Pending (전부 수기) =====
-  cur = writeIssueSection(ws, cur, startCol, widthCols, '■ Pending', null, [
+  cur = writeIssueSection(ws, cur, startCol, widthCols, '■ Pending', [
     `· 신고 미처리 / 처리 지연 사유: ${MANUAL_PLACEHOLDER}`,
     `· 미처리 건 향후 처리 방안: ${MANUAL_PLACEHOLDER}`
   ])
   cur += 1
 
   // ===== 5. Infringing Trend (전부 수기) =====
-  cur = writeIssueSection(ws, cur, startCol, widthCols, '■ Infringing Trend', null, [
+  cur = writeIssueSection(ws, cur, startCol, widthCols, '■ Infringing Trend', [
     `· 유사 범위 내 디자인 소폭 변형: ${MANUAL_PLACEHOLDER}`,
     `· 새로 발견된 침해 모티프 / 디자인: ${MANUAL_PLACEHOLDER}`
   ])
   cur += 1
 
-  // ===== 6. Infringer (자동 + 조치방안 수기) =====
-  const auto6 = []
+  // ===== 6. Infringer (자동 + 조치방안 수기 통합) =====
+  const lines6 = []
   const topSellers = analyzeTopSellers(currRows, 3)
   if (topSellers.length) {
-    auto6.push(
+    lines6.push(
       `· Top 침해 셀러: ` + topSellers.map((s) => `${s.이름}(${s.건수}건)`).join(', ')
     )
   } else {
-    auto6.push(`· Top 침해 셀러: 데이터 없음`)
+    lines6.push(`· Top 침해 셀러: 데이터 없음`)
   }
   const multiSellers = analyzeMultiPlatformSellers(currRows, 5, 2)
   if (multiSellers.length) {
-    auto6.push(`· 다수 플랫폼 동시 침해 (${multiSellers.length}건):`)
+    lines6.push(`· 다수 플랫폼 동시 침해 (${multiSellers.length}건):`)
     for (const s of multiSellers.slice(0, 3)) {
-      auto6.push(`   - ${s.이름} → ${s.플랫폼.join(', ')} (총 ${s.건수}건)`)
+      lines6.push(`   - ${s.이름} → ${s.플랫폼.join(', ')} (총 ${s.건수}건)`)
     }
   } else {
-    auto6.push(`· 다수 플랫폼 동시 침해: 없음`)
+    lines6.push(`· 다수 플랫폼 동시 침해: 없음`)
   }
   const heavySellers = analyzeHeavyVolumeSellers(currRows, 5, 5)
   if (heavySellers.length) {
-    auto6.push(
+    lines6.push(
       `· 동일 플랫폼 5건 이상 셀러: ` +
         heavySellers
           .slice(0, 3)
@@ -1009,31 +993,30 @@ function writeEnhancedIssueSections(ws, startRow, startCol, widthCols, ctx) {
           .join(', ')
     )
   } else {
-    auto6.push(`· 동일 플랫폼 5건 이상 셀러: 없음`)
+    lines6.push(`· 동일 플랫폼 5건 이상 셀러: 없음`)
   }
   const related = analyzeRelatedSellers(currRows, 3)
   if (related.length) {
-    auto6.push(`· 연계 판매자 의심군 (${related.length}개 그룹):`)
+    lines6.push(`· 연계 판매자 의심군 (${related.length}개 그룹):`)
     for (const c of related) {
       const domain = c.domains.length ? ` [${c.domains[0]}]` : ''
-      auto6.push(`   - ${c.sellers.join(' / ')} (${c.total}명, 총 ${c.totalCount}건)${domain}`)
+      lines6.push(`   - ${c.sellers.join(' / ')} (${c.total}명, 총 ${c.totalCount}건)${domain}`)
     }
   } else {
-    auto6.push(`· 연계 판매자 의심군: 없음`)
+    lines6.push(`· 연계 판매자 의심군: 없음`)
   }
   const newSellers = analyzeNewSellers(prevRows, currRows, 3)
   if (newSellers.length) {
-    auto6.push(
+    lines6.push(
       `· 신규 등장 셀러: ` + newSellers.map((s) => `${s.이름}(${s.건수}건)`).join(', ')
     )
   } else {
-    auto6.push(`· 신규 등장 셀러: 없음`)
+    lines6.push(`· 신규 등장 셀러: 없음`)
   }
-  cur = writeIssueSection(ws, cur, startCol, widthCols, '■ Infringer', auto6, [
-    `· 다수 플랫폼 셀러 조치 방안: ${MANUAL_PLACEHOLDER}`,
-    `· 동일 플랫폼 셀러 조치 방안: ${MANUAL_PLACEHOLDER}`,
-    `· 연계 판매자 향후 모니터링 방안: ${MANUAL_PLACEHOLDER}`
-  ])
+  lines6.push(`· 다수 플랫폼 셀러 조치 방안: ${MANUAL_PLACEHOLDER}`)
+  lines6.push(`· 동일 플랫폼 셀러 조치 방안: ${MANUAL_PLACEHOLDER}`)
+  lines6.push(`· 연계 판매자 향후 모니터링 방안: ${MANUAL_PLACEHOLDER}`)
+  cur = writeIssueSection(ws, cur, startCol, widthCols, '■ Infringer', lines6)
 
   return cur
 }
@@ -1061,13 +1044,10 @@ function buildInfrColorMap(blocksByPlatform) {
 
 function autosizeRows(ws, startRow, endRow, endCol) {
   const titleRows = titleRowsByWs.get(ws) || new Set()
-  // 병합된 구간의 primary 가 아닌 셀을 파악하기 위해 merge 정보 수집
   const mergeRanges = []
   try {
-    // ExcelJS 버전 따라 _merges 또는 model.merges 가 있음
     const merges = ws.model?.merges || ws._merges || []
     for (const m of merges) {
-      // m 은 "A1:C1" 같은 문자열
       if (typeof m === 'string') {
         const match = m.match(/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/)
         if (match) {
@@ -1085,31 +1065,63 @@ function autosizeRows(ws, startRow, endRow, endCol) {
     // merge 정보 실패해도 치명적이지 않음
   }
 
-  function isMergedSecondary(r, c) {
+  function findMerge(r, c) {
     for (const m of mergeRanges) {
-      if (r >= m.row1 && r <= m.row2 && c >= m.col1 && c <= m.col2) {
-        // primary (row1, col1) 가 아니면 secondary
-        if (!(r === m.row1 && c === m.col1)) return true
-      }
+      if (r >= m.row1 && r <= m.row2 && c >= m.col1 && c <= m.col2) return m
     }
-    return false
+    return null
+  }
+
+  function isMergedSecondary(r, c) {
+    const m = findMerge(r, c)
+    return m && !(r === m.row1 && c === m.col1)
+  }
+
+  // 병합 셀의 primary 인 경우 병합된 모든 컬럼 폭 합산 — 이게 없으면
+  // 병합 셀 텍스트 줄 수가 과대 추정되어 행 높이가 비정상적으로 커짐
+  function effectiveWidth(r, c) {
+    const m = findMerge(r, c)
+    if (m && r === m.row1 && c === m.col1) {
+      let total = 0
+      for (let cc = m.col1; cc <= m.col2; cc++) {
+        total += ws.getColumn(cc).width || 12
+      }
+      return total
+    }
+    return ws.getColumn(c).width || 12
+  }
+
+  // 한글/한자/일본어 등 wide character 는 영문 대비 약 2배 폭 차지
+  function displayLength(text) {
+    let len = 0
+    for (let i = 0; i < text.length; i++) {
+      const code = text.charCodeAt(i)
+      if (code > 0x2E80) len += 2
+      else len += 1
+    }
+    return len
   }
 
   for (let r = startRow; r <= endRow; r++) {
-    // 제목 행은 고정 높이 유지 (autosize 건너뜀)
     if (titleRows.has(r)) continue
 
     let maxLines = 1
     for (let c = 1; c <= endCol; c++) {
-      if (isMergedSecondary(r, c)) continue  // 병합의 secondary cell 건너뜀
+      if (isMergedSecondary(r, c)) continue
       const cell = ws.getCell(r, c)
       const text = cell.value == null ? '' : String(cell.value)
       if (!text) continue
-      const width = ws.getColumn(c).width || 12
+      const width = effectiveWidth(r, c)
       const charsPerLine = Math.max(5, Math.floor(width) - 2)
-      const softLines = Math.ceil(text.length / charsPerLine)
-      const explicitLines = (text.match(/\n/g) || []).length + 1
-      maxLines = Math.max(maxLines, softLines, explicitLines)
+
+      // explicit 줄별로 wrap 계산 (한글 가중치 반영)
+      const explicitLines = text.split('\n')
+      let totalLines = 0
+      for (const line of explicitLines) {
+        const dlen = displayLength(line)
+        totalLines += Math.max(1, Math.ceil(dlen / charsPerLine))
+      }
+      maxLines = Math.max(maxLines, totalLines)
     }
     const current = ws.getRow(r).height
     const base = current === HEADER_ROW_HEIGHT ? HEADER_ROW_HEIGHT : BASE_DATA_ROW_HEIGHT
