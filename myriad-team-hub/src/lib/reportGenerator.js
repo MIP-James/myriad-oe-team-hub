@@ -18,6 +18,8 @@ const BASE_DATA_ROW_HEIGHT = 18
 
 // Worksheet 별로 "autosize 제외할 행(제목 행)" 추적
 const titleRowsByWs = new WeakMap()
+// 이슈 박스 본문 행 — 한 줄당 line height 15pt 로 더 타이트하게 적용 (구글 시트 기본값과 동일)
+const issueBodyRowsByWs = new WeakMap()
 
 const INFR_PALETTE = [
   'FFD6EAF8', 'FFFADBD8', 'FFD5F5E3', 'FFFCF3CF',
@@ -802,6 +804,18 @@ const SUB_HEADER_FILL = 'FFF2F2F2'     // 옅은 회색 — 서브 섹션 헤더
  * 단일 이슈 섹션 박스. autoLines (자동 생성), manualLines (수기 영역) 각각 별도 행.
  * 수기 행은 노란 음영 + 회색 이탤릭으로 시각적 구분.
  */
+// 이슈 박스 본문 라인 결합 — 일반 항목('· '로 시작)은 \n\n (빈 줄로 구분),
+// 하위 항목('   -'로 시작)은 \n (바로 위 메인 항목 아래 붙여서)
+function joinIssueLines(lines) {
+  if (!lines || !lines.length) return ''
+  let result = lines[0]
+  for (let i = 1; i < lines.length; i++) {
+    const isSubItem = /^\s+-/.test(lines[i])
+    result += (isSubItem ? '\n' : '\n\n') + lines[i]
+  }
+  return result
+}
+
 function writeIssueSection(ws, startRow, startCol, widthCols, sectionTitle, lines) {
   const left = startCol
   const right = startCol + widthCols - 1
@@ -819,13 +833,17 @@ function writeIssueSection(ws, startRow, startCol, widthCols, sectionTitle, line
   titleRowsByWs.get(ws).add(startRow)
 
   // 본문 — 자동/수기 한 덩어리, 검정 통일, 왼쪽 정렬
-  // 첫줄/마지막줄 빈 줄 + 항목 간 빈 줄 (Alt+Enter 효과)
+  // 첫줄/마지막줄 빈 줄 + 항목 간 빈 줄 (단 하위 항목은 위 메인 항목에 붙여서)
   const body = startRow + 1
   ws.mergeCells(body, left, body, right)
   const cell = ws.getCell(body, left)
-  cell.value = lines && lines.length ? '\n' + lines.join('\n\n') + '\n' : ''
+  cell.value = lines && lines.length ? '\n' + joinIssueLines(lines) + '\n' : ''
   cell.alignment = { horizontal: 'left', vertical: 'top', wrapText: true }
   for (let c = left; c <= right; c++) ws.getCell(body, c).border = THIN_BORDER
+
+  // autosizeRows 에서 line height 15pt 로 타이트하게 적용하기 위해 등록
+  if (!issueBodyRowsByWs.has(ws)) issueBodyRowsByWs.set(ws, new Set())
+  issueBodyRowsByWs.get(ws).add(body)
 
   return body
 }
@@ -1044,6 +1062,7 @@ function buildInfrColorMap(blocksByPlatform) {
 
 function autosizeRows(ws, startRow, endRow, endCol) {
   const titleRows = titleRowsByWs.get(ws) || new Set()
+  const issueBodyRows = issueBodyRowsByWs.get(ws) || new Set()
   const mergeRanges = []
   try {
     const merges = ws.model?.merges || ws._merges || []
@@ -1123,9 +1142,12 @@ function autosizeRows(ws, startRow, endRow, endCol) {
       }
       maxLines = Math.max(maxLines, totalLines)
     }
+    // 이슈 박스 본문은 한 줄당 15pt (Excel/구글 시트 기본 한 줄 높이),
+    // 그 외 데이터 행은 한 줄당 18pt 로 약간 여유
+    const lineHeight = issueBodyRows.has(r) ? 15 : BASE_DATA_ROW_HEIGHT
     const current = ws.getRow(r).height
-    const base = current === HEADER_ROW_HEIGHT ? HEADER_ROW_HEIGHT : BASE_DATA_ROW_HEIGHT
-    ws.getRow(r).height = Math.max(base, BASE_DATA_ROW_HEIGHT * maxLines)
+    const base = current === HEADER_ROW_HEIGHT ? HEADER_ROW_HEIGHT : lineHeight
+    ws.getRow(r).height = Math.max(base, lineHeight * maxLines)
   }
 }
 
