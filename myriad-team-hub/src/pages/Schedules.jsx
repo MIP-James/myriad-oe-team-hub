@@ -13,7 +13,7 @@ import { useSearchParams } from 'react-router-dom'
 import {
   CalendarDays, ChevronLeft, ChevronRight, Plus, X, Trash2, Save, Loader2,
   Lock, Users as UsersIcon, Bell, BellOff, NotebookPen, ChevronRight as Chevron,
-  CheckCircle2, History
+  CheckCircle2, History, Send
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
@@ -28,6 +28,7 @@ import {
 import WeeklyPlanModal from '../components/WeeklyPlanModal'
 import DailyRecordModal from '../components/DailyRecordModal'
 import ReminderSettingsModal from '../components/ReminderSettingsModal'
+import NotionReportModal from '../components/NotionReportModal'
 
 // 캘린더 헤더: 일요일 시작 (표준 UI). 주차 띠 계산은 ISO(월~일) 유지.
 const WEEKDAYS_SUN = ['일', '월', '화', '수', '목', '금', '토']
@@ -114,6 +115,7 @@ export default function Schedules() {
   const [weeklyEditor, setWeeklyEditor] = useState(null)   // { year, week, weekStart, items }
   const [dailyEditor, setDailyEditor] = useState(null)     // { date, items }
   const [reminderModalOpen, setReminderModalOpen] = useState(false)
+  const [notionReportOpen, setNotionReportOpen] = useState(false)
 
   // "지난 주 한 일" 탐색 — 선택한 주 기준 N주 전 (1 = 지난 주)
   const [pastWeekOffset, setPastWeekOffset] = useState(1)
@@ -439,6 +441,13 @@ export default function Schedules() {
         <h1 className="text-2xl font-bold text-slate-900">일정</h1>
         <div className="flex-1" />
         <ReminderButton settings={reminderSettings} onClick={() => setReminderModalOpen(true)} />
+        <button
+          onClick={() => setNotionReportOpen(true)}
+          className="flex items-center gap-2 border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-semibold px-4 py-2 rounded-lg transition text-sm"
+          title="이번 주 일일 기록 + 다음 주 계획을 노션 주간보고로 자동 생성"
+        >
+          <Send size={14} /> 노션 주간보고
+        </button>
         <button
           onClick={() => openNew(selectedDate)}
           className="flex items-center gap-2 bg-myriad-primary hover:bg-myriad-primaryDark text-myriad-ink font-semibold px-4 py-2 rounded-lg transition"
@@ -879,6 +888,13 @@ export default function Schedules() {
         <ReminderSettingsModal
           onClose={() => setReminderModalOpen(false)}
           onSaved={() => { setReminderModalOpen(false); load() }}
+        />
+      )}
+
+      {notionReportOpen && (
+        <NotionReportModal
+          initialWeekStart={selectedDate}
+          onClose={() => setNotionReportOpen(false)}
         />
       )}
     </div>
