@@ -107,7 +107,7 @@ export async function onRequestPost(context) {
     })
     const { data: conn, error: connErr } = await adminSb
       .from('notion_connections')
-      .select('access_token, workspace_name')
+      .select('access_token, workspace_name, author_page_id, author_db_id, team_name, author_resolved_at')
       .eq('user_id', user.id)
       .maybeSingle()
     if (connErr) return json({ error: '연동 조회 실패: ' + connErr.message }, 500)
@@ -122,12 +122,52 @@ export async function onRequestPost(context) {
       )
     }
 
-    // ── 8) Notion API 호출 (사용자 토큰 사용) ───────────────
+    // ── 8) 본인 이름 + 사원 페이지 + 팀 자동 감지 ─────────────
+    const { data: profileRow } = await sb
+      .from('profiles')
+      .select('full_name')
+      .eq('id', user.id)
+      .maybeSingle()
+    const userName = (profileRow?.full_name?.trim())
+      || (user.user_metadata?.full_name)
+      || (user.email?.split('@')[0])
+      || '사용자'
+
+    // 캐시된 author_page_id / team_name 없으면 노션 사원 DB 에서 자동 감지
+    let authorPageId = conn.author_page_id
+    let teamName = conn.team_name
+    if (!authorPageId) {
+      const resolved = await resolveNotionUser({
+        token: conn.access_token,
+        snapshotDbId: env.NOTION_DB_ID,
+        cachedEmployeeDbId: conn.author_db_id,
+        userEmail: user.email,
+        userFullName: userName
+      })
+      if (resolved?.authorPageId) {
+        authorPageId = resolved.authorPageId
+        teamName = resolved.teamName ?? teamName
+        // 캐시 — 다음 보고서부터는 사원 DB 재조회 안 함
+        await adminSb
+          .from('notion_connections')
+          .update({
+            author_page_id: resolved.authorPageId,
+            author_db_id: resolved.employeeDbId ?? null,
+            team_name: resolved.teamName ?? null,
+            author_resolved_at: new Date().toISOString()
+          })
+          .eq('user_id', user.id)
+      }
+    }
+
+    const dateKor = `${monday.getUTCFullYear()}년 ${monday.getUTCMonth() + 1}월 ${monday.getUTCDate()}일`
+    const teamPart = teamName ? `-${teamName}` : ''
+    const customTitle = `${dateKor}${teamPart}-@${userName}`
+
+    // ── 9) Notion API 호출 (사용자 OAuth 토큰) ──────────────
     const properties = {
-      // 제목 — 노션 자동화가 작성자/날짜/팀 기반으로 덮어쓸 가능성 높음.
-      // OAuth 로 호출하면 Created By = 실제 본인 → 자동 제목에 본인 이름 박힘.
       '보고서 제목': {
-        title: [{ text: { content: `_자동 생성 (${fmtDate(monday)} 기준)_` } }]
+        title: [{ text: { content: customTitle } }]
       },
       '기준 주차': { date: { start: fmtDate(monday) } },
       '보고 상태': { status: { name: '작성중' } },
@@ -137,8 +177,26 @@ export async function onRequestPost(context) {
       '차주 우선 업무': {
         rich_text: [{ text: { content: nextWeekText } }]
       }
-      // 작성자 (필수 지정) relation 은 사용자가 노션에서 직접 선택 → automation
-      // 으로 부서/팀/부서장 자동 채워짐. (Q2 결정에 따라 자동 채움 생략)
+    }
+    // 작성자 (필수 지정) relation 자동 채움 → 노션 automation 발동 →
+    // 부서/팀/부서장 lookup + 제목 봇이름 덮어쓰기 + 보고상태=제출완료
+    // 다 일어남. 후처리 PATCH 로 제목/보고상태 복구.
+    const willTriggerAutomation = !!authorPageId
+    if (willTriggerAutomation) {
+      properties['작성자 (필수 지정)'] = {
+        relation: [{ id: authorPageId }]
+      }
+    }
+
+    const NOTION_COVER_DEFAULT = 'https://www.notion.so/images/page-cover/met_william_morris_1875_acanthus.jpg'
+    const pageBody = {
+      parent: { database_id: env.NOTION_DB_ID },
+      properties,
+      icon: { type: 'emoji', emoji: '📝' },
+      cover: {
+        type: 'external',
+        external: { url: env.NOTION_COVER_URL || NOTION_COVER_DEFAULT }
+      }
     }
 
     const notionRes = await fetch('https://api.notion.com/v1/pages', {
@@ -148,10 +206,7 @@ export async function onRequestPost(context) {
         'Notion-Version': '2022-06-28',
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
-        parent: { database_id: env.NOTION_DB_ID },
-        properties
-      })
+      body: JSON.stringify(pageBody)
     })
 
     // 401/403 — 토큰 무효화됨 → 연동 행 삭제 후 재연동 안내
@@ -179,6 +234,34 @@ export async function onRequestPost(context) {
     }
 
     const page = await notionRes.json()
+
+    // ── 10) automation 후처리 — 제목 / 보고 상태 복구 ────────
+    // automation 이 작성자 변경에 반응해서 제목을 봇 이름으로 덮어쓰고
+    // 보고 상태를 "제출완료" 로 바꿈. 자연스러운 흐름은 작성중으로 유지하고
+    // 우리가 만든 제목을 살려두는 것이라 PATCH 로 복구.
+    if (willTriggerAutomation) {
+      // automation 이 완료되도록 잠시 대기
+      await new Promise((r) => setTimeout(r, 2000))
+      try {
+        await fetch(`https://api.notion.com/v1/pages/${page.id}`, {
+          method: 'PATCH',
+          headers: {
+            Authorization: `Bearer ${conn.access_token}`,
+            'Notion-Version': '2022-06-28',
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            properties: {
+              '보고서 제목': { title: [{ text: { content: customTitle } }] },
+              '보고 상태': { status: { name: '작성중' } }
+            }
+          })
+        })
+      } catch {
+        // PATCH 실패는 비치명적 — 페이지 자체는 이미 생성됨. 사용자가 직접 수정 가능.
+      }
+    }
+
     return json({
       ok: true,
       url: page.url,
@@ -247,4 +330,107 @@ function isoWeekOf(date) {
   const yearStart = new Date(Date.UTC(year, 0, 1))
   const week = Math.ceil(((d - yearStart) / 86400000 + 1) / 7)
   return { year, week }
+}
+
+// ── 노션 사용자 자동 감지 ──────────────────────────────────────
+//
+// 첫 보고서 생성 시 1회 호출 — 사용자의 노션 토큰으로:
+//   1) 주간보고 DB 스키마 → "작성자 (필수 지정)" relation 의 target = 사원 DB ID
+//   2) 사원 DB 쿼리 → 사용자 email 과 일치하는 페이지 찾기
+//   3) 그 페이지의 "팀" / "소속 팀" / "Team" 속성 값 추출
+//
+// 결과: { authorPageId, employeeDbId, teamName } | null
+//
+// email 매칭 실패 시 한국어 이름(title)도 fallback 으로 시도.
+async function resolveNotionUser({ token, snapshotDbId, cachedEmployeeDbId, userEmail, userFullName }) {
+  if (!token || !snapshotDbId) return null
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    'Notion-Version': '2022-06-28',
+    'Content-Type': 'application/json'
+  }
+
+  // 1) 사원 DB ID 확보 (캐시 있으면 스키마 조회 스킵)
+  let employeeDbId = cachedEmployeeDbId
+  if (!employeeDbId) {
+    try {
+      const schemaRes = await fetch(`https://api.notion.com/v1/databases/${snapshotDbId}`, { headers })
+      if (!schemaRes.ok) return null
+      const schema = await schemaRes.json()
+      for (const [propName, prop] of Object.entries(schema.properties || {})) {
+        if (prop?.type === 'relation' && /작성자|author/i.test(propName)) {
+          employeeDbId = prop.relation?.database_id
+          break
+        }
+      }
+      if (!employeeDbId) return null
+    } catch {
+      return null
+    }
+  }
+
+  // 2) 사원 DB 쿼리 (페이지네이션 — 최대 3페이지 / 300명)
+  const lowerEmail = (userEmail || '').toLowerCase().trim()
+  const lowerName = (userFullName || '').toLowerCase().trim()
+  let cursor = undefined
+  let candidate = null  // 이름만 일치한 fallback (email 매칭 우선)
+
+  for (let page = 0; page < 3; page++) {
+    let queryRes
+    try {
+      queryRes = await fetch(`https://api.notion.com/v1/databases/${employeeDbId}/query`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ page_size: 100, ...(cursor ? { start_cursor: cursor } : {}) })
+      })
+    } catch {
+      break
+    }
+    if (!queryRes.ok) break
+    const data = await queryRes.json()
+
+    for (const p of (data.results || [])) {
+      const props = p.properties || {}
+      let emailMatch = false
+      let nameMatch = false
+      let teamName = null
+
+      for (const [propName, prop] of Object.entries(props)) {
+        // 이메일 매칭
+        if (lowerEmail && prop?.type === 'email' && prop.email && prop.email.toLowerCase() === lowerEmail) {
+          emailMatch = true
+        }
+        // 이름 매칭 (Title 속성 — fallback)
+        if (lowerName && prop?.type === 'title') {
+          const t = (prop.title?.[0]?.plain_text || '').toLowerCase().trim()
+          if (t && (t === lowerName || t.includes(lowerName) || lowerName.includes(t))) {
+            nameMatch = true
+          }
+        }
+        // 팀명 추출 — "팀", "파트", "team" 포함 + select/multi_select/rich_text 지원
+        if (/팀|파트|team/i.test(propName) && !teamName) {
+          if (prop?.type === 'select' && prop.select?.name) {
+            teamName = prop.select.name
+          } else if (prop?.type === 'multi_select' && prop.multi_select?.[0]?.name) {
+            teamName = prop.multi_select[0].name
+          } else if (prop?.type === 'rich_text' && prop.rich_text?.[0]?.plain_text) {
+            teamName = prop.rich_text[0].plain_text
+          }
+        }
+      }
+
+      if (emailMatch) {
+        return { authorPageId: p.id, employeeDbId, teamName }
+      }
+      if (nameMatch && !candidate) {
+        candidate = { authorPageId: p.id, employeeDbId, teamName }
+      }
+    }
+
+    if (!data.has_more) break
+    cursor = data.next_cursor
+  }
+
+  // email 매칭 실패 — 이름 fallback 사용 (있으면)
+  return candidate
 }
