@@ -26,7 +26,7 @@ export async function onRequestGet(context) {
     // RLS 적용된 사용자 클라이언트로 본인 행 조회
     const { data, error } = await sb
       .from('notion_connections')
-      .select('workspace_name, workspace_icon, connected_at, updated_at')
+      .select('workspace_name, workspace_icon, connected_at, updated_at, db_accessible, db_checked_at')
       .eq('user_id', user.id)
       .maybeSingle()
     if (error) return json({ error: error.message }, 500)
@@ -37,7 +37,9 @@ export async function onRequestGet(context) {
       workspace_name: data.workspace_name,
       workspace_icon: data.workspace_icon,
       connected_at: data.connected_at,
-      updated_at: data.updated_at
+      updated_at: data.updated_at,
+      db_accessible: data.db_accessible,        // null = 미검증 (구 행), true/false = 검증됨
+      db_checked_at: data.db_checked_at
     })
   } catch (e) {
     return json({ error: '서버 오류: ' + (e?.message || String(e)) }, 500)

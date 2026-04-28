@@ -152,14 +152,23 @@ export default function Schedules() {
     }
   }, [params, user?.id])
 
-  // ?notion=connected/error 처리 — OAuth 콜백 복귀 시 토스트 + 모달 자동 오픈
-  const [notionToast, setNotionToast] = useState(null)   // { kind: 'success'|'error', text }
+  // ?notion=connected/needs_share/error 처리 — OAuth 콜백 복귀 시 토스트 + 모달 자동 오픈
+  const [notionToast, setNotionToast] = useState(null)   // { kind: 'success'|'warning'|'error', text }
   useEffect(() => {
     const n = params.get('notion')
     if (!n) return
+    let toastTtl = 5000
     if (n === 'connected') {
       setNotionToast({ kind: 'success', text: '노션 연동이 완료되었습니다. 보고서를 만들어보세요.' })
       setNotionReportOpen(true)
+    } else if (n === 'needs_share') {
+      // OAuth 자체는 성공했지만 "주간 업무 Snapshot" DB 접근 권한이 없음
+      setNotionToast({
+        kind: 'warning',
+        text: '연결은 됐지만 노션 DB 접근 권한이 부족합니다. 모달에서 안내를 확인해주세요.'
+      })
+      setNotionReportOpen(true)
+      toastTtl = 8000
     } else if (n === 'error') {
       const detail = params.get('detail') || ''
       setNotionToast({ kind: 'error', text: '노션 연동 실패: ' + (detail || '알 수 없는 오류') })
@@ -169,8 +178,7 @@ export default function Schedules() {
     next.delete('notion')
     next.delete('detail')
     setParams(next, { replace: true })
-    // 5초 후 자동 닫기
-    const timer = setTimeout(() => setNotionToast(null), 5000)
+    const timer = setTimeout(() => setNotionToast(null), toastTtl)
     return () => clearTimeout(timer)
   }, [params])
 
@@ -463,6 +471,8 @@ export default function Schedules() {
           className={`mb-4 px-4 py-3 rounded-lg border text-sm flex items-start gap-2 ${
             notionToast.kind === 'success'
               ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+              : notionToast.kind === 'warning'
+              ? 'bg-amber-50 border-amber-200 text-amber-900'
               : 'bg-rose-50 border-rose-200 text-rose-800'
           }`}
         >

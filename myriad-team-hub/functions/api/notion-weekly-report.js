@@ -211,6 +211,25 @@ export async function onRequestPost(context) {
 
     if (!notionRes.ok) {
       const errText = await notionRes.text().catch(() => '')
+
+      // 404 + "object_not_found" + database = NOTION_DB_ID 가 통합에 공유 안 됨.
+      // OAuth 픽커에서 사용자가 "주간 업무 Snapshot" 을 못 봤을 때 발생.
+      // db_accessible=false 로 캐시 → 모달에서 권한 안내 배너 노출.
+      if (notionRes.status === 404 && /object_not_found/i.test(errText) && /database/i.test(errText)) {
+        await adminSb
+          .from('notion_connections')
+          .update({ db_accessible: false, db_checked_at: new Date().toISOString() })
+          .eq('user_id', user.id)
+        return json(
+          {
+            error: '노션 통합이 "주간 업무 Snapshot" DB 에 접근할 수 없습니다. 관리자에게 권한 변경을 요청해주세요.',
+            requiresShare: true,
+            preview
+          },
+          409
+        )
+      }
+
       return json(
         {
           error: `Notion API 오류 (${notionRes.status}): ${errText.slice(0, 600)}`,
@@ -219,6 +238,12 @@ export async function onRequestPost(context) {
         notionRes.status
       )
     }
+
+    // 성공 — db_accessible 캐시 갱신 (이전에 false 였더라도 true 로 복구)
+    await adminSb
+      .from('notion_connections')
+      .update({ db_accessible: true, db_checked_at: new Date().toISOString() })
+      .eq('user_id', user.id)
 
     const page = await notionRes.json()
 

@@ -12,11 +12,12 @@
 import { useEffect, useState, useMemo } from 'react'
 import {
   X, Loader2, Send, ChevronLeft, ChevronRight, ExternalLink,
-  AlertTriangle, CheckCircle2, Link2, Unlink
+  AlertTriangle, CheckCircle2, Link2, Unlink, ShieldAlert, RefreshCw
 } from 'lucide-react'
 import {
   previewNotionReport, createNotionReport,
-  getNotionStatus, startNotionConnect, disconnectNotion
+  getNotionStatus, startNotionConnect, disconnectNotion,
+  recheckNotionAccess
 } from '../lib/notionReport'
 import { isoWeekStart, isoWeekOf, dateKey, formatMD } from '../lib/dateHelpers'
 
@@ -29,9 +30,11 @@ export default function NotionReportModal({ initialWeekStart, onClose }) {
   const [result, setResult] = useState(null)             // { url, pageId }
 
   // 연동 상태
-  const [status, setStatus] = useState(null)             // { connected, workspace_name, ... }
+  const [status, setStatus] = useState(null)             // { connected, workspace_name, db_accessible, ... }
   const [statusLoading, setStatusLoading] = useState(true)
   const [connecting, setConnecting] = useState(false)
+  const [rechecking, setRechecking] = useState(false)
+  const [recheckMsg, setRecheckMsg] = useState(null)     // { kind: 'success'|'error', text }
 
   const weekInfo = useMemo(() => {
     const { year, week } = isoWeekOf(monday)
@@ -98,11 +101,17 @@ export default function NotionReportModal({ initialWeekStart, onClose }) {
     try {
       const data = await createNotionReport(dateKey(monday))
       setResult({ url: data.url, pageId: data.pageId })
+      // 성공 시 status 의 db_accessible 도 true 로 갱신
+      setStatus((s) => s ? { ...s, db_accessible: true } : s)
     } catch (e) {
       if (e.cause === 'not-connected') {
         // 토큰 만료 등 — 상태 갱신
         setStatus({ connected: false })
         setError('노션 연동이 끊어졌습니다. 다시 연결해주세요.')
+      } else if (e.cause === 'requires-share') {
+        // DB 권한 부족 — status 의 db_accessible 도 false 로 갱신
+        setStatus((s) => s ? { ...s, db_accessible: false } : s)
+        setError(null)  // 배너로 안내하므로 별도 에러 박스 X
       } else {
         setError(e.message)
       }
@@ -111,10 +120,36 @@ export default function NotionReportModal({ initialWeekStart, onClose }) {
     }
   }
 
+  async function handleRecheck() {
+    setRechecking(true)
+    setRecheckMsg(null)
+    try {
+      const data = await recheckNotionAccess()
+      setStatus((s) => s ? { ...s, db_accessible: data.db_accessible } : s)
+      if (data.db_accessible) {
+        setRecheckMsg({ kind: 'success', text: '권한이 정상으로 확인되었습니다. 이제 보고서를 보낼 수 있어요.' })
+      } else {
+        setRecheckMsg({ kind: 'error', text: '아직 접근 권한이 없습니다. 관리자에게 권한 변경을 요청해주세요.' })
+      }
+    } catch (e) {
+      if (e.cause === 'not-connected') {
+        setStatus({ connected: false })
+        setRecheckMsg({ kind: 'error', text: '노션 연동이 끊어졌습니다. 다시 연결해주세요.' })
+      } else {
+        setRecheckMsg({ kind: 'error', text: e.message })
+      }
+    } finally {
+      setRechecking(false)
+      setTimeout(() => setRecheckMsg(null), 6000)
+    }
+  }
+
   const recCount = preview?.금주기록수 ?? 0
   const planCount = preview?.차주계획수 ?? 0
   const noData = !loading && recCount === 0 && planCount === 0
   const isConnected = status?.connected === true
+  // db_accessible 이 명시적으로 false 일 때만 차단 (null = 미검증, 구 행 호환)
+  const dbBlocked = isConnected && status?.db_accessible === false
 
   return (
     <div
@@ -149,6 +184,15 @@ export default function NotionReportModal({ initialWeekStart, onClose }) {
           onDisconnect={handleDisconnect}
           connecting={connecting}
         />
+
+        {/* DB 접근 권한 부족 안내 (관리자 권한 변경 필요) */}
+        {dbBlocked && (
+          <PermissionBanner
+            onRecheck={handleRecheck}
+            rechecking={rechecking}
+            recheckMsg={recheckMsg}
+          />
+        )}
 
         <div className="px-6 py-4 border-b border-slate-200 flex items-center gap-2">
           <button
@@ -278,8 +322,9 @@ export default function NotionReportModal({ initialWeekStart, onClose }) {
               {isConnected ? (
                 <button
                   onClick={handleSend}
-                  disabled={loading || sending || !preview}
-                  className="flex items-center gap-2 bg-myriad-primary hover:bg-myriad-primaryDark text-myriad-ink font-semibold px-5 py-2 rounded-lg text-sm disabled:opacity-50"
+                  disabled={loading || sending || !preview || dbBlocked}
+                  title={dbBlocked ? '노션 DB 접근 권한이 없습니다. 위 안내를 확인해주세요.' : undefined}
+                  className="flex items-center gap-2 bg-myriad-primary hover:bg-myriad-primaryDark text-myriad-ink font-semibold px-5 py-2 rounded-lg text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {sending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
                   {sending ? '보내는 중...' : '노션에 보내기'}
@@ -340,6 +385,74 @@ function ConnectionBanner({ loading, isConnected, workspaceName, onConnect, onDi
       >
         <Link2 size={11} /> 지금 연결
       </button>
+    </div>
+  )
+}
+
+function PermissionBanner({ onRecheck, rechecking, recheckMsg }) {
+  return (
+    <div className="px-6 py-3 border-b border-rose-200 bg-rose-50">
+      <div className="flex items-start gap-2">
+        <ShieldAlert size={16} className="shrink-0 mt-0.5 text-rose-600" />
+        <div className="flex-1 text-xs text-rose-800 space-y-2">
+          <div className="font-bold text-sm">
+            노션 "주간 업무 Snapshot" DB 접근 권한이 부족합니다
+          </div>
+          <div className="leading-relaxed">
+            노션 OAuth 페이지 선택 화면에서 팀스페이스의 "주간 업무 Snapshot" DB 가
+            보이지 않으셨나요? 그 DB 의 워크스페이스 권한이 "내용 편집 허용" 으로
+            제한되어 발생하는 현상입니다. 토큰은 받았지만 DB 에 접근할 수가 없어
+            보고서를 만들 수 없습니다.
+          </div>
+          <div className="bg-white border border-rose-200 rounded p-2.5 space-y-1.5">
+            <div className="font-semibold text-rose-900">해결 방법</div>
+            <ol className="list-decimal pl-4 space-y-1 text-rose-800">
+              <li>
+                관리자에게 노션 "주간 업무 Snapshot" DB 의{' '}
+                <span className="font-semibold">"전사 공통의 멤버"</span> (또는 워크스페이스
+                전체) 권한을{' '}
+                <span className="font-semibold">"내용 편집 허용" → "전체 허용"</span> 으로
+                변경해달라고 요청해주세요.
+              </li>
+              <li>
+                권한 변경 완료되면 아래 <span className="font-semibold">[권한 재확인]</span>{' '}
+                버튼을 누르세요. (재연결 불필요)
+              </li>
+              <li>
+                재확인이 계속 실패하면 <span className="font-semibold">[해제]</span> 후 다시
+                연결해주세요. 새 OAuth 화면에 팀스페이스 → 주간 업무 Snapshot 이
+                보이고 체크할 수 있습니다.
+              </li>
+            </ol>
+          </div>
+          <div className="flex items-center gap-2 pt-1">
+            <button
+              onClick={onRecheck}
+              disabled={rechecking}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white px-3 py-1.5 rounded disabled:opacity-50"
+            >
+              {rechecking ? (
+                <Loader2 size={12} className="animate-spin" />
+              ) : (
+                <RefreshCw size={12} />
+              )}
+              {rechecking ? '확인 중...' : '권한 재확인'}
+            </button>
+            {recheckMsg && (
+              <span
+                className={
+                  recheckMsg.kind === 'success'
+                    ? 'text-xs text-emerald-700 font-semibold'
+                    : 'text-xs text-rose-700 font-semibold'
+                }
+              >
+                {recheckMsg.kind === 'success' ? '✓ ' : '⚠ '}
+                {recheckMsg.text}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

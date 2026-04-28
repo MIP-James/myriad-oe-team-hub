@@ -88,6 +88,25 @@ export async function onRequestGet(context) {
     )
   }
 
+  // ── 사전 DB 접근 체크 ──────────────────────────────────
+  // 노션 OAuth 페이지 선택 화면은 사용자가 "공유" 권한을 가진 페이지만 노출 →
+  // "내용 편집 허용" 권한만 있으면 주간보고 DB 가 픽커에 안 보여서 토큰은 받지만
+  // DB 접근은 안 됨. 여기서 미리 검증해서 모달이 명확한 안내를 띄우게 함.
+  let dbAccessible = null
+  if (env.NOTION_DB_ID) {
+    try {
+      const dbRes = await fetch(`https://api.notion.com/v1/databases/${env.NOTION_DB_ID}`, {
+        headers: {
+          Authorization: `Bearer ${tokenData.access_token}`,
+          'Notion-Version': '2022-06-28'
+        }
+      })
+      dbAccessible = dbRes.ok
+    } catch {
+      dbAccessible = false
+    }
+  }
+
   // ── Supabase 저장 (service role 로 RLS 우회) ────────────
   if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
     return redirectTo(`/schedules?notion=error&detail=supabase_env_missing`)
@@ -103,7 +122,9 @@ export async function onRequestGet(context) {
       workspace_name: tokenData.workspace_name ?? null,
       workspace_icon: tokenData.workspace_icon ?? null,
       bot_id: tokenData.bot_id ?? null,
-      owner: tokenData.owner ?? null
+      owner: tokenData.owner ?? null,
+      db_accessible: dbAccessible,
+      db_checked_at: dbAccessible === null ? null : new Date().toISOString()
     },
     { onConflict: 'user_id' }
   )
@@ -113,6 +134,10 @@ export async function onRequestGet(context) {
     )
   }
 
+  // 권한 부족 → 모달에서 안내 배너 띄우게 별도 쿼리로 알림
+  if (dbAccessible === false) {
+    return redirectTo(`/schedules?notion=needs_share`)
+  }
   return redirectTo(`/schedules?notion=connected`)
 }
 
