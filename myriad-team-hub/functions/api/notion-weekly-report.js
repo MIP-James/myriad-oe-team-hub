@@ -13,7 +13,10 @@
  *   - SUPABASE_ANON_KEY        (JWT 검증 + RLS 적용된 사용자 쿼리용)
  *   - NOTION_TOKEN             (Internal Integration Secret)
  *   - NOTION_DB_ID             (주간 업무 Snapshot DB)
- *   - NOTION_AUTHOR_ID         (1인 사용 1차 — 본인 노션 user_id)
+ *   - NOTION_AUTHOR_PAGE_ID    (선택 — 사원 DB 의 본인 페이지 ID. 설정 시 작성자
+ *                                relation 자동 채움. 미설정 시 빈 칸으로 두고
+ *                                노션에서 사용자가 직접 선택. 후자가 노션 automation
+ *                                발동에 더 안정적이라 기본 권장.)
  */
 import { createClient } from '@supabase/supabase-js'
 
@@ -113,9 +116,12 @@ export async function onRequestPost(context) {
         rich_text: [{ text: { content: nextWeekText } }]
       }
     }
-    if (env.NOTION_AUTHOR_ID) {
+    // 작성자 (필수 지정) — relation 타입. 노션의 사원 DB 페이지 ID 가 필요.
+    // 환경변수 NOTION_AUTHOR_PAGE_ID 설정 시 자동 채움. 미설정 시 빈 칸으로 두고
+    // 노션에서 사용자가 본인을 선택하면 그때 부서/팀/부서장 자동화가 발동됨.
+    if (env.NOTION_AUTHOR_PAGE_ID) {
       properties['작성자 (필수 지정)'] = {
-        people: [{ id: env.NOTION_AUTHOR_ID }]
+        relation: [{ id: env.NOTION_AUTHOR_PAGE_ID }]
       }
     }
 
