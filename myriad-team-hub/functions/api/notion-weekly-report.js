@@ -122,31 +122,19 @@ export async function onRequestPost(context) {
       )
     }
 
-    // ── 8) 본인 이름 + 사원 페이지 + 팀 자동 감지 ─────────────
-    const { data: profileRow } = await sb
-      .from('profiles')
-      .select('full_name')
-      .eq('id', user.id)
-      .maybeSingle()
-    const userName = (profileRow?.full_name?.trim())
-      || (user.user_metadata?.full_name)
-      || (user.email?.split('@')[0])
-      || '사용자'
-
-    // 캐시된 author_page_id / team_name 없으면 노션 사원 DB 에서 자동 감지
+    // ── 8) 사원 페이지 자동 감지 (작성자 relation 채움용) ─────
+    // 캐시된 author_page_id 없으면 노션 사원 DB 에서 자동 감지
     let authorPageId = conn.author_page_id
-    let teamName = conn.team_name
     if (!authorPageId) {
       const resolved = await resolveNotionUser({
         token: conn.access_token,
         snapshotDbId: env.NOTION_DB_ID,
         cachedEmployeeDbId: conn.author_db_id,
         userEmail: user.email,
-        userFullName: userName
+        userFullName: user.user_metadata?.full_name || user.email?.split('@')[0] || '사용자'
       })
       if (resolved?.authorPageId) {
         authorPageId = resolved.authorPageId
-        teamName = resolved.teamName ?? teamName
         // 캐시 — 다음 보고서부터는 사원 DB 재조회 안 함
         await adminSb
           .from('notion_connections')
@@ -160,14 +148,12 @@ export async function onRequestPost(context) {
       }
     }
 
-    const dateKor = `${monday.getUTCFullYear()}년 ${monday.getUTCMonth() + 1}월 ${monday.getUTCDate()}일`
-    const teamPart = teamName ? `-${teamName}` : ''
-    const customTitle = `${dateKor}${teamPart}-@${userName}`
-
     // ── 9) Notion API 호출 (사용자 OAuth 토큰) ──────────────
+    // 제목은 노션 자동화 수식이 만들어줌 (Created by = OAuth 호출자 = 본인 → @이름 포맷)
+    // 우리는 빈 자리 표시자만 박고, 자동화가 작성자 relation 변경에 반응해서 덮어씀.
     const properties = {
       '보고서 제목': {
-        title: [{ text: { content: customTitle } }]
+        title: [{ text: { content: '_생성 중..._' } }]
       },
       '기준 주차': { date: { start: fmtDate(monday) } },
       '보고 상태': { status: { name: '작성중' } },
@@ -178,9 +164,10 @@ export async function onRequestPost(context) {
         rich_text: [{ text: { content: nextWeekText } }]
       }
     }
-    // 작성자 (필수 지정) relation 자동 채움 → 노션 automation 발동 →
-    // 부서/팀/부서장 lookup + 제목 봇이름 덮어쓰기 + 보고상태=제출완료
-    // 다 일어남. 후처리 PATCH 로 제목/보고상태 복구.
+    // 작성자 (필수 지정) relation 자동 채움 → 노션 automation 발동:
+    //   - 보고서 제목 ← 수식 (날짜-팀-@Created by) 으로 덮어씀  ✅ 의도한 결과
+    //   - 부서/팀/부서장 lookup 자동 채움                         ✅ 의도한 결과
+    //   - 보고상태 → 제출완료 (룰에 있다면)                       ❌ 작성중 으로 PATCH 복구
     const willTriggerAutomation = !!authorPageId
     if (willTriggerAutomation) {
       properties['작성자 (필수 지정)'] = {
@@ -235,13 +222,13 @@ export async function onRequestPost(context) {
 
     const page = await notionRes.json()
 
-    // ── 10) automation 후처리 — 제목 / 보고 상태 복구 ────────
-    // automation 이 작성자 변경에 반응해서 제목을 봇 이름으로 덮어쓰고
-    // 보고 상태를 "제출완료" 로 바꿈. 자연스러운 흐름은 작성중으로 유지하고
-    // 우리가 만든 제목을 살려두는 것이라 PATCH 로 복구.
+    // ── 10) automation 후처리 — 보고 상태 복구 ──────────────
+    // automation 이 작성자 변경에 반응해서 보고상태를 "제출완료" 로 바꿈.
+    // 사용자 흐름은 작성중 유지가 자연스러워서 PATCH 로 복구.
+    // 제목은 automation 수식이 알아서 (날짜-팀-@본인) 만들어주니 손대지 않음.
     if (willTriggerAutomation) {
-      // automation 이 완료되도록 잠시 대기
-      await new Promise((r) => setTimeout(r, 2000))
+      // automation 완료까지 대기 (보통 2~5초, 안전마진 6초)
+      await new Promise((r) => setTimeout(r, 6000))
       try {
         await fetch(`https://api.notion.com/v1/pages/${page.id}`, {
           method: 'PATCH',
@@ -252,13 +239,12 @@ export async function onRequestPost(context) {
           },
           body: JSON.stringify({
             properties: {
-              '보고서 제목': { title: [{ text: { content: customTitle } }] },
               '보고 상태': { status: { name: '작성중' } }
             }
           })
         })
       } catch {
-        // PATCH 실패는 비치명적 — 페이지 자체는 이미 생성됨. 사용자가 직접 수정 가능.
+        // PATCH 실패는 비치명적 — 페이지 자체는 이미 생성됨.
       }
     }
 
