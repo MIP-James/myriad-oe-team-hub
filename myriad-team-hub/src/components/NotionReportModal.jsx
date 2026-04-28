@@ -1,15 +1,23 @@
 /**
- * 노션 주간 보고서 미리보기 + 생성 모달.
+ * 노션 주간 보고서 미리보기 + 생성 모달 (OAuth 버전).
  *
  * 흐름:
- *  1) 모달 열면 자동으로 dryRun=true 호출 → 미리보기 텍스트 표시
- *  2) 주차 ◀▶ 로 다른 주 미리보기 가능 (기본: 이번 주)
- *  3) "노션에 보내기" 클릭 → dryRun=false 호출 → 페이지 URL 응답
- *  4) 성공 시 "노션에서 열기" 링크 + 닫기
+ *  1) 모달 열면:
+ *     a) 연동 상태 조회 (`getNotionStatus`)
+ *     b) 동시에 미리보기 dryRun 호출 (Notion 호출 X — 연동 안 돼도 가능)
+ *  2) 연동 안 됐으면 "노션 계정 연결" 버튼 → OAuth 동의 페이지로 이동
+ *  3) 연동 됐으면 "노션에 보내기" 버튼 활성화
+ *  4) 보내기 시 `notConnected` 에러 받으면 다시 연결 안내
  */
 import { useEffect, useState, useMemo } from 'react'
-import { X, Loader2, Send, ChevronLeft, ChevronRight, ExternalLink, AlertTriangle, CheckCircle2 } from 'lucide-react'
-import { previewNotionReport, createNotionReport } from '../lib/notionReport'
+import {
+  X, Loader2, Send, ChevronLeft, ChevronRight, ExternalLink,
+  AlertTriangle, CheckCircle2, Link2, Unlink
+} from 'lucide-react'
+import {
+  previewNotionReport, createNotionReport,
+  getNotionStatus, startNotionConnect, disconnectNotion
+} from '../lib/notionReport'
 import { isoWeekStart, isoWeekOf, dateKey, formatMD } from '../lib/dateHelpers'
 
 export default function NotionReportModal({ initialWeekStart, onClose }) {
@@ -18,7 +26,12 @@ export default function NotionReportModal({ initialWeekStart, onClose }) {
   const [loading, setLoading] = useState(false)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState(null)
-  const [result, setResult] = useState(null)   // { url, pageId }
+  const [result, setResult] = useState(null)             // { url, pageId }
+
+  // 연동 상태
+  const [status, setStatus] = useState(null)             // { connected, workspace_name, ... }
+  const [statusLoading, setStatusLoading] = useState(true)
+  const [connecting, setConnecting] = useState(false)
 
   const weekInfo = useMemo(() => {
     const { year, week } = isoWeekOf(monday)
@@ -27,6 +40,18 @@ export default function NotionReportModal({ initialWeekStart, onClose }) {
     return { year, week, sunday }
   }, [monday])
 
+  // 연동 상태 1회 조회
+  useEffect(() => {
+    let cancelled = false
+    setStatusLoading(true)
+    getNotionStatus()
+      .then((s) => { if (!cancelled) setStatus(s) })
+      .catch(() => { if (!cancelled) setStatus({ connected: false }) })
+      .finally(() => { if (!cancelled) setStatusLoading(false) })
+    return () => { cancelled = true }
+  }, [])
+
+  // 미리보기 (주차 변경 시마다)
   useEffect(() => {
     let cancelled = false
     setLoading(true)
@@ -46,6 +71,27 @@ export default function NotionReportModal({ initialWeekStart, onClose }) {
     setMonday(isoWeekStart(next))
   }
 
+  async function handleConnect() {
+    setConnecting(true)
+    setError(null)
+    try {
+      await startNotionConnect()   // 페이지 redirect — 이후 흐름은 콜백에서
+    } catch (e) {
+      setError(e.message)
+      setConnecting(false)
+    }
+  }
+
+  async function handleDisconnect() {
+    if (!confirm('노션 연동을 해제할까요? 다시 연결할 수 있습니다.')) return
+    try {
+      await disconnectNotion()
+      setStatus({ connected: false })
+    } catch (e) {
+      setError(e.message)
+    }
+  }
+
   async function handleSend() {
     setSending(true)
     setError(null)
@@ -53,7 +99,13 @@ export default function NotionReportModal({ initialWeekStart, onClose }) {
       const data = await createNotionReport(dateKey(monday))
       setResult({ url: data.url, pageId: data.pageId })
     } catch (e) {
-      setError(e.message)
+      if (e.cause === 'not-connected') {
+        // 토큰 만료 등 — 상태 갱신
+        setStatus({ connected: false })
+        setError('노션 연동이 끊어졌습니다. 다시 연결해주세요.')
+      } else {
+        setError(e.message)
+      }
     } finally {
       setSending(false)
     }
@@ -62,6 +114,7 @@ export default function NotionReportModal({ initialWeekStart, onClose }) {
   const recCount = preview?.금주기록수 ?? 0
   const planCount = preview?.차주계획수 ?? 0
   const noData = !loading && recCount === 0 && planCount === 0
+  const isConnected = status?.connected === true
 
   return (
     <div
@@ -86,6 +139,16 @@ export default function NotionReportModal({ initialWeekStart, onClose }) {
             <X size={18} />
           </button>
         </header>
+
+        {/* 연동 상태 띠 */}
+        <ConnectionBanner
+          loading={statusLoading}
+          isConnected={isConnected}
+          workspaceName={status?.workspace_name}
+          onConnect={handleConnect}
+          onDisconnect={handleDisconnect}
+          connecting={connecting}
+        />
 
         <div className="px-6 py-4 border-b border-slate-200 flex items-center gap-2">
           <button
@@ -170,7 +233,7 @@ export default function NotionReportModal({ initialWeekStart, onClose }) {
                   나머지 항목 (이슈/AI 활용/BPM 등) 은 노션에서 직접 작성해주세요.
                 </div>
                 <div>
-                  소속 부서/팀/부서장과 보고서 제목은 노션의 자동 입력 규칙으로 채워집니다.
+                  소속 부서/팀/부서장과 작성자는 노션에서 작성자 선택 시 자동화로 채워집니다.
                 </div>
               </div>
             </>
@@ -212,18 +275,71 @@ export default function NotionReportModal({ initialWeekStart, onClose }) {
               >
                 취소
               </button>
-              <button
-                onClick={handleSend}
-                disabled={loading || sending || !preview}
-                className="flex items-center gap-2 bg-myriad-primary hover:bg-myriad-primaryDark text-myriad-ink font-semibold px-5 py-2 rounded-lg text-sm disabled:opacity-50"
-              >
-                {sending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
-                {sending ? '보내는 중...' : '노션에 보내기'}
-              </button>
+              {isConnected ? (
+                <button
+                  onClick={handleSend}
+                  disabled={loading || sending || !preview}
+                  className="flex items-center gap-2 bg-myriad-primary hover:bg-myriad-primaryDark text-myriad-ink font-semibold px-5 py-2 rounded-lg text-sm disabled:opacity-50"
+                >
+                  {sending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                  {sending ? '보내는 중...' : '노션에 보내기'}
+                </button>
+              ) : (
+                <button
+                  onClick={handleConnect}
+                  disabled={connecting || statusLoading}
+                  className="flex items-center gap-2 bg-myriad-primary hover:bg-myriad-primaryDark text-myriad-ink font-semibold px-5 py-2 rounded-lg text-sm disabled:opacity-50"
+                >
+                  {connecting ? <Loader2 size={14} className="animate-spin" /> : <Link2 size={14} />}
+                  {connecting ? '이동 중...' : '노션 계정 연결'}
+                </button>
+              )}
             </>
           )}
         </footer>
       </div>
+    </div>
+  )
+}
+
+function ConnectionBanner({ loading, isConnected, workspaceName, onConnect, onDisconnect, connecting }) {
+  if (loading) {
+    return (
+      <div className="px-6 py-2.5 border-b border-slate-200 flex items-center gap-2 bg-slate-50 text-xs text-slate-500">
+        <Loader2 size={12} className="animate-spin" /> 노션 연동 상태 확인 중...
+      </div>
+    )
+  }
+  if (isConnected) {
+    return (
+      <div className="px-6 py-2.5 border-b border-slate-200 flex items-center gap-2 bg-emerald-50 text-xs text-emerald-800">
+        <CheckCircle2 size={14} className="shrink-0" />
+        <span className="flex-1">
+          노션 연동됨{workspaceName ? ` (워크스페이스: ${workspaceName})` : ''}
+        </span>
+        <button
+          onClick={onDisconnect}
+          className="inline-flex items-center gap-1 text-[11px] text-emerald-700 hover:text-emerald-900 hover:underline"
+          title="연동 해제"
+        >
+          <Unlink size={11} /> 해제
+        </button>
+      </div>
+    )
+  }
+  return (
+    <div className="px-6 py-2.5 border-b border-slate-200 flex items-center gap-2 bg-amber-50 text-xs text-amber-900">
+      <AlertTriangle size={14} className="shrink-0" />
+      <span className="flex-1">
+        노션 계정이 연결되지 않았습니다. 보고서를 본인 이름으로 생성하려면 먼저 연결해주세요.
+      </span>
+      <button
+        onClick={onConnect}
+        disabled={connecting}
+        className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-900 bg-amber-200 hover:bg-amber-300 px-2 py-1 rounded disabled:opacity-50"
+      >
+        <Link2 size={11} /> 지금 연결
+      </button>
     </div>
   )
 }

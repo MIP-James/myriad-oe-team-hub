@@ -1,22 +1,20 @@
 /**
- * Cloudflare Pages Function — 노션 주간 보고서 자동 생성
+ * Cloudflare Pages Function — 노션 주간 보고서 자동 생성 (OAuth 버전)
  *
  * 흐름:
  *   1) Authorization 헤더의 Supabase JWT 검증 → user 확인
- *   2) 요청 본문의 weekStartDate (월요일 YYYY-MM-DD) 기준 그 주 daily_records 조회
- *   3) 다음 주 weekly_plans 조회 (차주 우선 업무용)
- *   4) dryRun=true 면 미리보기 텍스트만 반환 (DB write X)
- *   5) dryRun=false 면 Notion API 로 페이지 생성 후 URL 반환
+ *   2) notion_connections 에서 본인 access_token 조회 (없으면 401 → 연동 안내)
+ *   3) 요청 본문의 weekStartDate (월요일 YYYY-MM-DD) 기준 그 주 daily_records 조회
+ *   4) 다음 주 weekly_plans 조회 (차주 우선 업무용)
+ *   5) dryRun=true 면 미리보기 텍스트만 반환 (DB write X)
+ *   6) dryRun=false 면 사용자 OAuth 토큰으로 Notion API 호출 → 페이지 생성 후 URL 반환
  *
- * 환경변수 (Cloudflare Pages 대시보드):
+ * 환경변수:
  *   - SUPABASE_URL
- *   - SUPABASE_ANON_KEY        (JWT 검증 + RLS 적용된 사용자 쿼리용)
- *   - NOTION_TOKEN             (Internal Integration Secret)
- *   - NOTION_DB_ID             (주간 업무 Snapshot DB)
- *   - NOTION_AUTHOR_PAGE_ID    (선택 — 사원 DB 의 본인 페이지 ID. 설정 시 작성자
- *                                relation 자동 채움. 미설정 시 빈 칸으로 두고
- *                                노션에서 사용자가 직접 선택. 후자가 노션 automation
- *                                발동에 더 안정적이라 기본 권장.)
+ *   - SUPABASE_ANON_KEY            (JWT 검증 + RLS 사용자 쿼리)
+ *   - SUPABASE_SERVICE_ROLE_KEY    (notion_connections 읽기 — RLS 우회)
+ *   - NOTION_DB_ID                 (주간 업무 Snapshot DB)
+ *   - (선택) NOTION_TOKEN          (구버전 Internal 토큰 — fallback 으로 보유)
  */
 import { createClient } from '@supabase/supabase-js'
 
@@ -92,18 +90,42 @@ export async function onRequestPost(context) {
       차주계획수: (nextPlan?.items ?? []).filter((it) => it.text?.trim()).length
     }
 
-    // dryRun = 미리보기만
+    // dryRun = 미리보기만 (Notion 호출 X — 연동 안 돼 있어도 가능)
     if (dryRun) {
       return json({ preview })
     }
 
-    // ── 7) Notion API ───────────────────────────────────────
-    if (!env.NOTION_TOKEN || !env.NOTION_DB_ID) {
-      return json({ error: 'Notion 환경변수가 설정되지 않았습니다.' }, 500)
+    // ── 7) 사용자 OAuth 토큰 조회 ───────────────────────────
+    if (!env.NOTION_DB_ID) {
+      return json({ error: 'NOTION_DB_ID 환경변수가 설정되지 않았습니다.' }, 500)
+    }
+    if (!env.SUPABASE_SERVICE_ROLE_KEY) {
+      return json({ error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' }, 500)
+    }
+    const adminSb = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false }
+    })
+    const { data: conn, error: connErr } = await adminSb
+      .from('notion_connections')
+      .select('access_token, workspace_name')
+      .eq('user_id', user.id)
+      .maybeSingle()
+    if (connErr) return json({ error: '연동 조회 실패: ' + connErr.message }, 500)
+    if (!conn?.access_token) {
+      return json(
+        {
+          error: '노션이 연동되지 않았습니다.',
+          notConnected: true,
+          preview
+        },
+        409
+      )
     }
 
+    // ── 8) Notion API 호출 (사용자 토큰 사용) ───────────────
     const properties = {
-      // 보고서 제목 — 노션 자동화가 덮어쓰기를 기대. 일단 임시 제목
+      // 제목 — 노션 자동화가 작성자/날짜/팀 기반으로 덮어쓸 가능성 높음.
+      // OAuth 로 호출하면 Created By = 실제 본인 → 자동 제목에 본인 이름 박힘.
       '보고서 제목': {
         title: [{ text: { content: `_자동 생성 (${fmtDate(monday)} 기준)_` } }]
       },
@@ -115,20 +137,14 @@ export async function onRequestPost(context) {
       '차주 우선 업무': {
         rich_text: [{ text: { content: nextWeekText } }]
       }
-    }
-    // 작성자 (필수 지정) — relation 타입. 노션의 사원 DB 페이지 ID 가 필요.
-    // 환경변수 NOTION_AUTHOR_PAGE_ID 설정 시 자동 채움. 미설정 시 빈 칸으로 두고
-    // 노션에서 사용자가 본인을 선택하면 그때 부서/팀/부서장 자동화가 발동됨.
-    if (env.NOTION_AUTHOR_PAGE_ID) {
-      properties['작성자 (필수 지정)'] = {
-        relation: [{ id: env.NOTION_AUTHOR_PAGE_ID }]
-      }
+      // 작성자 (필수 지정) relation 은 사용자가 노션에서 직접 선택 → automation
+      // 으로 부서/팀/부서장 자동 채워짐. (Q2 결정에 따라 자동 채움 생략)
     }
 
     const notionRes = await fetch('https://api.notion.com/v1/pages', {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${env.NOTION_TOKEN}`,
+        Authorization: `Bearer ${conn.access_token}`,
         'Notion-Version': '2022-06-28',
         'Content-Type': 'application/json'
       },
@@ -137,6 +153,19 @@ export async function onRequestPost(context) {
         properties
       })
     })
+
+    // 401/403 — 토큰 무효화됨 → 연동 행 삭제 후 재연동 안내
+    if (notionRes.status === 401 || notionRes.status === 403) {
+      await adminSb.from('notion_connections').delete().eq('user_id', user.id)
+      return json(
+        {
+          error: '노션 연동이 만료되었습니다. 다시 연동해주세요.',
+          notConnected: true,
+          preview
+        },
+        409
+      )
+    }
 
     if (!notionRes.ok) {
       const errText = await notionRes.text().catch(() => '')

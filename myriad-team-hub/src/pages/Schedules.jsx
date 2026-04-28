@@ -152,6 +152,28 @@ export default function Schedules() {
     }
   }, [params, user?.id])
 
+  // ?notion=connected/error 처리 — OAuth 콜백 복귀 시 토스트 + 모달 자동 오픈
+  const [notionToast, setNotionToast] = useState(null)   // { kind: 'success'|'error', text }
+  useEffect(() => {
+    const n = params.get('notion')
+    if (!n) return
+    if (n === 'connected') {
+      setNotionToast({ kind: 'success', text: '노션 연동이 완료되었습니다. 보고서를 만들어보세요.' })
+      setNotionReportOpen(true)
+    } else if (n === 'error') {
+      const detail = params.get('detail') || ''
+      setNotionToast({ kind: 'error', text: '노션 연동 실패: ' + (detail || '알 수 없는 오류') })
+    }
+    // 쿼리 파라미터 정리
+    const next = new URLSearchParams(params)
+    next.delete('notion')
+    next.delete('detail')
+    setParams(next, { replace: true })
+    // 5초 후 자동 닫기
+    const timer = setTimeout(() => setNotionToast(null), 5000)
+    return () => clearTimeout(timer)
+  }, [params])
+
   async function load() {
     if (!user?.id) return
     setLoading(true)
@@ -436,6 +458,26 @@ export default function Schedules() {
 
   return (
     <div className="p-8 max-w-7xl mx-auto">
+      {notionToast && (
+        <div
+          className={`mb-4 px-4 py-3 rounded-lg border text-sm flex items-start gap-2 ${
+            notionToast.kind === 'success'
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+              : 'bg-rose-50 border-rose-200 text-rose-800'
+          }`}
+        >
+          <span className="font-semibold">
+            {notionToast.kind === 'success' ? '✅' : '⚠️'}
+          </span>
+          <span className="flex-1">{notionToast.text}</span>
+          <button
+            onClick={() => setNotionToast(null)}
+            className="text-xs hover:opacity-60"
+          >
+            닫기
+          </button>
+        </div>
+      )}
       <header className="mb-6 flex items-center gap-3 flex-wrap">
         <CalendarDays className="text-myriad-ink" />
         <h1 className="text-2xl font-bold text-slate-900">일정</h1>
