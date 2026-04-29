@@ -120,7 +120,9 @@ export async function getProfileShort(userId) {
     .select('id,email,full_name,avatar_url')
     .eq('id', userId)
     .maybeSingle()
-  _profileCache.set(userId, data)
+  // null 은 캐시 안 함 — 일시적 RLS/네트워크 거부였을 수 있고, 영구 NULL 캐싱되면
+  // 이후 세션 내내 그 사용자가 "알 수 없음" 으로 표시되는 잠재적 버그 차단.
+  if (data) _profileCache.set(userId, data)
   return data
 }
 

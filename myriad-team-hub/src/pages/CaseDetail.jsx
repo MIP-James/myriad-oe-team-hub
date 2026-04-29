@@ -180,12 +180,21 @@ export default function CaseDetail({ mode }) {
   }
 
   async function loadProfiles(ids) {
-    const pmap = { ...profiles }
-    const toFetch = ids.filter((i) => i && !pmap[i])
+    // 동시 다발 호출 시 stale closure 로 인한 덮어쓰기 방지 — 함수형 setState 로 prev 머지.
+    // 페이지 진입 직후 6 군데 (case/help/status/tasks/comments/attach) 가 거의 동시 호출되며
+    // 각자 fetch 한 profile 결과를 마지막 setProfiles 가 덮어써서 일부 사용자 (작성자/댓글
+    // 작성자) 가 "알 수 없음" 으로 표시되던 버그 픽스.
+    const fresh = {}
+    const toFetch = ids.filter(Boolean)
     await Promise.all(
-      toFetch.map(async (i) => { pmap[i] = await getProfileShort(i) })
+      toFetch.map(async (i) => {
+        const p = await getProfileShort(i)
+        if (p) fresh[i] = p
+      })
     )
-    setProfiles(pmap)
+    if (Object.keys(fresh).length > 0) {
+      setProfiles((prev) => ({ ...prev, ...fresh }))
+    }
   }
 
   // ── Save (신규/수정 공통) ─────────────────────────────
