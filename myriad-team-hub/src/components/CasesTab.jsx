@@ -257,6 +257,14 @@ export default function CasesTab() {
                             className="font-semibold text-slate-900 hover:text-myriad-ink flex items-center gap-1.5"
                           >
                             <span className="truncate">{c.title}</span>
+                            {c.source === 'inbound_email' && (
+                              <span
+                                title="신고 메일에서 자동 생성된 케이스"
+                                className="inline-flex items-center gap-0.5 text-[9px] font-bold text-blue-700 bg-blue-100 border border-blue-200 px-1.5 py-0.5 rounded shrink-0"
+                              >
+                                📧 자동
+                              </span>
+                            )}
                             {postUrls.length > 0 && (
                               <span
                                 title={postUrls.length > 1 ? `게시물 URL ${postUrls.length}개` : postUrls[0]}

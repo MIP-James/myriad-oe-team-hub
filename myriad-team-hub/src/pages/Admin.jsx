@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { ShieldCheck, Wrench, Users, ExternalLink, ChevronRight } from 'lucide-react'
+import { ShieldCheck, Wrench, Users, ExternalLink, ChevronRight, Mail } from 'lucide-react'
 
 const SECTIONS = [
   {
@@ -21,6 +21,13 @@ const SECTIONS = [
     label: '사용자 관리',
     desc: '팀원 역할 (admin/member) 변경',
     icon: Users,
+    ready: true
+  },
+  {
+    to: '/admin/inbound-status',
+    label: 'Inbound 자동 케이스화',
+    desc: 'Gmail 신고 메일 → 자동 케이스 등록. Reader 등록 + 매핑 룰 + 키워드 관리',
+    icon: Mail,
     ready: true
   }
 ]

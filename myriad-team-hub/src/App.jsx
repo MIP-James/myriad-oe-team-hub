@@ -19,6 +19,7 @@ import Admin from './pages/Admin'
 import AdminUtilities from './pages/AdminUtilities'
 import AdminExternalShortcuts from './pages/AdminExternalShortcuts'
 import AdminUsers from './pages/AdminUsers'
+import AdminInboundStatus from './pages/AdminInboundStatus'
 import NotFound from './pages/NotFound'
 
 export default function App() {
@@ -50,6 +51,7 @@ export default function App() {
         <Route path="admin/utilities" element={<AdminGate><AdminUtilities /></AdminGate>} />
         <Route path="admin/shortcuts" element={<AdminGate><AdminExternalShortcuts /></AdminGate>} />
         <Route path="admin/users" element={<AdminGate><AdminUsers /></AdminGate>} />
+        <Route path="admin/inbound-status" element={<AdminGate><AdminInboundStatus /></AdminGate>} />
       </Route>
       <Route path="*" element={<NotFound />} />
     </Routes>
