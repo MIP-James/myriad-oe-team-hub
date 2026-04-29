@@ -81,7 +81,14 @@ export async function uploadBrandReport({
   userId
 }) {
   // 경로 규칙: {group_id}/{safe_brand}.xlsx
-  const safeBrand = brandName.replace(/[\\/:*?"<>|]+/g, '_').trim() || 'unknown'
+  // Supabase Storage object key 는 윈도우 금지문자뿐 아니라 괄호/공백/일부 reserved
+  // 까지 거부 — `(주)쏠리드` 같은 회사명 prefix 가 Invalid key 로 깨졌음.
+  // 한글은 유지하고, 문제 가능 문자만 _ 로 치환.
+  const safeBrand = brandName
+    .replace(/[\s\\/:*?"<>|()[\]{}^~%#`'!@$&+=,;]+/g, '_')
+    .replace(/_+/g, '_')          // 연속 언더스코어 합치기
+    .replace(/^_+|_+$/g, '')      // 앞뒤 언더스코어 제거
+    || 'unknown'
   const path = `${groupId}/${safeBrand}.xlsx`
 
   // 기존 파일 있으면 덮어쓰기 (upsert)
