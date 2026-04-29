@@ -491,9 +491,42 @@ async function fetchFullBody(messageId, accessToken) {
   const text = plainParts.join('\n\n').trim() || htmlToText(htmlParts.join('\n')).trim() || data.snippet || ''
   return {
     text,
-    html: htmlParts.join('\n').trim(),
+    // Gmail 본문 HTML 은 발신자 메일 클라이언트가 만든 외부 입력 — sanitize 필수.
+    // <style> / <script> / on*= 이벤트 / javascript: 모두 제거 (XSS 차단 + 페이지 전역 CSS 오염 차단)
+    html: sanitizeExternalHtml(htmlParts.join('\n').trim()),
     snippet: data.snippet || ''
   }
+}
+
+/**
+ * 외부 HTML (Gmail 메일 본문 등) 의 위험/오염 요소 제거.
+ * - <style>, <script>, <link rel="stylesheet"> → 전역 CSS 오염 + XSS
+ * - on* 이벤트 핸들러 (onclick 등) → XSS
+ * - javascript: URL → XSS
+ * - <iframe>, <object>, <embed>, <form> → 외부 콘텐츠 임베드 차단
+ *
+ * 본문의 인라인 style 속성 (<div style="color:red">) 은 보존 — 본문 영역 한정 영향이라 OK.
+ * 표 / 이미지 / 링크 / 서명 / 폰트 색 등 시각 요소는 그대로 유지.
+ */
+function sanitizeExternalHtml(html) {
+  if (!html) return ''
+  return html
+    // 글로벌 영향 태그 통째 제거
+    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+    .replace(/<link\b[^>]*>/gi, '')
+    .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '')
+    .replace(/<object\b[^<]*(?:(?!<\/object>)<[^<]*)*<\/object>/gi, '')
+    .replace(/<embed\b[^>]*>/gi, '')
+    .replace(/<form\b[^<]*(?:(?!<\/form>)<[^<]*)*<\/form>/gi, '')
+    // on* 이벤트 핸들러 제거 (onclick, onerror, onload 등)
+    .replace(/\s+on\w+\s*=\s*"[^"]*"/gi, '')
+    .replace(/\s+on\w+\s*=\s*'[^']*'/gi, '')
+    .replace(/\s+on\w+\s*=\s*[^\s>]+/gi, '')
+    // javascript: URL 제거
+    .replace(/javascript\s*:/gi, 'about:blank#')
+    // <meta http-equiv="refresh" ...> 같은 페이지 redirect 차단
+    .replace(/<meta\b[^>]*>/gi, '')
 }
 
 function collectPartsByMime(part, mime, out) {
