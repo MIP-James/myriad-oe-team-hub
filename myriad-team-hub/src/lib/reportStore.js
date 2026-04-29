@@ -81,14 +81,13 @@ export async function uploadBrandReport({
   userId
 }) {
   // 경로 규칙: {group_id}/{safe_brand}.xlsx
-  // Supabase Storage object key 는 윈도우 금지문자뿐 아니라 괄호/공백/일부 reserved
-  // 까지 거부 — `(주)쏠리드` 같은 회사명 prefix 가 Invalid key 로 깨졌음.
-  // 한글은 유지하고, 문제 가능 문자만 _ 로 치환.
-  const safeBrand = brandName
-    .replace(/[\s\\/:*?"<>|()[\]{}^~%#`'!@$&+=,;]+/g, '_')
-    .replace(/_+/g, '_')          // 연속 언더스코어 합치기
-    .replace(/^_+|_+$/g, '')      // 앞뒤 언더스코어 제거
-    || 'unknown'
+  // Supabase Storage object key 는 ASCII 안전 문자만 허용 (괄호/한글/특수문자 모두 거부).
+  // brand_name 은 DB 에 원본 그대로 (`(주)쏠리드`) 보존 → UI/검색 영향 0,
+  // Storage path 만 ASCII slug 로 변환:
+  //   - 영문/숫자/하이픈/언더스코어 → 그대로
+  //   - 그 외 (한글/괄호/특수문자) → '_'
+  //   - ASCII 가 0개면 (한글 only 브랜드) → 'brand-' + 결정적 hash
+  const safeBrand = makeStorageSafeBrand(brandName)
   const path = `${groupId}/${safeBrand}.xlsx`
 
   // 기존 파일 있으면 덮어쓰기 (upsert)
@@ -203,4 +202,47 @@ export async function deleteGroup(id) {
     .delete()
     .eq('id', id)
   if (error) throw error
+}
+
+// =============================================================
+// brand_name → Storage object key 안전 형태 (gotcha #24)
+// =============================================================
+//
+// Supabase Storage 의 object key 검증이 ASCII 안전 문자 외 모두 거부 (한글 포함).
+// brand_name 은 DB 에 원본 보존, Storage path 만 ASCII slug 로 변환.
+//
+// 변환 예:
+//   "Tory Burch"     → "Tory_Burch"
+//   "Adidas"         → "Adidas"
+//   "(주)쏠리드"      → "brand-a3f2c1"     (한글 only — hash)
+//   "PHILIPS 코리아"  → "PHILIPS"          (영문 부분만 살림)
+//   "필립스"          → "brand-d4e7b8"     (한글 only — hash)
+//
+// 같은 brand_name 은 항상 같은 path (deterministic hash) → upsert 가능.
+export function makeStorageSafeBrand(brandName) {
+  if (!brandName) return 'unknown'
+
+  // 영문/숫자/하이픈/언더스코어만 살리기. 그 외 (한글/괄호/특수문자) → '_'
+  const ascii = brandName
+    .replace(/[^a-zA-Z0-9_-]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '')
+
+  if (ascii && ascii.length >= 2) {
+    return ascii
+  }
+
+  // ASCII 가 비어있거나 너무 짧음 (한글 only 브랜드 등) → hash fallback.
+  // 동기 djb2 변형 — 같은 입력은 항상 같은 hash (deterministic).
+  const hash = djb2Hash(brandName)
+  return `brand-${hash}`
+}
+
+function djb2Hash(str) {
+  let hash = 5381
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) + hash) ^ str.charCodeAt(i)
+  }
+  // 32-bit unsigned → 6자리 hex
+  return (hash >>> 0).toString(16).padStart(6, '0').slice(0, 6)
 }
