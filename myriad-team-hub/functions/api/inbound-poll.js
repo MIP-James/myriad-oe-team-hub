@@ -34,7 +34,10 @@ const GMAIL_API = 'https://gmail.googleapis.com/gmail/v1/users/me'
 // 일시적 트래픽 폭증/재처리 등 상황에서 50건은 부족 → 200건 + pagination 으로 안전망.
 const MAX_MESSAGES_PER_PAGE = 200
 const MAX_PAGES_PER_POLL = 5     // 최대 1000건까지 거슬러 올라감 (대부분 1페이지에서 종료)
-const SEARCH_QUERY = 'in:inbox newer_than:1d -label:trash'
+// `in:inbox` 빼고 sent/drafts/trash/spam/chats 만 명시 제외.
+// 사용자가 forward 직후 아카이브하거나 자동 필터로 인박스에서 빠진 메일도 잡힘.
+// `inbound_processed_messages.message_id` 가 PK 라 중복 처리 자동 방지.
+const SEARCH_QUERY = 'newer_than:1d -in:sent -in:drafts -in:trash -in:spam -in:chats'
 
 export async function onRequestPost(context) {
   const { request, env } = context
