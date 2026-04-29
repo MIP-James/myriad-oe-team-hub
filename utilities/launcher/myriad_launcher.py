@@ -82,7 +82,9 @@ _hide_internal_dir()
 
 try:
     from supabase import create_client, Client
-    from supabase.lib.client_options import ClientOptions
+    # SyncClientOptions = ClientOptions + storage 필드 (sync client 에 필수).
+    # 베이스 ClientOptions 만 넘기면 'no attribute storage' 에러 발생.
+    from supabase.lib.client_options import SyncClientOptions
     import pystray
     from PIL import Image, ImageDraw, ImageFont
 except ImportError as e:
@@ -139,7 +141,10 @@ def notify(title: str, message: str, success: bool = True) -> None:
     except Exception as e:
         logging.warning(f"Toast failed: {e}")
 
-LAUNCHER_VERSION = "0.2.0"
+# release_launcher.py 의 default version (오늘 날짜 ISO) 와 형식 일치 →
+# release 의 name = "MYRIAD Launcher v{LAUNCHER_VERSION}" 와 1:1 비교 가능.
+# 새 빌드 배포할 때마다 이 줄을 오늘 날짜로 갱신하고 release_launcher.bat 실행.
+LAUNCHER_VERSION = "2026-04-29"
 POLL_INTERVAL_SEC = 3.0
 HEARTBEAT_INTERVAL_SEC = 30.0
 MAX_OUTPUT_CHARS = 8000
@@ -148,6 +153,18 @@ MAX_OUTPUT_CHARS = 8000
 # heartbeat 까지 충분히 살아있음.
 TOKEN_REFRESH_LEAD_SEC = 90.0
 LOG_PATH = _exe_dir() / "launcher.log"
+
+# GitHub Releases 의 launcher-latest 태그 — release_launcher.py 가 업로드.
+# release name 에 박힌 버전 문자열을 LAUNCHER_VERSION 과 비교해서 신버전 감지.
+GITHUB_REPO = "MIP-James/myriad-oe-team-hub"
+RELEASE_TAG = "launcher-latest"
+GITHUB_RELEASE_API_URL = (
+    f"https://api.github.com/repos/{GITHUB_REPO}/releases/tags/{RELEASE_TAG}"
+)
+LAUNCHER_DOWNLOAD_URL = (
+    f"https://github.com/{GITHUB_REPO}/releases/download/{RELEASE_TAG}/MyriadLauncher.zip"
+)
+LAUNCHER_PAGE_URL = "https://myriad-oe-team-hub.pages.dev/launcher"
 
 
 def setup_logging():
@@ -270,7 +287,7 @@ class Launcher:
             self.client = create_client(
                 sb["url"],
                 sb["anon_key"],
-                options=ClientOptions(
+                options=SyncClientOptions(
                     auto_refresh_token=False,
                     persist_session=False,
                 ),
@@ -749,6 +766,110 @@ class Launcher:
             except Exception:
                 pass
 
+    # ------------------------------------------------------------------
+    # 자동 업데이트 체크 (수동 메뉴 + 시작 시 1회 백그라운드)
+    # ------------------------------------------------------------------
+    def _fetch_latest_version(self) -> tuple[str | None, str | None]:
+        """GitHub Releases API 로 launcher-latest 의 release name 조회.
+
+        반환: (latest_version, error_message)
+            성공 시 (version, None), 실패 시 (None, error_text)
+
+        version 추출:
+            release name 형식: "MYRIAD Launcher v{version}" → "v" 뒤 문자열만.
+            예) "MYRIAD Launcher v2026-04-29" → "2026-04-29"
+        """
+        try:
+            import urllib.request, json as _json
+            req = urllib.request.Request(
+                GITHUB_RELEASE_API_URL,
+                headers={
+                    "User-Agent": f"MyriadLauncher/{LAUNCHER_VERSION}",
+                    "Accept": "application/vnd.github+json",
+                },
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = _json.loads(resp.read().decode("utf-8"))
+            name = (data.get("name") or "").strip()
+            # "MYRIAD Launcher v..." 에서 마지막 'v' 다음 텍스트 추출
+            if " v" in name:
+                version = name.rsplit(" v", 1)[1].strip()
+            else:
+                # 폴백 — name 자체를 버전으로 취급
+                version = name
+            if not version:
+                return None, "릴리즈 이름이 비어있습니다."
+            return version, None
+        except Exception as e:
+            return None, f"{type(e).__name__}: {e}"
+
+    def menu_check_update(self, icon, item):
+        """트레이 메뉴 → 최신 버전 확인 (사용자 수동 클릭).
+
+        쓰레드로 빼서 GitHub API 응답 대기 동안 메뉴 콜백 thread 가 안 막히게 함.
+        """
+        def _worker():
+            latest, err = self._fetch_latest_version()
+            if err:
+                show_info(
+                    "MYRIAD Launcher — 버전 확인 실패",
+                    f"GitHub 릴리즈 정보를 가져오지 못했습니다.\n\n{err}\n\n"
+                    "잠시 후 다시 시도하거나, 회사 프록시/방화벽 설정을 확인해주세요.",
+                )
+                return
+            if latest == LAUNCHER_VERSION:
+                show_info(
+                    "MYRIAD Launcher — 최신 버전",
+                    f"이미 최신 버전입니다.\n\n현재: v{LAUNCHER_VERSION}",
+                )
+                return
+            # 신버전 — 안내 후 다운로드 페이지 자동 오픈
+            show_info(
+                "MYRIAD Launcher — 새 버전 있음",
+                f"새 버전이 배포되었습니다.\n\n"
+                f"현재: v{LAUNCHER_VERSION}\n"
+                f"최신: v{latest}\n\n"
+                "[확인] 누르면 다운로드 페이지를 엽니다.\n"
+                "압축 해제 후 기존 폴더에 덮어쓰고 런처를 다시 실행해주세요.\n"
+                "(config.json / launcher.log 는 덮어쓰지 마세요)",
+            )
+            try:
+                import webbrowser
+                webbrowser.open(LAUNCHER_PAGE_URL)
+            except Exception as e:
+                logging.warning(f"Open launcher page: {e}")
+
+        threading.Thread(target=_worker, daemon=True, name="check-update").start()
+
+    def auto_check_update_on_start(self):
+        """런처 시작 후 백그라운드에서 1회 체크 — 신버전이면 토스트만.
+
+        자동 교체는 하지 않음 (PyInstaller exe 자기 자신을 덮어쓰기 까다로움).
+        사용자가 토스트 보고 트레이 메뉴 → "최신 버전 확인" 으로 다운로드 진행.
+        """
+        def _worker():
+            # 부팅 직후엔 네트워크/시작 작업이 몰리니 5초 지연.
+            try:
+                self.stop_event.wait(5.0)
+                if self.stop_event.is_set():
+                    return
+                latest, err = self._fetch_latest_version()
+                if err or not latest:
+                    return  # 조용히 실패 — 사용자가 수동 메뉴로 재시도 가능
+                if latest != LAUNCHER_VERSION:
+                    logging.info(
+                        f"[update] new version available: v{latest} (current v{LAUNCHER_VERSION})"
+                    )
+                    notify(
+                        "MYRIAD Launcher — 새 버전 있음",
+                        f"v{latest} 가 배포되었습니다. 트레이 아이콘 우클릭 → "
+                        f"'최신 버전 확인' 을 눌러 업데이트하세요.",
+                    )
+            except Exception as e:
+                logging.warning(f"auto_check_update: {e}")
+
+        threading.Thread(target=_worker, daemon=True, name="auto-check-update").start()
+
     def menu_view_log(self, icon, item):
         try:
             os.startfile(str(LOG_PATH))
@@ -845,6 +966,7 @@ class Launcher:
             pystray.MenuItem("웹 대시보드 열기", self.menu_open_web),
             pystray.MenuItem("설치된 유틸 폴더 열기", self.menu_open_tools),
             pystray.MenuItem("로그 보기", self.menu_view_log),
+            pystray.MenuItem("최신 버전 확인", self.menu_check_update),
             pystray.MenuItem("토큰 / 설정 재설정", self.menu_run_setup),
             pystray.MenuItem(
                 "Windows 시작 시 자동 실행",
@@ -871,6 +993,9 @@ class Launcher:
             threading.Thread(
                 target=self.poll_loop, daemon=True, name="polling"
             ).start()
+            # 시작 후 5초 뒤 신버전 1회 체크 — 있으면 토스트만 띄움 (자동 교체 X).
+            # 연결 실패 시엔 안 함 (네트워크 문제일 가능성 높음 → 노이즈 회피).
+            self.auto_check_update_on_start()
 
         # 트레이 아이콘 (메인 스레드에서 blocking run)
         self.icon = pystray.Icon(
