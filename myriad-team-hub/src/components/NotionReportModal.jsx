@@ -408,19 +408,17 @@ function PermissionBanner({ onRecheck, rechecking, recheckMsg }) {
             <div className="font-semibold text-rose-900">해결 방법</div>
             <ol className="list-decimal pl-4 space-y-1 text-rose-800">
               <li>
-                관리자에게 노션 "주간 업무 Snapshot" DB 의{' '}
-                <span className="font-semibold">"전사 공통의 멤버"</span> (또는 워크스페이스
-                전체) 권한을{' '}
-                <span className="font-semibold">"내용 편집 허용" → "전체 허용"</span> 으로
-                변경해달라고 요청해주세요.
+                관리자에게 노션 "주간 업무 Snapshot" DB 공유 목록에{' '}
+                <span className="font-semibold">본인을 "전체 허용" 권한으로 추가</span>{' '}
+                해달라고 요청해주세요. (DB 우측 상단 [공유] → 본인 이메일 입력 → 권한 "전체 허용" 선택 → [공유하기])
               </li>
               <li>
-                권한 변경 완료되면 아래 <span className="font-semibold">[권한 재확인]</span>{' '}
+                권한 추가 완료되면 아래 <span className="font-semibold">[권한 재확인]</span>{' '}
                 버튼을 누르세요. (재연결 불필요)
               </li>
               <li>
-                재확인이 계속 실패하면 <span className="font-semibold">[해제]</span> 후 다시
-                연결해주세요. 새 OAuth 화면에 팀스페이스 → 주간 업무 Snapshot 이
+                재확인이 계속 실패하면 위쪽 띠의 <span className="font-semibold">[해제]</span>{' '}
+                후 다시 연결해주세요. 새 OAuth 화면에 팀스페이스 → 주간 업무 Snapshot 이
                 보이고 체크할 수 있습니다.
               </li>
             </ol>
