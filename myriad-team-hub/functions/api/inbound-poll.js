@@ -417,7 +417,9 @@ async function processMessage({ messageId, accessToken, mappings, keywords, read
     platform_other: null,
     post_url: null,
     infringement_type: null,
-    status: 'share',           // 신규 케이스 — share (기본 워크플로우)
+    // 신고 메일 자동 케이스는 처음부터 조치 필요 → 실무자 우선 처리 신호.
+    // sort_priority 는 generated column (status='action_needed' → 0 자동) 이라 직접 박지 않음.
+    status: 'action_needed',
     body_html: body?.html || '',
     body_text: body?.text || '',
     gmail_message_id: messageId,
