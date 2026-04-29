@@ -30,7 +30,10 @@
 import { createClient } from '@supabase/supabase-js'
 
 const GMAIL_API = 'https://gmail.googleapis.com/gmail/v1/users/me'
-const MAX_MESSAGES_PER_POLL = 50
+// 받은편지함이 시간당 5~10건 들어오는 환경 기준, 5분 주기 폴링이라도
+// 일시적 트래픽 폭증/재처리 등 상황에서 50건은 부족 → 200건 + pagination 으로 안전망.
+const MAX_MESSAGES_PER_PAGE = 200
+const MAX_PAGES_PER_POLL = 5     // 최대 1000건까지 거슬러 올라감 (대부분 1페이지에서 종료)
 const SEARCH_QUERY = 'in:inbox newer_than:1d -label:trash'
 
 export async function onRequestPost(context) {
@@ -174,18 +177,41 @@ async function pollForReader({ reader, mappings, keywords, adminSb, env }) {
     }
   }
 
-  // 2) Gmail messages.list — 최근 1일 inbox
-  let listData
+  // 2) Gmail messages.list — 최근 1일 inbox, 페이지네이션
+  // 한 페이지(200건) 의 모든 메시지가 이미 처리됐으면 즉시 종료(이전 영역 진입 의미 없음).
+  // 한 페이지에 미처리 메시지가 있으면 다음 페이지도 조회 — 트래픽 폭증/재처리 케이스 대응.
+  let allMessageIds = []
+  let pageToken = null
   try {
-    const listUrl = `${GMAIL_API}/messages?q=${encodeURIComponent(SEARCH_QUERY)}&maxResults=${MAX_MESSAGES_PER_POLL}`
-    const res = await fetch(listUrl, {
-      headers: { Authorization: `Bearer ${accessToken}` }
-    })
-    if (!res.ok) {
-      const text = await res.text().catch(() => '')
-      throw new Error(`list ${res.status}: ${text.slice(0, 200)}`)
+    for (let page = 0; page < MAX_PAGES_PER_POLL; page++) {
+      const params = new URLSearchParams({
+        q: SEARCH_QUERY,
+        maxResults: String(MAX_MESSAGES_PER_PAGE)
+      })
+      if (pageToken) params.set('pageToken', pageToken)
+      const res = await fetch(`${GMAIL_API}/messages?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      })
+      if (!res.ok) {
+        const text = await res.text().catch(() => '')
+        throw new Error(`list ${res.status}: ${text.slice(0, 200)}`)
+      }
+      const listData = await res.json()
+      const pageIds = (listData.messages || []).map((m) => m.id)
+      if (pageIds.length === 0) break
+      allMessageIds.push(...pageIds)
+
+      // 페이지 전체가 이미 처리된 메시지면 중단(이전 페이지 = 더 오래된 메일이라 의미 없음)
+      const { data: processedThisPage } = await adminSb
+        .from('inbound_processed_messages')
+        .select('message_id')
+        .in('message_id', pageIds)
+      const processedThisPageCount = processedThisPage?.length || 0
+      if (processedThisPageCount === pageIds.length) break
+
+      pageToken = listData.nextPageToken
+      if (!pageToken) break
     }
-    listData = await res.json()
   } catch (e) {
     await adminSb
       .from('inbound_reader_tokens')
@@ -201,7 +227,7 @@ async function pollForReader({ reader, mappings, keywords, adminSb, env }) {
     return result
   }
 
-  const messageIds = (listData.messages || []).map((m) => m.id)
+  const messageIds = allMessageIds
   if (messageIds.length === 0) {
     await adminSb
       .from('inbound_reader_tokens')
