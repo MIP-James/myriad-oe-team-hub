@@ -286,7 +286,11 @@ async function processMessage({ messageId, accessToken, mappings, keywords, read
   const toEmails = parseEmailList(headers.to)
   const ccEmails = parseEmailList(headers.cc)
   const allRecipients = [...toEmails, ...ccEmails]
-  const subject = headers.subject || ''
+  // RFC 2047 (MIME encoded-word) 디코딩 — 한국 기업메일 서버는 한글 제목을
+  // =?UTF-8?B?...?= 로 인코딩해서 보내는데 Gmail API 는 raw 헤더를 그대로 줌.
+  // 디코딩 안 하면 keyword.includes() 가 인코딩 문자열에서 탐색해서 무조건 fail.
+  const subject = decodeMimeWords(headers.subject || '')
+  const fromDisplay = decodeMimeWords(headers.from || '')
   const dateStr = headers.date
   const receivedAt = dateStr ? new Date(dateStr).toISOString() : null
 
@@ -384,7 +388,7 @@ async function processMessage({ messageId, accessToken, mappings, keywords, read
   // ── 회신 thread 매칭 → 기존 케이스에 댓글 추가 ────────
   if (parentCase) {
     const commentBody = `📧 **회신 메일 자동 첨부**\n\n` +
-      `From: ${headers.from || '(unknown)'}\n` +
+      `From: ${fromDisplay || '(unknown)'}\n` +
       `Date: ${headers.date || ''}\n` +
       `Subject: ${subject}\n\n` +
       `---\n\n${body?.text || ''}`
@@ -425,7 +429,7 @@ async function processMessage({ messageId, accessToken, mappings, keywords, read
     gmail_message_id: messageId,
     gmail_thread_url: threadId ? `https://mail.google.com/mail/u/0/#all/${threadId}` : null,
     gmail_subject: subject,
-    gmail_from: headers.from || '',
+    gmail_from: fromDisplay || '',
     gmail_date: receivedAt,
     gmail_body_text: body?.text || '',
     source: 'inbound_email',
@@ -569,6 +573,54 @@ function htmlToText(html) {
     .replace(/&quot;/g, '"')
     .replace(/\n{3,}/g, '\n\n')
     .trim()
+}
+
+// =============================================================
+// RFC 2047 MIME encoded-word 디코딩
+// =============================================================
+/**
+ * 한국 기업 메일 서버 (NHN Works, Naver Works, Daum Smartwork 등) 는 한글 제목을
+ * =?UTF-8?B?7Iqk7Yag7Ja0IOyLoOqzoA==?= (Base64) 또는
+ * =?UTF-8?Q?=EC=8A=A4=ED=86=A0=EC=96=B4_=EC=8B=A0=EA=B3=A0?= (Quoted-Printable)
+ * 형식으로 인코딩해서 보냄. Gmail API 는 raw 헤더를 그대로 주므로 직접 디코딩 필요.
+ * - B 인코딩: Base64
+ * - Q 인코딩: Quoted-Printable (= 가 escape, _ 는 공백)
+ * - 인접한 encoded-word 사이의 공백은 RFC 2047 규정상 제거 (decoded 결과에는 영향 없음)
+ */
+function decodeMimeWords(str) {
+  if (!str) return ''
+  if (!str.includes('=?')) return str    // fast path — ASCII subject 는 그대로
+  return str
+    // 인접한 encoded-word 사이 whitespace 제거 (RFC 2047)
+    .replace(/(\?=)\s+(=\?)/g, '$1$2')
+    .replace(
+      /=\?([^?]+)\?([BbQq])\?([^?]*)\?=/g,
+      (match, charset, encoding, text) => {
+        try {
+          let bytes
+          if (encoding.toUpperCase() === 'B') {
+            const padded = text + '==='.slice((text.length + 3) % 4)
+            const bin = atob(padded)
+            bytes = new Uint8Array(bin.length)
+            for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+          } else {
+            // Q encoding: _ = space, =XX = hex byte
+            const qDecoded = text
+              .replace(/_/g, ' ')
+              .replace(/=([0-9A-Fa-f]{2})/g, (_, hex) =>
+                String.fromCharCode(parseInt(hex, 16))
+              )
+            bytes = new Uint8Array(qDecoded.length)
+            for (let i = 0; i < qDecoded.length; i++) {
+              bytes[i] = qDecoded.charCodeAt(i)
+            }
+          }
+          return new TextDecoder(charset.toLowerCase()).decode(bytes)
+        } catch {
+          return match
+        }
+      }
+    )
 }
 
 // =============================================================
