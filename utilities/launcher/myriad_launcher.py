@@ -12,6 +12,7 @@ import platform
 import subprocess
 import sys
 import threading
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -81,6 +82,7 @@ _hide_internal_dir()
 
 try:
     from supabase import create_client, Client
+    from supabase.lib.client_options import ClientOptions
     import pystray
     from PIL import Image, ImageDraw, ImageFont
 except ImportError as e:
@@ -141,6 +143,10 @@ LAUNCHER_VERSION = "0.2.0"
 POLL_INTERVAL_SEC = 3.0
 HEARTBEAT_INTERVAL_SEC = 30.0
 MAX_OUTPUT_CHARS = 8000
+# access_token 만료 X초 전이면 명시 refresh — supabase-py 자동 refresh 끈
+# 상태에서 우리가 직접 갱신. heartbeat 주기(30초) 보다 크게 잡아야 다음
+# heartbeat 까지 충분히 살아있음.
+TOKEN_REFRESH_LEAD_SEC = 90.0
 LOG_PATH = _exe_dir() / "launcher.log"
 
 
@@ -257,7 +263,18 @@ class Launcher:
         sb = self.config["supabase"]
         logging.info(f"Connecting to {sb['url']}")
         try:
-            self.client = create_client(sb["url"], sb["anon_key"])
+            # 자동 refresh / 자체 persist 모두 비활성화 — 우리가 _maybe_refresh_token
+            # 으로 명시 관리. supabase-py 백그라운드 thread 가 _sb_lock 우회해서
+            # 동시 refresh 호출 → 같은 refresh_token 으로 두 번 요청 → 응답 도착
+            # 순서 역전 시 invalidated chain 의 토큰이 저장되는 race 가 원인 (gotcha #12-D)
+            self.client = create_client(
+                sb["url"],
+                sb["anon_key"],
+                options=ClientOptions(
+                    auto_refresh_token=False,
+                    persist_session=False,
+                ),
+            )
         except Exception as e:
             logging.error(f"create_client failed: {e}")
             self.status_text = "Supabase 연결 실패"
@@ -374,6 +391,42 @@ class Launcher:
         except Exception as e:
             logging.warning(f"Persist session: {e}")
 
+    def _maybe_refresh_token(self):
+        """access_token 만료 임박 시 명시 refresh.
+
+        반드시 self._sb_lock 안에서 호출. 두 thread 가 동시에 lock 대기 시,
+        먼저 잡은 쪽이 refresh 끝내면 expires_at 이 갱신되고, 다음 thread 는
+        여기서 곧바로 skip 하므로 race 자체가 발생 불가능.
+
+        supabase-py 자동 refresh 를 끈 상태이므로 이 메서드가 토큰 갱신의
+        유일한 경로.
+        """
+        sb = self.config["supabase"]
+        cur_exp = sb.get("expires_at") or 0
+        now = int(time.time())
+        # 만료까지 lead 초 이상 남아있으면 skip. 음수 (이미 만료) 는 즉시 refresh.
+        if cur_exp and (cur_exp - now) > TOKEN_REFRESH_LEAD_SEC:
+            return
+        rt = sb.get("refresh_token")
+        if not rt:
+            return
+        try:
+            rresp = self.client.auth.refresh_session(rt)
+            new_session = getattr(rresp, "session", None)
+            if not (new_session and new_session.access_token):
+                return
+            sb["access_token"] = new_session.access_token
+            sb["refresh_token"] = new_session.refresh_token
+            new_exp = getattr(new_session, "expires_at", None) or 0
+            if new_exp:
+                sb["expires_at"] = new_exp
+            save_config(self.config)
+            logging.info(f"[auth] explicit refresh OK (exp {new_exp})")
+        except Exception as e:
+            # refresh_token 자체가 invalid (수일 미사용/노션 외부 회수 등) 시 여기 도달.
+            # 다음 heartbeat 도 같은 에러 → online=False 자연스럽게 표시됨.
+            logging.warning(f"Explicit refresh failed: {e}")
+
     def register_device(self) -> bool:
         if not self.device_id:
             self.device_id = str(uuid.uuid4())
@@ -416,27 +469,30 @@ class Launcher:
     # ------------------------------------------------------------------
     def heartbeat_loop(self):
         while not self.stop_event.wait(HEARTBEAT_INTERVAL_SEC):
-            # _sb_lock 으로 poll_loop 와의 동시 호출 차단 — supabase-py 자동
-            # refresh 가 양쪽에서 동시 트리거되어 token rotation 이 분기되는 race 방지.
+            # _sb_lock 으로 poll_loop 와의 동시 호출 차단 — 같은 lock 내에서
+            # _maybe_refresh_token 을 먼저 호출하므로, 두 thread 가 동시에 만료
+            # 임박 토큰을 쥐고 lock 대기해도 두 번째는 갱신된 expires_at 보고 skip.
             with self._sb_lock:
+                try:
+                    self._maybe_refresh_token()
+                except Exception as e:
+                    logging.warning(f"Heartbeat refresh: {e}")
                 try:
                     self.client.table("launcher_devices").update(
                         {"last_seen_at": utcnow_iso(), "is_online": True}
                     ).eq("id", self.device_id).execute()
                 except Exception as e:
                     logging.warning(f"Heartbeat: {e}")
-                # 안전망 — 이벤트 리스너가 미동작하는 supabase-py 버전 대비.
-                # get_session() 은 메모리 조회라 비용 거의 없음.
-                try:
-                    self._persist_refreshed_session()
-                except Exception as e:
-                    logging.warning(f"Heartbeat persist: {e}")
 
     def poll_loop(self):
         self._update_status("온라인 - 대기 중")
         while not self.stop_event.wait(POLL_INTERVAL_SEC):
             jobs = []
             with self._sb_lock:
+                try:
+                    self._maybe_refresh_token()
+                except Exception as e:
+                    logging.warning(f"Poll refresh: {e}")
                 try:
                     resp = (
                         self.client.table("launcher_jobs")
