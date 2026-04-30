@@ -35,20 +35,19 @@ export default function Reports() {
   const [error, setError] = useState(null)
   const [log, setLog] = useState([])
   const [recentGroups, setRecentGroups] = useState([])
-  // 다중 시트 탭 합집합 — [{ tabKey, tabDisplay, autoBrand }]
+  // 다중 시트 탭 합집합 — [{ tabKey, tabDisplay, autoBrand }] (표시용)
   const [tabUnion, setTabUnion] = useState([])
-  // 사용자가 입력한 고객사명 — { tabKey: brandName }
-  const [brandByTab, setBrandByTab] = useState({})
+  // 사용자가 입력한 메인 고객사명 (다중 탭일 때만 사용)
+  const [mergedBrand, setMergedBrand] = useState('')
   const [inspecting, setInspecting] = useState(false)
   const [inspectError, setInspectError] = useState(null)
 
   useEffect(() => { loadRecent() }, [])
 
-  // 두 파일 모두 선택되면 탭 합집합 자동 검사
+  // 두 파일 모두 선택되면 탭 합집합 자동 검사 (표시 + 다중 여부 판단용)
   useEffect(() => {
     if (!prevFile || !currFile) {
       setTabUnion([])
-      setBrandByTab({})
       setInspectError(null)
       return
     }
@@ -58,34 +57,19 @@ export default function Reports() {
     Promise.all([inspectExcelTabs(prevFile), inspectExcelTabs(currFile)])
       .then(([prevTabs, currTabs]) => {
         if (cancelled) return
-        const map = new Map()  // tabKey → { tabDisplay, autoBrand }
+        const map = new Map()  // tabKey → { tabDisplay }
         for (const t of prevTabs) {
           const k = normTabKey(t.tabName)
-          if (!map.has(k)) map.set(k, { tabDisplay: t.tabName, autoBrand: t.autoBrand })
+          if (!map.has(k)) map.set(k, { tabDisplay: t.tabName })
         }
         for (const t of currTabs) {
           const k = normTabKey(t.tabName)
-          // curr 가 표시 우선 + autoBrand 도 curr 우선 (당월 데이터가 더 신뢰)
-          map.set(k, { tabDisplay: t.tabName, autoBrand: t.autoBrand })
+          map.set(k, { tabDisplay: t.tabName })  // curr 가 표시 우선
         }
         const union = [...map.entries()].map(([tabKey, v]) => ({
-          tabKey, tabDisplay: v.tabDisplay, autoBrand: v.autoBrand
+          tabKey, tabDisplay: v.tabDisplay
         }))
         setTabUnion(union)
-        // prefill — 사용자 기존 입력값 보존, 신규 탭만 autoBrand 로 채움
-        setBrandByTab((prev) => {
-          const next = { ...prev }
-          for (const u of union) {
-            if (next[u.tabKey] == null || next[u.tabKey] === '') {
-              next[u.tabKey] = u.autoBrand || ''
-            }
-          }
-          // 합집합에 없는 키 정리
-          for (const k of Object.keys(next)) {
-            if (!union.find((u) => u.tabKey === k)) delete next[k]
-          }
-          return next
-        })
       })
       .catch((e) => {
         if (cancelled) return
@@ -124,14 +108,11 @@ export default function Reports() {
     if (!prevFile) return setError('직전달 엑셀 파일을 선택하세요.')
     if (!currFile) return setError('이번달 엑셀 파일을 선택하세요.')
 
-    // 다중 탭 모드면 모든 입력란 채워졌는지 검증
-    if (tabUnion.length >= 2) {
-      const empty = tabUnion.filter((u) => !String(brandByTab[u.tabKey] || '').trim())
-      if (empty.length) {
-        return setError(
-          `다중 시트 탭이 감지됐습니다. 모든 탭의 고객사명을 입력해주세요.\n비어있는 탭: ${empty.map((e) => e.tabDisplay).join(', ')}`
-        )
-      }
+    // 다중 탭 모드면 메인 고객사명 입력 필수
+    if (tabUnion.length >= 2 && !mergedBrand.trim()) {
+      return setError(
+        `다중 시트 탭이 감지됐습니다 (${tabUnion.length}개). 메인 고객사명을 입력해주세요.`
+      )
     }
 
     let opt
@@ -139,7 +120,7 @@ export default function Reports() {
       opt = {
         reportMonth: normalizeReportMonth(reportMonth),
         topN: Math.max(3, Math.min(5, Number(topN) || 3)),
-        brandByTab: tabUnion.length >= 2 ? brandByTab : undefined
+        mergedBrand: tabUnion.length >= 2 ? mergedBrand.trim() : undefined
       }
     } catch (e) {
       return setError(e.message)
@@ -255,7 +236,7 @@ export default function Reports() {
     setError(null)
     setLog([])
     setTabUnion([])
-    setBrandByTab({})
+    setMergedBrand('')
     setInspectError(null)
   }
 
@@ -391,36 +372,40 @@ export default function Reports() {
         </div>
       )}
 
-      {/* 다중 탭 감지 시 — 고객사명 입력 UI */}
+      {/* 다중 탭 감지 시 — 메인 고객사명 입력 UI */}
       {tabUnion.length >= 2 && (
         <section className="bg-sky-50 border border-sky-200 rounded-2xl p-5 mb-4">
           <h2 className="font-semibold text-slate-900 mb-1 flex items-center gap-2">
-            <Layers size={16} className="text-sky-700" /> 다중 시트 감지 — 탭별 고객사명 입력
+            <Layers size={16} className="text-sky-700" /> 다중 시트 감지 — 메인 고객사명 입력
           </h2>
           <p className="text-xs text-slate-600 mb-3">
-            <b>{tabUnion.length}개의 시트 탭</b>이 발견됐습니다. 탭별로 보고서가 따로 생성되며,
-            아래 입력값이 팀 허브 카드 제목 + Google Sheet 제목 (<code>{'{고객사명}'} {reportMonth} 월간동향</code>) 으로 사용됩니다.
-            자동 추출값이 미리 채워져 있으니 필요 시 수정하세요.
+            <b>{tabUnion.length}개의 시트 탭</b>(브랜드별)이 발견됐습니다.
+            모든 탭의 데이터를 합쳐서 <b>하나의 고객사 보고서</b>로 생성합니다.
+            입력하신 이름이 팀 허브 카드 제목 + Google Sheet 제목 (<code>{'{고객사명}'} {reportMonth} 월간동향</code>) 으로 사용됩니다.
           </p>
-          <div className="space-y-2">
+          <div className="mb-3 flex flex-wrap gap-1.5">
+            <span className="text-[11px] text-slate-500">감지된 탭:</span>
             {tabUnion.map((u) => (
-              <div key={u.tabKey} className="flex items-center gap-3">
-                <div className="text-xs font-mono text-slate-500 bg-white border border-slate-200 px-2 py-1.5 rounded min-w-[140px] truncate" title={u.tabDisplay}>
-                  📄 {u.tabDisplay}
-                </div>
-                <span className="text-slate-400 text-xs">→</span>
-                <input
-                  type="text"
-                  value={brandByTab[u.tabKey] || ''}
-                  onChange={(e) =>
-                    setBrandByTab((prev) => ({ ...prev, [u.tabKey]: e.target.value }))
-                  }
-                  placeholder="고객사명 입력 (예: TBH global)"
-                  className="flex-1 px-3 py-1.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-400/40 text-sm"
-                />
-              </div>
+              <span
+                key={u.tabKey}
+                className="text-[11px] font-mono text-slate-600 bg-white border border-slate-200 px-2 py-0.5 rounded"
+                title={u.tabDisplay}
+              >
+                📄 {u.tabDisplay}
+              </span>
             ))}
           </div>
+          <label className="block">
+            <span className="text-xs font-semibold text-slate-700">메인 고객사명</span>
+            <input
+              type="text"
+              value={mergedBrand}
+              onChange={(e) => setMergedBrand(e.target.value)}
+              placeholder="예: TBH GLOBAL"
+              className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-400/40 text-sm"
+              autoFocus
+            />
+          </label>
         </section>
       )}
 

@@ -1397,32 +1397,27 @@ function normTab(s) {
   return String(s || '').trim().toLowerCase()
 }
 
-// 다중 시트 보고서 생성 — 결과 배열 반환
-// opt.brandByTab = { [tabNameLowerTrim]: 'CustomerName' } (선택)
+// 다중 시트 보고서 생성 — 항상 결과 배열 반환 (호출부 단순화)
 //
 // 동작:
 //   - prev/curr 양쪽 시트 합집합으로 판단
-//   - 합집합 길이 ≤ 1 → 단일 모드 (기존 동작) → [1개 결과]
+//   - 합집합 길이 ≤ 1 → 단일 모드 (기존 동작) → Client 컬럼 자동 추출
 //   - 합집합 길이 ≥ 2 → 다중 모드:
-//       * brandByTab[tabName] 우선 사용
-//       * 없으면 자동 추출 (extractBrandName + 탭이름 fallback)
-//       * 한쪽에만 있는 탭은 0건짜리 빈 시트로 대체해서 비교
+//       * 브랜드별로 분리된 시트 탭들을 한 풀(pool)로 합쳐서 단일 보고서 생성
+//       * brand_name = opt.mergedBrand (사용자가 입력한 메인 고객사명, 예: "TBH GLOBAL")
+//       * mergedBrand 비어있으면 fallback (파일명)
+//   - 어느 모드든 길이 1짜리 배열 반환 (단일 보고서)
 export async function generateReport(prevFile, currFile, opt) {
   const prevSheets = await parseExcelFileAllSheets(prevFile)
   const currSheets = await parseExcelFileAllSheets(currFile)
 
-  const allTabsMap = new Map()  // normKey → 표시용 tabName (curr 우선)
-  for (const s of prevSheets) {
-    const k = normTab(s.tabName)
-    if (!allTabsMap.has(k)) allTabsMap.set(k, s.tabName)
-  }
-  for (const s of currSheets) {
-    const k = normTab(s.tabName)
-    allTabsMap.set(k, s.tabName)  // curr 가 표시용 우선
-  }
+  const tabUnionSize = new Set([
+    ...prevSheets.map((s) => normTab(s.tabName)),
+    ...currSheets.map((s) => normTab(s.tabName))
+  ]).size
 
   // 단일 모드 (탭 합집합 ≤ 1)
-  if (allTabsMap.size <= 1) {
+  if (tabUnionSize <= 1) {
     const prev = prevSheets[0]
     const curr = currSheets[0]
     const brand = extractBrandName(
@@ -1433,49 +1428,19 @@ export async function generateReport(prevFile, currFile, opt) {
     return [{ ...result, tabName: null }]
   }
 
-  // 다중 모드
-  const brandByTab = opt.brandByTab || {}
-  const results = []
-  const errors = []
-
-  for (const [tabKey, tabDisplay] of allTabsMap) {
-    const prevSheet = prevSheets.find((s) => normTab(s.tabName) === tabKey)
-    const currSheet = currSheets.find((s) => normTab(s.tabName) === tabKey)
-
-    // 한쪽에만 있는 탭은 빈 rows 로 대체 (전월/당월 0건 처리)
-    // hasBusinessDivision 은 데이터 있는 쪽 기준
-    const prevForCalc = prevSheet || {
-      rows: [],
-      hasBusinessDivision: currSheet?.hasBusinessDivision || false
-    }
-    const currForCalc = currSheet || {
-      rows: [],
-      hasBusinessDivision: prevSheet?.hasBusinessDivision || false
-    }
-
-    // curr 에 데이터 없으면 보고서 생성 의미 없음 — skip
-    if (!currSheet || currSheet.rows.length === 0) continue
-
-    const brand =
-      clean(brandByTab[tabKey]) ||
-      extractBrandName(currSheet.rows, tabDisplay)
-
-    try {
-      const result = await generateOneReport(prevForCalc, currForCalc, brand, opt)
-      results.push({ ...result, tabName: tabDisplay })
-    } catch (e) {
-      errors.push(`[${tabDisplay}] ${e.message}`)
-    }
+  // 다중 모드 — 모든 탭 rows 를 합쳐서 단일 풀로
+  const mergedPrev = {
+    rows: prevSheets.flatMap((s) => s.rows),
+    hasBusinessDivision: prevSheets.some((s) => s.hasBusinessDivision)
   }
-
-  if (results.length === 0) {
-    throw new Error(
-      '생성된 보고서가 없습니다.' + (errors.length ? '\n' + errors.join('\n') : '')
-    )
+  const mergedCurr = {
+    rows: currSheets.flatMap((s) => s.rows),
+    hasBusinessDivision: currSheets.some((s) => s.hasBusinessDivision)
   }
-  if (errors.length) {
-    // 일부 실패는 results 에 _errors 로 첨부 (UI 가 표시)
-    results._errors = errors
-  }
-  return results
+  const brand =
+    clean(opt.mergedBrand) ||
+    currFile.name?.replace(/\.xlsx?$/i, '') ||
+    '브랜드'
+  const result = await generateOneReport(mergedPrev, mergedCurr, brand, opt)
+  return [{ ...result, tabName: null, mergedTabCount: tabUnionSize }]
 }
