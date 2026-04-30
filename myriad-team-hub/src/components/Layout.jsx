@@ -1,8 +1,10 @@
-import { NavLink, Outlet } from 'react-router-dom'
+import { useEffect } from 'react'
+import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { LayoutDashboard, StickyNote, CalendarDays, FileSpreadsheet, BarChart3, Wrench, Cpu, History, Users, ShieldCheck, LogOut, Bell, X } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useDailyReminder } from '../hooks/useDailyReminder'
 import NotificationBell from './NotificationBell'
+import { attachSwNavigationListener } from '../lib/push'
 
 const BASE_NAV = [
   { to: '/', label: '대시보드', icon: LayoutDashboard, end: true },
@@ -21,6 +23,13 @@ export default function Layout() {
   const { user, signOut, isAdmin } = useAuth()
   const nav = isAdmin ? [...BASE_NAV, ADMIN_NAV] : BASE_NAV
   const { toast, dismissToast, openToast } = useDailyReminder()
+  const navigate = useNavigate()
+
+  // SW 가 push 알림 클릭 시 보내는 'navigate' 메시지를 react-router 로 처리.
+  // 이미 열려있는 탭에서 알림 클릭 → 풀 페이지 리로드 없이 라우팅 이동.
+  useEffect(() => {
+    return attachSwNavigationListener(navigate)
+  }, [navigate])
 
   return (
     <div className="h-full flex">

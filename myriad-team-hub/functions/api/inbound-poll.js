@@ -473,16 +473,19 @@ async function processMessage({ messageId, accessToken, mappings, keywords, read
     .single()
   if (caseErr) throw caseErr
 
-  // 알림 — 담당자에게
+  // 알림 — 담당자에게.
+  // notifications 스키마: recipient_id / actor_id / link / payload (mig 020).
+  // 옛 컬럼명 (user_id / target_type / target_id / created_by) 으로 박으면
+  // 무한 silent fail (catch 가 삼킴). 정정 — Phase 17 push 알림 트리거 작동 위해 필수.
   if (matched.default_assignee_id) {
     await adminSb.from('notifications').insert({
-      user_id: matched.default_assignee_id,
+      recipient_id: matched.default_assignee_id,
       type: 'case_inbound_assigned',
       title: `[${matched.brand}] 신규 신고 메일 자동 등록`,
       body: subject.slice(0, 200),
-      target_type: 'case',
-      target_id: newCase.id,
-      created_by: reader.user_id
+      link: `/cases/${newCase.id}`,
+      actor_id: reader.user_id,
+      payload: { case_id: newCase.id, brand: matched.brand }
     }).then(() => {}).catch(() => {})
   }
 

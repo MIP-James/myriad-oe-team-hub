@@ -5,11 +5,18 @@
  *  - 브라우저 알림 권한 요청 버튼
  */
 import { useEffect, useState } from 'react'
-import { X, Bell, BellOff, Loader2, Save, AlertTriangle, CheckCircle2, Send } from 'lucide-react'
+import { X, Bell, BellOff, Loader2, Save, AlertTriangle, CheckCircle2, Send, Monitor } from 'lucide-react'
 import { saveReminderSettings, getReminderSettings } from '../lib/weekly'
 import { timeToHHMM } from '../lib/dateHelpers'
 import { useAuth } from '../contexts/AuthContext'
 import { REMINDER_SETTINGS_CHANGED } from '../hooks/useDailyReminder'
+import {
+  isPushSupported,
+  getPermissionState,
+  getCurrentSubscription,
+  subscribePush,
+  unsubscribePush
+} from '../lib/push'
 
 export default function ReminderSettingsModal({ onClose, onSaved }) {
   const { user } = useAuth()
@@ -19,9 +26,10 @@ export default function ReminderSettingsModal({ onClose, onSaved }) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
-  const [permission, setPermission] = useState(
-    typeof Notification !== 'undefined' ? Notification.permission : 'unsupported'
-  )
+  const [permission, setPermission] = useState(getPermissionState())
+  const [pushSubscribed, setPushSubscribed] = useState(false)
+  const [pushBusy, setPushBusy] = useState(false)
+  const [pushError, setPushError] = useState(null)
 
   useEffect(() => {
     let cancelled = false
@@ -37,6 +45,9 @@ export default function ReminderSettingsModal({ onClose, onSaved }) {
             setMinute(mm)
           }
         }
+        // 현재 push 구독 상태 확인
+        const sub = await getCurrentSubscription()
+        if (!cancelled) setPushSubscribed(!!sub)
       } catch (e) {
         console.warn('[reminder] load:', e?.message)
       } finally {
@@ -47,13 +58,24 @@ export default function ReminderSettingsModal({ onClose, onSaved }) {
     return () => { cancelled = true }
   }, [user?.id])
 
-  async function requestPermission() {
-    if (typeof Notification === 'undefined') return
+  async function togglePush() {
+    setPushBusy(true)
+    setPushError(null)
     try {
-      const result = await Notification.requestPermission()
-      setPermission(result)
-    } catch {
-      setPermission('denied')
+      if (pushSubscribed) {
+        await unsubscribePush()
+        setPushSubscribed(false)
+      } else {
+        await subscribePush()
+        setPushSubscribed(true)
+        setPermission('granted')
+      }
+    } catch (e) {
+      setPushError(e?.message || String(e))
+      // 권한 상태 갱신
+      setPermission(getPermissionState())
+    } finally {
+      setPushBusy(false)
     }
   }
 
@@ -169,36 +191,56 @@ export default function ReminderSettingsModal({ onClose, onSaved }) {
               </div>
             </div>
 
-            {/* 브라우저 알림 권한 */}
-            <div className="border border-slate-200 rounded-lg p-3">
-              <div className="text-xs font-semibold text-slate-600 mb-2">윈도우 알림 권한</div>
-              {permission === 'granted' && (
-                <div className="text-xs text-emerald-700 flex items-center gap-1">
-                  <CheckCircle2 size={12} /> 허용됨 — 사이트 열려있을 때 윈도우 알림이 떠요
+            {/* PC 알림 (PWA push) — 브라우저 닫혀있어도 윈도우 토스트 도달 */}
+            <div className="border border-slate-200 rounded-lg p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Monitor size={14} className="text-myriad-ink" />
+                  <span className="text-xs font-semibold text-slate-700">PC 알림 (윈도우 토스트)</span>
                 </div>
-              )}
-              {permission === 'default' && (
-                <div className="space-y-2">
-                  <p className="text-xs text-slate-500">
-                    아직 권한을 요청하지 않았어요. 윈도우 알림을 받으려면 허용해주세요.
-                    (사이트가 열려있을 때만 작동)
-                  </p>
+                {isPushSupported() ? (
                   <button
-                    onClick={requestPermission}
-                    className="text-xs bg-myriad-primary hover:bg-myriad-primaryDark text-myriad-ink font-semibold px-3 py-1.5 rounded-lg"
+                    type="button"
+                    onClick={togglePush}
+                    disabled={pushBusy}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors disabled:opacity-50 ${
+                      pushSubscribed ? 'bg-myriad-primary' : 'bg-slate-300'
+                    }`}
                   >
-                    권한 요청
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                        pushSubscribed ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
                   </button>
+                ) : (
+                  <span className="text-[11px] text-slate-400">미지원 브라우저</span>
+                )}
+              </div>
+
+              {pushSubscribed && (
+                <div className="text-[11px] text-emerald-700 flex items-center gap-1">
+                  <CheckCircle2 size={11} />
+                  켜짐 — 브라우저 닫혀있어도 케이스/일정/보고서 알림이 윈도우 토스트로 도착합니다
                 </div>
               )}
-              {permission === 'denied' && (
-                <div className="text-xs text-amber-700 flex items-start gap-1">
-                  <AlertTriangle size={12} className="mt-0.5 shrink-0" />
-                  <span>차단됨. 브라우저 주소창 왼쪽 자물쇠 아이콘 → 알림 권한을 직접 허용해주세요. 권한 없어도 사이트 열려있을 땐 우측 하단 토스트로 표시돼요.</span>
+              {!pushSubscribed && permission === 'denied' && (
+                <div className="text-[11px] text-amber-700 flex items-start gap-1">
+                  <AlertTriangle size={11} className="mt-0.5 shrink-0" />
+                  <span>차단된 상태. Chrome 주소창 왼쪽 자물쇠 → 알림 → 허용으로 변경 후 다시 켜주세요.</span>
                 </div>
               )}
-              {permission === 'unsupported' && (
-                <div className="text-xs text-slate-500">이 브라우저는 알림을 지원하지 않습니다.</div>
+              {!pushSubscribed && permission !== 'denied' && (
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                  켜면 본 PC + 사용 중인 다른 PC 의 Chrome 모두에서 알림 받습니다.
+                  Chrome 이 백그라운드에 살아있으면 사이트 닫혀있어도 토스트가 떠요.
+                </p>
+              )}
+              {pushError && (
+                <div className="text-[11px] text-rose-600 flex items-start gap-1">
+                  <AlertTriangle size={11} className="mt-0.5 shrink-0" />
+                  <span>{pushError}</span>
+                </div>
               )}
             </div>
 
