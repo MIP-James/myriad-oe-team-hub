@@ -40,7 +40,7 @@ if errorlevel 1 goto err_pyi
 
 echo.
 echo Step 4/6: Verify imports
-python -c "import supabase, pystray; from PIL import Image; import winotify; import os; print('supabase at:', os.path.dirname(supabase.__file__)); print('imports OK')"
+python -c "import httpx, pystray; from PIL import Image; import winotify; import os; print('httpx at:', os.path.dirname(httpx.__file__)); print('imports OK')"
 if errorlevel 1 goto err_imports
 
 python make_icon.py
@@ -80,7 +80,7 @@ if errorlevel 1 goto err_build_setup
 if not exist dist\MyriadSetup\MyriadSetup.exe goto err_missing_setup
 
 REM Merge Setup's _internal into shared dist\_internal then move exe to root.
-REM Launcher and Setup share supabase/httpx/etc. - same file bytes, safe to overwrite.
+REM Launcher and Setup share httpx/anyio/etc. - same file bytes, safe to overwrite.
 echo [merge] merging MyriadSetup\_internal into dist\_internal (shared)
 attrib -h dist\_internal
 xcopy /Y /E /Q dist\MyriadSetup\_internal\* dist\_internal\ > nul
