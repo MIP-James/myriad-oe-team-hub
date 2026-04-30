@@ -82,21 +82,14 @@ export function normalizeReportMonth(s) {
 }
 
 // ---------------- Excel 파싱 ----------------
-export async function parseExcelFile(file) {
-  const buffer = await file.arrayBuffer()
-  const wb = new ExcelJS.Workbook()
-  await wb.xlsx.load(buffer)
-  const sheet = wb.worksheets[0]
-  if (!sheet) throw new Error('엑셀 파일에 시트가 없습니다.')
-
-  // 헤더 추출
+// 단일 시트 파싱 — exceljs Worksheet 객체 받아서 {tabName, rows, hasBusinessDivision}
+function parseSingleSheet(sheet) {
   const headerRow = sheet.getRow(1)
   const headers = []
   headerRow.eachCell({ includeEmpty: false }, (cell, colNumber) => {
     headers[colNumber] = clean(cell.value)
   })
 
-  // 데이터 행 추출
   const rows = []
   const rowCount = sheet.rowCount
   for (let r = 2; r <= rowCount; r++) {
@@ -124,7 +117,7 @@ export async function parseExcelFile(file) {
   const missing = REQUIRED_COLUMNS.filter((c) => !headerSet.has(c))
   if (missing.length) {
     throw new Error(
-      `필수 컬럼이 누락되었습니다: ${missing.join(', ')}\n현재 컬럼: ${[...headerSet].join(', ')}`
+      `[시트: ${sheet.name}] 필수 컬럼이 누락되었습니다: ${missing.join(', ')}\n현재 컬럼: ${[...headerSet].join(', ')}`
     )
   }
 
@@ -141,7 +134,37 @@ export async function parseExcelFile(file) {
     r['제품명(정규화)'] = clean(r['Product Name'] || '')
   }
 
-  return { rows, hasBusinessDivision: headerSet.has('Business Division') }
+  return {
+    tabName: sheet.name || '',
+    rows,
+    hasBusinessDivision: headerSet.has('Business Division')
+  }
+}
+
+// 모든 시트 파싱 — 다중 탭 지원
+export async function parseExcelFileAllSheets(file) {
+  const buffer = await file.arrayBuffer()
+  const wb = new ExcelJS.Workbook()
+  await wb.xlsx.load(buffer)
+  if (!wb.worksheets.length) throw new Error('엑셀 파일에 시트가 없습니다.')
+  return wb.worksheets.map((sheet) => parseSingleSheet(sheet))
+}
+
+// 가벼운 탭 목록 검사용 — UI 에서 자동 prefill brand 추출
+// 반환: [{ tabName, autoBrand }]
+export async function inspectExcelTabs(file) {
+  const sheets = await parseExcelFileAllSheets(file)
+  return sheets.map((s) => ({
+    tabName: s.tabName,
+    autoBrand: extractBrandName(s.rows, s.tabName || '')
+  }))
+}
+
+// 기존 호환 — 첫 시트만 반환
+export async function parseExcelFile(file) {
+  const sheets = await parseExcelFileAllSheets(file)
+  const first = sheets[0]
+  return { rows: first.rows, hasBusinessDivision: first.hasBusinessDivision }
 }
 
 // ---------------- 집계 ----------------
@@ -1360,14 +1383,99 @@ export async function buildReportWorkbook(prev, curr, opt) {
 }
 
 // ---------------- 고수준 래퍼 ----------------
-export async function generateReport(prevFile, currFile, opt) {
-  const prev = await parseExcelFile(prevFile)
-  const curr = await parseExcelFile(currFile)
-  const brand = extractBrandName(curr.rows, currFile.name?.replace(/\.xlsx?$/i, '') || '브랜드')
+// 단일 보고서 생성 — 내부 헬퍼
+async function generateOneReport(prev, curr, brand, opt) {
   const { workbook, useDivision } = await buildReportWorkbook(prev, curr, opt)
-
   const buffer = await workbook.xlsx.writeBuffer()
   const safeBrand = brand.replace(/[\\/:*?"<>|]+/g, '_').trim() || '브랜드'
   const fileName = `${safeBrand}_월간동향_${opt.reportMonth}_Top${opt.topN}.xlsx`
   return { buffer, fileName, brand, useDivision }
+}
+
+// 탭 이름 정규화 (대소문자 무시 매칭용)
+function normTab(s) {
+  return String(s || '').trim().toLowerCase()
+}
+
+// 다중 시트 보고서 생성 — 결과 배열 반환
+// opt.brandByTab = { [tabNameLowerTrim]: 'CustomerName' } (선택)
+//
+// 동작:
+//   - prev/curr 양쪽 시트 합집합으로 판단
+//   - 합집합 길이 ≤ 1 → 단일 모드 (기존 동작) → [1개 결과]
+//   - 합집합 길이 ≥ 2 → 다중 모드:
+//       * brandByTab[tabName] 우선 사용
+//       * 없으면 자동 추출 (extractBrandName + 탭이름 fallback)
+//       * 한쪽에만 있는 탭은 0건짜리 빈 시트로 대체해서 비교
+export async function generateReport(prevFile, currFile, opt) {
+  const prevSheets = await parseExcelFileAllSheets(prevFile)
+  const currSheets = await parseExcelFileAllSheets(currFile)
+
+  const allTabsMap = new Map()  // normKey → 표시용 tabName (curr 우선)
+  for (const s of prevSheets) {
+    const k = normTab(s.tabName)
+    if (!allTabsMap.has(k)) allTabsMap.set(k, s.tabName)
+  }
+  for (const s of currSheets) {
+    const k = normTab(s.tabName)
+    allTabsMap.set(k, s.tabName)  // curr 가 표시용 우선
+  }
+
+  // 단일 모드 (탭 합집합 ≤ 1)
+  if (allTabsMap.size <= 1) {
+    const prev = prevSheets[0]
+    const curr = currSheets[0]
+    const brand = extractBrandName(
+      curr.rows,
+      currFile.name?.replace(/\.xlsx?$/i, '') || '브랜드'
+    )
+    const result = await generateOneReport(prev, curr, brand, opt)
+    return [{ ...result, tabName: null }]
+  }
+
+  // 다중 모드
+  const brandByTab = opt.brandByTab || {}
+  const results = []
+  const errors = []
+
+  for (const [tabKey, tabDisplay] of allTabsMap) {
+    const prevSheet = prevSheets.find((s) => normTab(s.tabName) === tabKey)
+    const currSheet = currSheets.find((s) => normTab(s.tabName) === tabKey)
+
+    // 한쪽에만 있는 탭은 빈 rows 로 대체 (전월/당월 0건 처리)
+    // hasBusinessDivision 은 데이터 있는 쪽 기준
+    const prevForCalc = prevSheet || {
+      rows: [],
+      hasBusinessDivision: currSheet?.hasBusinessDivision || false
+    }
+    const currForCalc = currSheet || {
+      rows: [],
+      hasBusinessDivision: prevSheet?.hasBusinessDivision || false
+    }
+
+    // curr 에 데이터 없으면 보고서 생성 의미 없음 — skip
+    if (!currSheet || currSheet.rows.length === 0) continue
+
+    const brand =
+      clean(brandByTab[tabKey]) ||
+      extractBrandName(currSheet.rows, tabDisplay)
+
+    try {
+      const result = await generateOneReport(prevForCalc, currForCalc, brand, opt)
+      results.push({ ...result, tabName: tabDisplay })
+    } catch (e) {
+      errors.push(`[${tabDisplay}] ${e.message}`)
+    }
+  }
+
+  if (results.length === 0) {
+    throw new Error(
+      '생성된 보고서가 없습니다.' + (errors.length ? '\n' + errors.join('\n') : '')
+    )
+  }
+  if (errors.length) {
+    // 일부 실패는 results 에 _errors 로 첨부 (UI 가 표시)
+    results._errors = errors
+  }
+  return results
 }

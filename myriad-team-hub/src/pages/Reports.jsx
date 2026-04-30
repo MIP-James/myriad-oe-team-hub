@@ -2,15 +2,20 @@ import { useState, useCallback, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import {
   BarChart3, Upload, FileSpreadsheet, Download, Loader2, CheckCircle2,
-  AlertCircle, RefreshCw, Calendar, FolderOpen, Save
+  AlertCircle, RefreshCw, Calendar, FolderOpen, Save, Layers
 } from 'lucide-react'
-import { generateReport, normalizeReportMonth } from '../lib/reportGenerator'
+import { generateReport, normalizeReportMonth, inspectExcelTabs } from '../lib/reportGenerator'
 import {
   getOrCreateGroup, uploadBrandReport, listGroups, updateBrandReportGoogleSheet
 } from '../lib/reportStore'
 import { uploadExcelAsSheet, GoogleAuthRequiredError } from '../lib/googleDrive'
 import { logActivity } from '../lib/community'
 import { useAuth } from '../contexts/AuthContext'
+
+// 탭 이름 정규화 (대소문자/공백 무시 매칭용 키)
+function normTabKey(s) {
+  return String(s || '').trim().toLowerCase()
+}
 
 const DEFAULT_REPORT_MONTH = () => {
   const d = new Date()
@@ -25,12 +30,73 @@ export default function Reports() {
   const [topN, setTopN] = useState(3)
   const [saveToGroup, setSaveToGroup] = useState(true)
   const [running, setRunning] = useState(false)
-  const [result, setResult] = useState(null)
+  // result 는 항상 배열 (단일 모드도 길이 1) — 결과 카드 표시용
+  const [results, setResults] = useState(null)
   const [error, setError] = useState(null)
   const [log, setLog] = useState([])
   const [recentGroups, setRecentGroups] = useState([])
+  // 다중 시트 탭 합집합 — [{ tabKey, tabDisplay, autoBrand }]
+  const [tabUnion, setTabUnion] = useState([])
+  // 사용자가 입력한 고객사명 — { tabKey: brandName }
+  const [brandByTab, setBrandByTab] = useState({})
+  const [inspecting, setInspecting] = useState(false)
+  const [inspectError, setInspectError] = useState(null)
 
   useEffect(() => { loadRecent() }, [])
+
+  // 두 파일 모두 선택되면 탭 합집합 자동 검사
+  useEffect(() => {
+    if (!prevFile || !currFile) {
+      setTabUnion([])
+      setBrandByTab({})
+      setInspectError(null)
+      return
+    }
+    let cancelled = false
+    setInspecting(true)
+    setInspectError(null)
+    Promise.all([inspectExcelTabs(prevFile), inspectExcelTabs(currFile)])
+      .then(([prevTabs, currTabs]) => {
+        if (cancelled) return
+        const map = new Map()  // tabKey → { tabDisplay, autoBrand }
+        for (const t of prevTabs) {
+          const k = normTabKey(t.tabName)
+          if (!map.has(k)) map.set(k, { tabDisplay: t.tabName, autoBrand: t.autoBrand })
+        }
+        for (const t of currTabs) {
+          const k = normTabKey(t.tabName)
+          // curr 가 표시 우선 + autoBrand 도 curr 우선 (당월 데이터가 더 신뢰)
+          map.set(k, { tabDisplay: t.tabName, autoBrand: t.autoBrand })
+        }
+        const union = [...map.entries()].map(([tabKey, v]) => ({
+          tabKey, tabDisplay: v.tabDisplay, autoBrand: v.autoBrand
+        }))
+        setTabUnion(union)
+        // prefill — 사용자 기존 입력값 보존, 신규 탭만 autoBrand 로 채움
+        setBrandByTab((prev) => {
+          const next = { ...prev }
+          for (const u of union) {
+            if (next[u.tabKey] == null || next[u.tabKey] === '') {
+              next[u.tabKey] = u.autoBrand || ''
+            }
+          }
+          // 합집합에 없는 키 정리
+          for (const k of Object.keys(next)) {
+            if (!union.find((u) => u.tabKey === k)) delete next[k]
+          }
+          return next
+        })
+      })
+      .catch((e) => {
+        if (cancelled) return
+        setInspectError(e.message)
+        setTabUnion([])
+      })
+      .finally(() => {
+        if (!cancelled) setInspecting(false)
+      })
+    return () => { cancelled = true }
+  }, [prevFile, currFile])
 
   async function loadRecent() {
     try {
@@ -49,15 +115,31 @@ export default function Reports() {
 
   async function handleGenerate() {
     setError(null)
-    setResult(null)
+    // 기존 results 의 blob URL 정리
+    if (results) {
+      for (const r of results) if (r.url) URL.revokeObjectURL(r.url)
+    }
+    setResults(null)
     setLog([])
     if (!prevFile) return setError('직전달 엑셀 파일을 선택하세요.')
     if (!currFile) return setError('이번달 엑셀 파일을 선택하세요.')
+
+    // 다중 탭 모드면 모든 입력란 채워졌는지 검증
+    if (tabUnion.length >= 2) {
+      const empty = tabUnion.filter((u) => !String(brandByTab[u.tabKey] || '').trim())
+      if (empty.length) {
+        return setError(
+          `다중 시트 탭이 감지됐습니다. 모든 탭의 고객사명을 입력해주세요.\n비어있는 탭: ${empty.map((e) => e.tabDisplay).join(', ')}`
+        )
+      }
+    }
+
     let opt
     try {
       opt = {
         reportMonth: normalizeReportMonth(reportMonth),
-        topN: Math.max(3, Math.min(5, Number(topN) || 3))
+        topN: Math.max(3, Math.min(5, Number(topN) || 3)),
+        brandByTab: tabUnion.length >= 2 ? brandByTab : undefined
       }
     } catch (e) {
       return setError(e.message)
@@ -67,68 +149,92 @@ export default function Reports() {
     try {
       appendLog('엑셀 파일 파싱 중...')
       await new Promise((r) => setTimeout(r, 10))
-      const { buffer, fileName, brand, useDivision } = await generateReport(
-        prevFile,
-        currFile,
-        opt
-      )
-      appendLog(`브랜드 인식: ${brand} · 집계 기준: ${useDivision ? '사업부' : '상품유형'}`)
+      const generated = await generateReport(prevFile, currFile, opt)
+      // generated 는 항상 배열 (단일 모드도 길이 1)
+      if (generated._errors?.length) {
+        for (const msg of generated._errors) appendLog(`⚠ ${msg}`)
+      }
+      appendLog(`보고서 ${generated.length}건 생성됨`)
 
-      const blob = new Blob([buffer], {
-        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-      })
-      const url = URL.createObjectURL(blob)
-      let savedReport = null
-
+      // 그룹 1번만 만들고 모든 보고서를 같은 그룹에 저장
+      let group = null
       if (saveToGroup) {
         appendLog(`그룹 확인/생성 중 (${opt.reportMonth})...`)
-        const group = await getOrCreateGroup(opt.reportMonth, user?.id)
-        appendLog(`Storage 업로드 중...`)
-        savedReport = await uploadBrandReport({
-          groupId: group.id,
-          brandName: brand,
-          reportMonth: opt.reportMonth,
-          topN: opt.topN,
-          excelBuffer: buffer,
-          fileName,
-          userId: user?.id
-        })
-        appendLog(`그룹 "${group.title}" 에 "${brand}" 보고서 저장 완료`)
-        logActivity('report_generated', {
-          target_type: 'brand_report',
-          target_id: savedReport.id,
-          payload: { brand, month: opt.reportMonth, group_id: group.id }
-        })
-
-        // Google Drive 로 자동 업로드 (Sheets 변환)
-        if (googleAccessToken) {
-          try {
-            appendLog('Google Drive 에 Sheet 로 업로드 중...')
-            const sheetName = `${brand} ${opt.reportMonth} 월간동향`
-            const driveResult = await uploadExcelAsSheet(
-              googleAccessToken,
-              buffer,
-              sheetName
-            )
-            await updateBrandReportGoogleSheet(savedReport.id, driveResult.webViewLink)
-            savedReport.google_sheet_url = driveResult.webViewLink
-            appendLog(`✓ Google Sheets 생성: ${driveResult.webViewLink}`)
-          } catch (ge) {
-            if (ge instanceof GoogleAuthRequiredError) {
-              appendLog('⚠ Google 연결 만료/없음. 재로그인 후 그룹 화면에서 "Sheet 생성" 재시도 가능.')
-            } else {
-              appendLog('⚠ Google Sheets 업로드 실패: ' + ge.message)
-            }
-          }
-        } else {
-          appendLog('ℹ Google 연결 없음 — 그룹 화면에서 수동으로 "Sheet 생성" 가능')
-        }
-      } else {
-        appendLog('그룹 저장 스킵 (다운로드만)')
+        group = await getOrCreateGroup(opt.reportMonth, user?.id)
       }
 
-      appendLog(`파일 준비됨: ${fileName}`)
-      setResult({ url, fileName, brand, useDivision, opt, savedReport })
+      const finalResults = []
+      for (let i = 0; i < generated.length; i++) {
+        const g = generated[i]
+        const tabLabel = g.tabName ? ` [${g.tabName}]` : ''
+        appendLog(
+          `(${i + 1}/${generated.length})${tabLabel} 브랜드: ${g.brand} · 집계 기준: ${g.useDivision ? '사업부' : '상품유형'}`
+        )
+
+        const blob = new Blob([g.buffer], {
+          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        })
+        const url = URL.createObjectURL(blob)
+        let savedReport = null
+
+        if (saveToGroup && group) {
+          try {
+            appendLog(`(${i + 1}/${generated.length}) Storage 업로드 중...`)
+            savedReport = await uploadBrandReport({
+              groupId: group.id,
+              brandName: g.brand,
+              reportMonth: opt.reportMonth,
+              topN: opt.topN,
+              excelBuffer: g.buffer,
+              fileName: g.fileName,
+              userId: user?.id
+            })
+            appendLog(`✓ "${g.brand}" 보고서 저장 완료`)
+            logActivity('report_generated', {
+              target_type: 'brand_report',
+              target_id: savedReport.id,
+              payload: { brand: g.brand, month: opt.reportMonth, group_id: group.id }
+            })
+          } catch (e) {
+            appendLog(`⚠ "${g.brand}" Storage 저장 실패: ${e.message}`)
+          }
+
+          if (savedReport && googleAccessToken) {
+            try {
+              appendLog(`(${i + 1}/${generated.length}) Google Drive 에 Sheet 로 업로드 중...`)
+              const sheetName = `${g.brand} ${opt.reportMonth} 월간동향`
+              const driveResult = await uploadExcelAsSheet(
+                googleAccessToken,
+                g.buffer,
+                sheetName
+              )
+              await updateBrandReportGoogleSheet(savedReport.id, driveResult.webViewLink)
+              savedReport.google_sheet_url = driveResult.webViewLink
+              appendLog(`✓ Google Sheets 생성: ${sheetName}`)
+            } catch (ge) {
+              if (ge instanceof GoogleAuthRequiredError) {
+                appendLog(`⚠ Google 세션 만료. 재로그인 후 그룹 화면에서 "Sheet 생성" 재시도 가능.`)
+              } else {
+                appendLog(`⚠ "${g.brand}" Google Sheets 업로드 실패: ${ge.message}`)
+              }
+            }
+          }
+        }
+
+        finalResults.push({
+          url, fileName: g.fileName, brand: g.brand,
+          useDivision: g.useDivision, tabName: g.tabName,
+          opt, savedReport
+        })
+      }
+
+      if (!saveToGroup) appendLog('그룹 저장 스킵 (다운로드만)')
+      if (saveToGroup && !googleAccessToken) {
+        appendLog('ℹ Google 연결 없음 — 그룹 화면에서 수동으로 "Sheet 생성" 가능')
+      }
+
+      appendLog(`완료 — ${finalResults.length}건`)
+      setResults(finalResults)
       loadRecent()
     } catch (e) {
       console.error(e)
@@ -140,12 +246,17 @@ export default function Reports() {
   }
 
   function reset() {
-    if (result?.url) URL.revokeObjectURL(result.url)
+    if (results) {
+      for (const r of results) if (r.url) URL.revokeObjectURL(r.url)
+    }
     setPrevFile(null)
     setCurrFile(null)
-    setResult(null)
+    setResults(null)
     setError(null)
     setLog([])
+    setTabUnion([])
+    setBrandByTab({})
+    setInspectError(null)
   }
 
   return (
@@ -160,7 +271,7 @@ export default function Reports() {
         >
           <FolderOpen size={14} /> 전체 보고서 그룹
         </Link>
-        {(prevFile || currFile || result) && (
+        {(prevFile || currFile || results) && (
           <button
             onClick={reset}
             className="text-sm text-slate-500 hover:text-slate-900 flex items-center gap-1"
@@ -262,8 +373,56 @@ export default function Reports() {
         <p className="text-[11px] text-slate-400 mt-3">
           필수 컬럼: <code>Platform</code>, <code>Model Type</code> (또는 <code>Product Model Type</code>), <code>Infringement Type</code>.
           선택: <code>Business Division</code>, <code>Client</code>.
+          <br />
+          <b>여러 고객사를 한 파일에 담으려면</b> 시트 탭을 고객사별로 분리해서 업로드하세요.
         </p>
       </section>
+
+      {/* 탭 검사 진행/에러 */}
+      {inspecting && (
+        <div className="mb-4 bg-slate-50 border border-slate-200 text-slate-600 text-xs rounded-lg p-3 flex items-center gap-2">
+          <Loader2 size={12} className="animate-spin" /> 시트 탭 구조 확인 중...
+        </div>
+      )}
+      {inspectError && (
+        <div className="mb-4 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-lg p-3 flex items-start gap-2">
+          <AlertCircle size={16} className="shrink-0 mt-0.5" />
+          <span className="whitespace-pre-wrap">시트 검사 실패: {inspectError}</span>
+        </div>
+      )}
+
+      {/* 다중 탭 감지 시 — 고객사명 입력 UI */}
+      {tabUnion.length >= 2 && (
+        <section className="bg-sky-50 border border-sky-200 rounded-2xl p-5 mb-4">
+          <h2 className="font-semibold text-slate-900 mb-1 flex items-center gap-2">
+            <Layers size={16} className="text-sky-700" /> 다중 시트 감지 — 탭별 고객사명 입력
+          </h2>
+          <p className="text-xs text-slate-600 mb-3">
+            <b>{tabUnion.length}개의 시트 탭</b>이 발견됐습니다. 탭별로 보고서가 따로 생성되며,
+            아래 입력값이 팀 허브 카드 제목 + Google Sheet 제목 (<code>{'{고객사명}'} {reportMonth} 월간동향</code>) 으로 사용됩니다.
+            자동 추출값이 미리 채워져 있으니 필요 시 수정하세요.
+          </p>
+          <div className="space-y-2">
+            {tabUnion.map((u) => (
+              <div key={u.tabKey} className="flex items-center gap-3">
+                <div className="text-xs font-mono text-slate-500 bg-white border border-slate-200 px-2 py-1.5 rounded min-w-[140px] truncate" title={u.tabDisplay}>
+                  📄 {u.tabDisplay}
+                </div>
+                <span className="text-slate-400 text-xs">→</span>
+                <input
+                  type="text"
+                  value={brandByTab[u.tabKey] || ''}
+                  onChange={(e) =>
+                    setBrandByTab((prev) => ({ ...prev, [u.tabKey]: e.target.value }))
+                  }
+                  placeholder="고객사명 입력 (예: TBH global)"
+                  className="flex-1 px-3 py-1.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-400/40 text-sm"
+                />
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <div className="flex gap-3 mb-4">
         <button
@@ -305,50 +464,73 @@ export default function Reports() {
         </section>
       )}
 
-      {result && (
-        <section className="bg-emerald-50 border border-emerald-200 rounded-2xl p-5">
-          <div className="flex items-start gap-3 mb-4">
+      {results && results.length > 0 && (
+        <section className="space-y-3">
+          <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 flex items-start gap-3">
             <CheckCircle2 className="text-emerald-600 shrink-0 mt-0.5" />
             <div className="flex-1">
-              <h3 className="font-bold text-emerald-900">보고서 생성 완료</h3>
-              <div className="text-xs text-emerald-800 mt-1 space-y-0.5">
-                <div>
-                  브랜드: <b>{result.brand}</b>
-                </div>
-                <div>
-                  보고월: <b>{result.opt.reportMonth}</b> · Top {result.opt.topN}
-                </div>
-                <div>
-                  집계 기준: <b>{result.useDivision ? '사업부' : '상품 유형'}</b>
-                </div>
-                <div>
-                  파일명: <code>{result.fileName}</code>
-                </div>
-                {result.savedReport && (
-                  <div className="mt-2 inline-flex items-center gap-1 bg-white px-2 py-1 rounded border border-emerald-300">
-                    <Save size={12} /> 그룹 저장됨 (상태: 수정 중)
-                  </div>
-                )}
+              <h3 className="font-bold text-emerald-900">
+                보고서 생성 완료 — 총 {results.length}건
+              </h3>
+              <div className="text-xs text-emerald-800 mt-0.5">
+                보고월: <b>{results[0].opt.reportMonth}</b> · Top {results[0].opt.topN}
               </div>
             </div>
-          </div>
-          <div className="flex gap-2 flex-wrap">
-            <a
-              href={result.url}
-              download={result.fileName}
-              className="inline-flex items-center gap-2 bg-myriad-primary hover:bg-myriad-primaryDark text-myriad-ink font-semibold px-4 py-2 rounded-lg"
-            >
-              <Download size={16} /> Excel 다운로드
-            </a>
-            {result.savedReport && (
+            {results[0].savedReport?.group_id && (
               <Link
-                to={`/reports/groups/${result.savedReport.group_id}`}
-                className="inline-flex items-center gap-2 bg-white border border-emerald-300 hover:bg-emerald-100 text-emerald-800 font-semibold px-4 py-2 rounded-lg"
+                to={`/reports/groups/${results[0].savedReport.group_id}`}
+                className="inline-flex items-center gap-2 bg-white border border-emerald-300 hover:bg-emerald-100 text-emerald-800 font-semibold px-3 py-1.5 rounded-lg text-sm shrink-0"
               >
-                <FolderOpen size={16} /> 그룹에서 보기
+                <FolderOpen size={14} /> 그룹에서 보기
               </Link>
             )}
           </div>
+          {results.map((r, i) => (
+            <div key={i} className="bg-white border border-emerald-200 rounded-2xl p-4">
+              <div className="flex items-start gap-3 mb-3">
+                <div className="w-9 h-9 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center text-base shrink-0">
+                  📊
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-bold text-slate-900 truncate">
+                    {r.brand}
+                    {r.tabName && (
+                      <span className="ml-2 text-[10px] font-mono text-slate-400">
+                        ({r.tabName})
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-xs text-slate-500 mt-0.5">
+                    집계 기준: {r.useDivision ? '사업부' : '상품 유형'} · <code>{r.fileName}</code>
+                  </div>
+                  {r.savedReport && (
+                    <div className="mt-1 inline-flex items-center gap-1 text-[10px] bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 text-emerald-700">
+                      <Save size={10} /> 그룹 저장됨 {r.savedReport.google_sheet_url ? '· Sheet 생성됨' : ''}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                <a
+                  href={r.url}
+                  download={r.fileName}
+                  className="inline-flex items-center gap-1.5 bg-myriad-primary hover:bg-myriad-primaryDark text-myriad-ink font-semibold px-3 py-1.5 rounded-lg text-sm"
+                >
+                  <Download size={14} /> Excel
+                </a>
+                {r.savedReport?.google_sheet_url && (
+                  <a
+                    href={r.savedReport.google_sheet_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1.5 bg-sky-50 border border-sky-200 text-sky-700 hover:bg-sky-100 font-semibold px-3 py-1.5 rounded-lg text-sm"
+                  >
+                    <FileSpreadsheet size={14} /> Google Sheet
+                  </a>
+                )}
+              </div>
+            </div>
+          ))}
         </section>
       )}
     </div>
