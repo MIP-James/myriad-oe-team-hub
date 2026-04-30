@@ -418,9 +418,9 @@ class Launcher:
             if self._auth_failed or not self.api:
                 return
             try:
-                data = self.api.poll(
-                    launcher_version=LAUNCHER_VERSION,
-                )
+                # version/이름 등 메타는 connect() 첫 폴 때만 전달.
+                # 매 폴마다 보내면 백엔드가 매번 UPDATE 해서 Realtime 깜빡임 발생.
+                data = self.api.poll()
             except PermissionError as e:
                 self._handle_auth_failure(str(e))
                 return

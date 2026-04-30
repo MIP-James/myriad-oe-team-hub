@@ -27,7 +27,7 @@ export default function Launcher() {
   const [issuedToken, setIssuedToken] = useState(null)
   const [copied, setCopied] = useState(false)
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { load(true) }, [])
 
   useEffect(() => {
     if (!user?.id) return
@@ -36,14 +36,16 @@ export default function Launcher() {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'launcher_devices', filter: `user_id=eq.${user.id}` },
-        () => load()
+        () => load(false)    // silent — loading spinner 토글 없이 데이터만 교체
       )
       .subscribe()
     return () => supabase.removeChannel(channel)
   }, [user?.id])
 
-  async function load() {
-    setLoading(true)
+  // showLoading=true 면 스피너 표시 (초기 마운트 / 사용자 액션 후).
+  // false 면 silent 갱신 — Realtime 이벤트 등 백그라운드 변경에 사용해서 깜빡임 방지.
+  async function load(showLoading = true) {
+    if (showLoading) setLoading(true)
     const [devRes, tokRes] = await Promise.all([
       supabase.from('launcher_devices').select('*').order('created_at', { ascending: false }),
       supabase
@@ -54,7 +56,7 @@ export default function Launcher() {
     if (devRes.error) setError(devRes.error.message)
     else setDevices(devRes.data ?? [])
     if (!tokRes.error) setTokens(tokRes.data ?? [])
-    setLoading(false)
+    if (showLoading) setLoading(false)
   }
 
   function openIssueModal() {
