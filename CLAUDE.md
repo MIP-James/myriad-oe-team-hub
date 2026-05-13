@@ -101,7 +101,17 @@ release_launcher.bat
   - Scope: `drive` + `gmail.readonly` (둘 다 필수)
 - **Drive**: 공유 드라이브 사용 시 `supportsAllDrives=true` 필수
 - **Admin DB writes**: `admin-scripts/.env` 의 Service Role 키 사용 (사용자 세션과 토큰 충돌 방지)
-- **Migrations**: 1~18 모두 실행 완료 (다음 신규 = 019 부터)
+- **Migrations**: 1~31 모두 실행 완료 (다음 신규 = 032 부터)
+  - ⚠️ **2026-10-30 부터 Supabase Data API 정책 변경** — 기존 프로젝트의 **신규 테이블**도 명시 GRANT 필수. mig 032 부터 아래 표준 패턴 적용:
+    ```sql
+    create table public.X (...);
+    alter table public.X enable row level security;
+    create policy "..." on public.X for select to authenticated using (...);
+    grant select on public.X to anon;
+    grant select, insert, update, delete on public.X to authenticated;
+    grant select, insert, update, delete on public.X to service_role;
+    ```
+  - 기존 테이블 (mig 001~031) 은 영향 없음. 권한 누락 시 PostgREST 가 `42501` + 정확한 GRANT 문 응답.
 
 ## 코드 구조 빠른 참조
 
