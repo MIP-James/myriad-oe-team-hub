@@ -17,6 +17,15 @@
       "icon": "🖼️",
       "category": "image"
     },
+    "sonny-angel-image-matcher": {
+      "source_folder": "C:\\Users\\MIP James\\Downloads\\Sonny_Angel_Image_Matcher\\dist\\Sonny_Angel_Image_Matcher",
+      "display_name": "Sonny Angel Image Matcher",
+      "exe_name": "Sonny_Angel_Image_Matcher.exe",
+      "utility_type": "executable",
+      "icon": "👶",
+      "category": "image",
+      "description": "Sonny Angel 공식몰 5개국 이미지 DB 와 매칭. pHash + CLIP ViT-L 듀얼 시그널 (붙여넣기/일괄 50장/메인 수동 승격)."
+    },
     "report-generator": {
       "source_folder": "C:\\Users\\MIP James\\Downloads\\Report_Generator",
       "display_name": "Report Generator",
