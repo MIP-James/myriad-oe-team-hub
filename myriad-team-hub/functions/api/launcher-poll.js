@@ -65,8 +65,8 @@ export async function onRequestPost(context) {
         .eq('id', token_id)
       pairedNow = true
     } else {
-      // 기존 device — last_seen_at / is_online 갱신은 heartbeat (30초 주기) 책임.
-      // poll 이 3초마다 launcher_devices 를 UPDATE 하면 Realtime 이 3초마다 fire 해서
+      // 기존 device — last_seen_at / is_online 갱신은 heartbeat (5분 주기) 책임.
+      // poll 이 launcher_devices 를 매번 UPDATE 하면 Realtime 이 fire 해서
       // 웹 UI 깜빡임 발생. 메타필드(이름/플랫폼/버전) 변경 시에만 UPDATE.
       const updates = {}
       if (deviceName) updates.name = deviceName

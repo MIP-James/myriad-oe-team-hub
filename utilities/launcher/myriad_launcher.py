@@ -139,9 +139,9 @@ def notify(title: str, message: str, success: bool = True) -> None:
         logging.warning(f"Toast failed: {e}")
 
 
-LAUNCHER_VERSION = "2026-04-30"
-POLL_INTERVAL_SEC = 3.0
-HEARTBEAT_INTERVAL_SEC = 30.0
+LAUNCHER_VERSION = "2026-05-15"
+POLL_INTERVAL_SEC = 60.0
+HEARTBEAT_INTERVAL_SEC = 300.0
 MAX_OUTPUT_CHARS = 8000
 LOG_PATH = _exe_dir() / "launcher.log"
 

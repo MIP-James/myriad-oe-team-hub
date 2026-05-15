@@ -6,7 +6,7 @@ import {
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 
-const STALE_THRESHOLD_MS = 60 * 1000
+const STALE_THRESHOLD_MS = 390 * 1000
 function isFresh(lastSeenAt) {
   if (!lastSeenAt) return false
   return Date.now() - new Date(lastSeenAt).getTime() < STALE_THRESHOLD_MS

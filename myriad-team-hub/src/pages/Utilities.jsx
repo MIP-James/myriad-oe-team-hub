@@ -7,7 +7,7 @@ import { supabase } from '../lib/supabase'
 import { logActivity } from '../lib/community'
 import { useAuth } from '../contexts/AuthContext'
 
-const STALE_THRESHOLD_MS = 60 * 1000
+const STALE_THRESHOLD_MS = 390 * 1000
 function isFresh(lastSeenAt) {
   if (!lastSeenAt) return false
   return Date.now() - new Date(lastSeenAt).getTime() < STALE_THRESHOLD_MS
@@ -48,7 +48,7 @@ export default function Utilities() {
     ])
     if (utilsRes.error) setError(utilsRes.error.message)
     else setItems(utilsRes.data ?? [])
-    // 하트비트가 60초 이상 끊긴 디바이스는 오프라인으로 간주
+    // 하트비트가 6.5분 이상 끊긴 디바이스는 오프라인으로 간주 (heartbeat 5분 주기 + 마진)
     const fresh = (devicesRes.data ?? []).filter((d) => isFresh(d.last_seen_at))
     setDevices(fresh)
     await loadRecentJobs()

@@ -1,5 +1,5 @@
 /**
- * Cloudflare Pages Function — Launcher heartbeat (30초 주기).
+ * Cloudflare Pages Function — Launcher heartbeat (5분 주기).
  *
  *   POST /api/launcher-heartbeat
  *   Authorization: Bearer <opaque launcher token>
