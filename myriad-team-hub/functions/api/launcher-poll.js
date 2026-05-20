@@ -65,13 +65,20 @@ export async function onRequestPost(context) {
         .eq('id', token_id)
       pairedNow = true
     } else {
-      // 기존 device — last_seen_at / is_online 갱신은 heartbeat (5분 주기) 책임.
-      // poll 이 launcher_devices 를 매번 UPDATE 하면 Realtime 이 fire 해서
-      // 웹 UI 깜빡임 발생. 메타필드(이름/플랫폼/버전) 변경 시에만 UPDATE.
+      // 기존 device — 메타필드(이름/플랫폼/버전) 와 함께 온 첫 poll = launcher
+      // 시작 직후 신호. 이때 is_online=true / last_seen_at 도 같이 복구해서
+      // 시작 즉시 웹 UI 가 online 으로 회복되게 한다 (heartbeat 5분 주기 대기 X).
+      // 이후 1분마다 오는 polls 는 메타 없음 → UPDATE 자체가 발생 안 함 →
+      // Realtime 깜빡임 / Cloudflare quota 영향 없음.
+      const hasMetaFields = !!(deviceName || platform || launcherVersion)
       const updates = {}
       if (deviceName) updates.name = deviceName
       if (platform) updates.platform = platform
       if (launcherVersion) updates.launcher_version = launcherVersion
+      if (hasMetaFields) {
+        updates.is_online = true
+        updates.last_seen_at = new Date().toISOString()
+      }
       if (Object.keys(updates).length > 0) {
         await adminSb
           .from('launcher_devices')
