@@ -29,6 +29,38 @@ export const STATUS_META = {
   dismissed: { label: '제외' },
 }
 
+function quantile(sorted, q) {
+  if (!sorted.length) return 0
+  const pos = (sorted.length - 1) * q
+  const base = Math.floor(pos)
+  const rest = pos - base
+  return sorted[base + 1] !== undefined
+    ? sorted[base] + rest * (sorted[base + 1] - sorted[base])
+    : sorted[base]
+}
+
+/**
+ * 선택한 범위(전체 또는 특정 브랜드) 안에서 A/B/C/D 등급을 다시 매긴다.
+ * 점수(enf/yield)는 절대값이라 그대로 두고, 高/低 컷만 이 범위 분포로 재계산.
+ * → "Apple 안에서의 상위 30%가 A" 라는 브랜드별 상대평가 (score2axis.py 와 동일).
+ * 대형유통/샵인샵(is_big)은 항상 X.
+ */
+export function applyScopeGrades(ops) {
+  const valid = ops.filter((o) => !o.is_big)
+  const enfPos = valid.map((o) => Number(o.enf_score)).filter((s) => s > 0).sort((a, b) => a - b)
+  const yld = valid.map((o) => Number(o.yield_score)).sort((a, b) => a - b)
+  const enfHi = Math.max(enfPos.length ? quantile(enfPos, 0.70) : 0, 30)
+  const yieldHi = Math.max(yld.length ? quantile(yld, 0.70) : 0, 30)
+  return ops.map((o) => {
+    if (o.is_big) return { ...o, grade: 'X' }
+    const e = Number(o.enf_score), y = Number(o.yield_score)
+    const eHi = e >= enfHi && e > 0
+    const yHi = y >= yieldHi
+    const grade = eHi && yHi ? 'B' : eHi && !yHi ? 'A' : !eHi && yHi ? 'C' : 'D'
+    return { ...o, grade }
+  })
+}
+
 export async function loadTargets() {
   const { data, error } = await supabase
     .from('infringer_targets')

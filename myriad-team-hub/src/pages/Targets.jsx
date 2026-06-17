@@ -5,7 +5,7 @@ import {
   Link2, ShieldAlert, X, ExternalLink, TrendingUp, TrendingDown, Minus
 } from 'lucide-react'
 import {
-  loadTargets, updateTargetStatus, runSync,
+  loadTargets, updateTargetStatus, runSync, applyScopeGrades,
   GRADE_META, TREND_META, STATUS_META
 } from '../lib/targets'
 
@@ -20,6 +20,7 @@ export default function Targets() {
   const [selected, setSelected] = useState(null)
 
   // 필터
+  const [brand, setBrand] = useState('all')
   const [grade, setGrade] = useState('all')
   const [crossOnly, setCrossOnly] = useState(false)
   const [trend, setTrend] = useState('all')
@@ -44,15 +45,28 @@ export default function Targets() {
     finally { setSyncing(false) }
   }
 
+  // 고객사(브랜드) 목록 — 운영자들의 brands 합집합
+  const brandOptions = useMemo(() => {
+    const set = new Set()
+    for (const r of rows) for (const b of (r.brands || [])) set.add(b)
+    return Array.from(set).sort()
+  }, [rows])
+
+  // 선택 범위로 좁히고, 그 범위 안에서 등급 재계산 (브랜드별 상대평가)
+  const scoped = useMemo(() => {
+    const base = brand === 'all' ? rows : rows.filter((r) => (r.brands || []).includes(brand))
+    return applyScopeGrades(base)
+  }, [rows, brand])
+
   const counts = useMemo(() => {
     const c = { A: 0, B: 0, C: 0, D: 0, X: 0, cross: 0 }
-    for (const r of rows) { c[r.grade] = (c[r.grade] || 0) + 1; if (r.cross_brand && r.grade !== 'X') c.cross++ }
+    for (const r of scoped) { c[r.grade] = (c[r.grade] || 0) + 1; if (r.cross_brand && r.grade !== 'X') c.cross++ }
     return c
-  }, [rows])
+  }, [scoped])
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase()
-    return rows.filter((r) => {
+    return scoped.filter((r) => {
       if (grade !== 'all' && r.grade !== grade) return false
       if (crossOnly && !r.cross_brand) return false
       if (trend !== 'all' && r.trend !== trend) return false
@@ -62,7 +76,7 @@ export default function Targets() {
       }
       return true
     })
-  }, [rows, grade, crossOnly, trend, q])
+  }, [scoped, grade, crossOnly, trend, q])
 
   return (
     <div className="p-8 max-w-6xl mx-auto">
@@ -88,6 +102,21 @@ export default function Targets() {
       {error && <Banner tone="error" onClose={() => setError(null)}>{error}</Banner>}
       {info && <Banner tone="info" onClose={() => setInfo(null)}>{info}</Banner>}
 
+      {/* 고객사(브랜드) 선택 — 선택 시 그 브랜드 안에서 등급 재계산 */}
+      <div className="flex items-center gap-2 mb-4">
+        <span className="text-sm font-medium text-slate-600">고객사</span>
+        <select value={brand} onChange={(e) => { setBrand(e.target.value); setGrade('all') }}
+          className="text-sm border border-slate-300 rounded-lg px-3 py-1.5 bg-white text-slate-800 font-medium">
+          <option value="all">전체 ({rows.length}명 · 교차 브랜드 탐지)</option>
+          {brandOptions.map((b) => <option key={b} value={b}>{b}</option>)}
+        </select>
+        {brand !== 'all' && (
+          <span className="text-xs text-rose-600 bg-rose-50 px-2 py-1 rounded">
+            {brand} 안에서의 상대 등급 (상위 30% = A/B)
+          </span>
+        )}
+      </div>
+
       {/* 요약 카드 */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
         {GRADE_ORDER.map((g) => (
@@ -105,7 +134,7 @@ export default function Targets() {
 
       <div className="grid lg:grid-cols-[280px_1fr] gap-5 items-start">
         {/* 2×2 매트릭스 */}
-        <Matrix rows={rows} onPick={setSelected} />
+        <Matrix rows={scoped} onPick={setSelected} />
 
         {/* 리스트 */}
         <div>
