@@ -15,6 +15,7 @@ import ReportGroups from './pages/ReportGroups'
 import ReportGroupDetail from './pages/ReportGroupDetail'
 import Community from './pages/Community'
 import CaseDetail from './pages/CaseDetail'
+import Targets from './pages/Targets'
 import Admin from './pages/Admin'
 import AdminUtilities from './pages/AdminUtilities'
 import AdminExternalShortcuts from './pages/AdminExternalShortcuts'
@@ -44,6 +45,7 @@ export default function App() {
         <Route path="reports" element={<Reports />} />
         <Route path="reports/groups" element={<ReportGroups />} />
         <Route path="reports/groups/:id" element={<ReportGroupDetail />} />
+        <Route path="targets" element={<Targets />} />
         <Route path="community" element={<Community />} />
         <Route path="community/cases/new" element={<CaseDetail mode="new" />} />
         <Route path="community/cases/:id" element={<CaseDetail />} />
