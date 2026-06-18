@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Crosshair, RefreshCw, Loader2, Search, ArrowUpRight, ArrowDownRight,
-  Link2, ShieldAlert, X, ExternalLink, TrendingUp, TrendingDown, Minus
+  Link2, ShieldAlert, X, ExternalLink, TrendingUp, TrendingDown, Minus, Activity
 } from 'lucide-react'
 import {
   loadTargets, updateTargetStatus, runSync, applyScopeGrades,
@@ -387,7 +387,8 @@ function DetailDrawer({ row, onClose, onChanged }) {
           {/* 플래그 */}
           <div className="flex flex-wrap gap-1.5">
             {row.cross_brand && <Flag icon={Link2} tone="rose">교차 브랜드 {row.brand_count}사 — {(row.brands || []).join(', ')}</Flag>}
-            {!row.identified && <Flag icon={ShieldAlert} tone="slate">신원 불명 (법적가치 0)</Flag>}
+            {row.is_pipeline && <Flag icon={Activity} tone="sky">모니터링 주력 공급원 (브랜드 수집 {row.brand_share}% · 제거 시 모니터링 차질 → A 제외)</Flag>}
+            {!row.identified && <Flag icon={ShieldAlert} tone="slate">신원 불명 — 확인 선행 필요</Flag>}
             {row.has_legal_pipeline && <Flag icon={ShieldAlert} tone="amber">법무 진행중</Flag>}
           </div>
 
@@ -467,7 +468,7 @@ function Section({ title, children }) {
 }
 
 function Flag({ icon: Icon, tone, children }) {
-  const map = { rose: 'bg-rose-50 text-rose-700', slate: 'bg-slate-100 text-slate-500', amber: 'bg-amber-50 text-amber-700' }
+  const map = { rose: 'bg-rose-50 text-rose-700', slate: 'bg-slate-100 text-slate-500', amber: 'bg-amber-50 text-amber-700', sky: 'bg-sky-50 text-sky-700' }
   return <span className={`inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded ${map[tone]}`}><Icon size={11} />{children}</span>
 }
 

@@ -3,11 +3,11 @@ import { supabase } from './supabase'
 // 등급 메타 (색/라벨/정의/액션) — score2axis.py 의 등급 정의와 일치
 export const GRADE_META = {
   A: { label: 'A · 즉시 법적 타겟', short: '즉시 타겟', cls: 'bg-rose-600',  band: 'bg-rose-50',   text: 'text-rose-700',
-       def: '신원 확보 + 온라인 신고 건수 적음', action: '민·형사 타겟 선정 (제거해도 신고 손실 적음)' },
+       def: '법적 가치 높음 + 현재 신고 적음(휴면)', action: '민·형사 타겟 선정 (제거해도 신고 손실 적음) · 신원 미상이면 확인 선행' },
   B: { label: 'B · 지속 관찰',     short: '지속 관찰', cls: 'bg-orange-500', band: 'bg-orange-50', text: 'text-orange-700',
-       def: '타겟 선정 가능하나 온라인 신고 건수 높음', action: '대체 셀러 확보 후 타겟 선정 권장' },
+       def: '법적 가치 높으나 신고 활발 / 모니터링 주력', action: '대체 셀러 확보 후 타겟 선정 권장 (주력 공급원은 제거 시 모니터링 차질)' },
   C: { label: 'C · 집중 모니터링', short: '집중 모니터링', cls: 'bg-sky-600', band: 'bg-sky-50', text: 'text-sky-700',
-       def: '신원 불명이나 신고건수 다량 공급', action: '신고 주력 모집단으로 계속 활용' },
+       def: '법적 가치 낮으나 신고건수 다량 공급', action: '신고 주력 모집단으로 계속 활용' },
   D: { label: 'D · 후순위',       short: '후순위', cls: 'bg-slate-400', band: 'bg-slate-50', text: 'text-slate-600',
        def: '활동·증거 모두 약함', action: '주기적 정리만' },
   X: { label: 'X · 제외',         short: '제외', cls: 'bg-slate-300', band: 'bg-slate-50', text: 'text-slate-500',
@@ -55,7 +55,8 @@ export function applyScopeGrades(ops) {
     if (o.is_big) return { ...o, grade: 'X' }
     const e = Number(o.enf_score), y = Number(o.yield_score)
     const eHi = e >= enfHi && e > 0
-    const yHi = y >= yieldHi
+    // 파이프라인(브랜드 수집 주력)은 yield_high 강제 → A 진입 불가(B/C). scoreEngine 가드와 동일.
+    const yHi = y >= yieldHi || o.is_pipeline
     const grade = eHi && yHi ? 'B' : eHi && !yHi ? 'A' : !eHi && yHi ? 'C' : 'D'
     return { ...o, grade }
   })

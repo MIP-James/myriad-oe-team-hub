@@ -10,6 +10,7 @@
 
 const BRANDS = ['APPLE', 'MONCLER', 'GOLDEN GOOSE', 'FILA', 'TORY BURCH']
 const PLATFORMS = ['스마트스토어', '쿠팡', '11번가', 'G마켓', '옥션', '인스타그램']
+const SNS_PLATFORMS = ['네이버밴드', '카카오스토리', '인스타그램']
 const SURNAMES = ['김', '이', '박', '최', '정', '강', '조', '윤', '장', '임']
 const GIVEN = ['민준', '서연', '도윤', '지우', '하준', '예준', '수아', '지호', '주원', '시우']
 const WORDS = ['스타일', '럭셔리', '명품', '글로벌', '프리미엄', '트렌드', '디럭스', '셀렉트', '부티크', '갤러리']
@@ -157,6 +158,29 @@ export function generateMockBpm(opts = {}) {
     makeAndPush(makeRow(pick(BRANDS), id, {
       cumulative: ri(1, 3), pattern: 'decline', lastOffset: ri(120, 300),
     }))
+  }
+
+  // 6) SNS 주력 공급원 (연락처 공란 + 브랜드 수집 과반 + 휴면) — 파이프라인 가드 시연
+  //    신원 완화로 enf 高 + 휴면이라 yield 低 → 옛 로직이면 A로 샐 케이스.
+  //    is_pipeline 가드가 A→B 로 잡아주는지 데모 페이지에서 확인 가능.
+  {
+    const snsBrand = 'TORY BURCH'   // 이 브랜드를 SNS 주력으로 연출
+    const cid = clientId(snsBrand)
+    // 주력 1명: 신원 공란, 삭제 대량, 8개월 전 마지막 활동(휴면)
+    const big = makeRow(snsBrand, { biz: null, phone: null, president: '', email: null }, {
+      cumulative: 18, pattern: 'decline', lastOffset: 240,
+    })
+    big.platform_id = pick(SNS_PLATFORMS); big.store_name = '밴드대량공급'
+    big.deleted = 3000; big.deleted_by_client = 1500
+    makeAndPush(big)
+    // 같은 브랜드 잔챙이 몇 — 주력 점유율을 과반으로 만들기 위해 소량
+    for (let i = 0; i < 4; i++) {
+      const r = makeRow(snsBrand, { biz: null, phone: null, president: '', email: null }, {
+        cumulative: ri(1, 3), pattern: 'steady', lastOffset: ri(5, 30),
+      })
+      r.platform_id = pick(SNS_PLATFORMS); r.deleted = ri(60, 180)
+      makeAndPush(r)
+    }
   }
 
   // 5) 대형유통/샵인샵 — X (점수 높아도 제외)

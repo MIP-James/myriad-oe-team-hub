@@ -94,6 +94,7 @@ export async function onRequestPost(context) {
       first_date: o.first_date, last_date: o.last_date, recency_months: o.recency_months,
       identified: o.identified, link_online: o.link_online, customs: o.customs, raid: o.raid, legal: o.legal,
       has_legal_pipeline: o.has_legal_pipeline, is_big: o.is_big,
+      is_pipeline: o.is_pipeline, brand_share: o.brand_share,
       enf_score: o.enf_score, yield_score: o.yield_score, grade: o.grade,
       prev_grade: prevGrade[o.cluster_key] || null,
       trend: o.trend, trend_pct: o.trend_pct, detail: o.detail,

@@ -119,7 +119,15 @@ function quantile(sorted, q) {
 // 가중치를 바꾸려면 여기만 수정. 포화점(sat)은 실데이터 들어오면 분포 보고 보정.
 export const PARAMS = {
   // 축1 (법적 타겟 가치) 합 100 — 온라인 규모 + 반복성(=months+duration) + 오프라인 가점
-  enf: { scale: 45, offline: 20 },
+  // unidentifiedFactor: 신원(사업자/전화/대표자) 미상 시 축1 할인 계수.
+  //   1.0 = 할인 없음(기본) — 연락처 공란은 SNS 등 수집 과정 산물이라 "가치 0"이 아님.
+  //   신원 미상은 점수가 아니라 '확인 선행' 플래그/필터로 다룬다(가치/준비도 분리).
+  //   "신원 확보 우대"를 원하면 0.7~0.9로 다이얼. 0 = 옛 하드게이트(미상=축1 0).
+  enf: { scale: 45, offline: 20, unidentifiedFactor: 1.0 },
+  // 모니터링 주력 공급원 가드 — 한 운영자가 브랜드 수집(삭제건수)의 이 비율 이상이면
+  // "모니터링 파이프라인 그 자체"로 보고 A(즉시 제거 타겟) 진입을 차단(B/C만 허용).
+  // 법적 제거 시 모니터링 물량이 붕괴해 업무에 차질 → 제거 대상 아님.
+  pipeline: { shareThreshold: 0.40 },
   recurrence: { count: 28, duration: 7 },   // 합 35 (반복성·지속성)
   // 축2 (모니터링 생산성 = 현재성) 합 100
   yield: { recent: 50, recency: 35, trend: 15 },
@@ -151,6 +159,8 @@ export function scoreInfringers(rows, opts = {}) {
   const brandName = opts.brandName || ((id) => id)
 
   const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0 }
+  // 규모 신호 = 삭제 건수(있으면), 없으면 누적으로 폴백(mock 대비)
+  const rowScale = (m) => (m.deleted != null && m.deleted !== '' ? num(m.deleted) : num(m.total_infringe_count))
   const P = PARAMS
   const parents = buildClusters(rows)
   const groups = new Map()
@@ -159,6 +169,14 @@ export function scoreInfringers(rows, opts = {}) {
     if (!groups.has(c)) groups.set(c, [])
     groups.get(c).push(r)
   })
+
+  // 브랜드별 수집 총량(삭제건수) — 파이프라인 점유율 분모. repr_client_id 단위.
+  const brandTotals = new Map()
+  for (const r of rows) {
+    const b = r.repr_client_id
+    if (!b) continue
+    brandTotals.set(b, (brandTotals.get(b) || 0) + rowScale(r))
+  }
 
   const ops = []
   for (const members of groups.values()) {
@@ -169,8 +187,23 @@ export function scoreInfringers(rows, opts = {}) {
     const first = firsts.length ? new Date(Math.min(...firsts)) : null
 
     // 규모 = 삭제 건수(있으면) 합계, 없으면 누적으로 폴백(mock 대비)
-    const deletedSum = members.reduce((s, m) => s + (m.deleted != null && m.deleted !== '' ? num(m.deleted) : num(m.total_infringe_count)), 0)
+    const deletedSum = members.reduce((s, m) => s + rowScale(m), 0)
     const cumulativeMax = Math.max(0, ...members.map((m) => num(m.total_infringe_count)))
+
+    // 모니터링 점유율 = 이 운영자가 차지하는 브랜드 수집 비율(최댓값, 교차브랜드 대비).
+    // 브랜드별로 멤버 삭제건수 합 / 그 브랜드 전체 → 가장 높은 점유율 채택.
+    const volByBrand = new Map()
+    for (const m of members) {
+      const b = m.repr_client_id
+      if (!b) continue
+      volByBrand.set(b, (volByBrand.get(b) || 0) + rowScale(m))
+    }
+    let brandShare = 0
+    for (const [b, v] of volByBrand) {
+      const tot = brandTotals.get(b) || 0
+      if (tot > 0) brandShare = Math.max(brandShare, v / tot)
+    }
+    const isPipeline = brandShare >= P.pipeline.shareThreshold
     // 재침해 횟수 = 누적 침해 건수 합계 (재적발 라운드 수)
     const recurCount = members.reduce((s, m) => s + num(m.total_infringe_count), 0)
     // 동일추정(potential)은 노이즈라 점수 제외 — 연계(associated)만 사용
@@ -243,7 +276,10 @@ export function scoreInfringers(rows, opts = {}) {
     let enf = scale * P.enf.scale
             + recurScore * P.recurrence.count + durationScore * P.recurrence.duration
             + offline * P.enf.offline
-    enf = identified ? Math.round(enf * 10) / 10 : 0
+    // 신원 미상은 가치 말살이 아니라 '확인 선행' 플래그로 처리(기본 계수 1.0).
+    // 우대를 원하면 PARAMS.enf.unidentifiedFactor 를 0.7~0.9 로 다이얼하면 비례 할인.
+    if (!identified && P.enf.unidentifiedFactor !== 1) enf *= P.enf.unidentifiedFactor
+    enf = Math.round(enf * 10) / 10
 
     // ── 축2: 모니터링 생산성 = 현재성 (최근 활동량 + 최근성 + 추세) ──
     const recency = recencyM == null ? 0 : clip(1 - recencyM / P.sat.recencyMonths, 0, 1)
@@ -272,6 +308,7 @@ export function scoreInfringers(rows, opts = {}) {
       link_online: linkOnline, customs, raid, legal,
       has_legal_pipeline: hasLegalPipeline,
       is_big: big,
+      is_pipeline: isPipeline, brand_share: Math.round(brandShare * 100),
       enf_score: enf, yield_score: yld,
       trend, trend_pct: trendPct,
       detail: {
@@ -299,7 +336,9 @@ export function scoreInfringers(rows, opts = {}) {
   for (const o of ops) {
     if (o.is_big) { o.grade = 'X'; continue }
     const eHi = o.enf_score >= enfHi && o.enf_score > 0
-    const yHi = o.yield_score >= yieldHi
+    // 파이프라인(브랜드 수집 주력)은 '현재 활동 中'으로 간주 → yield_high 강제 → A 진입 불가(B/C).
+    // 법적 제거 시 모니터링 물량이 붕괴하므로 즉시 제거 타겟(A)에서 제외.
+    const yHi = o.yield_score >= yieldHi || o.is_pipeline
     o.grade = eHi && yHi ? 'B' : eHi && !yHi ? 'A' : !eHi && yHi ? 'C' : 'D'
   }
 
@@ -311,6 +350,7 @@ export function scoreInfringers(rows, opts = {}) {
       clusters: ops.length,
       counts: ops.reduce((m, o) => { m[o.grade] = (m[o.grade] || 0) + 1; return m }, {}),
       cross_brand: ops.filter((o) => o.cross_brand && o.grade !== 'X').length,
+      pipeline: ops.filter((o) => o.is_pipeline && o.grade !== 'X').length,
     },
   }
 }
