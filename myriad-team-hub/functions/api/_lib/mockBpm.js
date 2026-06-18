@@ -84,6 +84,8 @@ export function generateMockBpm(opts = {}) {
       trans_biz_reg_no: identity.biz, trans_seller_phone_no: identity.phone,
       trans_store_name: extra.store || '', trans_company_name: extra.company || '', trans_president_name: identity.president || '',
       repeat_infringe_yn: cum > 3 ? 'Y' : 'N', infringer_yn: 'Y', total_infringe_count: cum,
+      deleted: cum * ri(3, 30),   // 삭제 게시물 수 (재적발 1회당 다수 게시물) — 규모 신호
+      deleted_by_client: cum * ri(2, 12),
       online_associated_infringer_count: ri(0, 8), online_potential_infringer_count: ri(0, 20),
       customs_associated_infringer_count: extra.customs || 0, customs_potential_infringer_count: 0,
       enforce_associated_infringer_count: extra.raid || 0, enforce_potential_infringer_count: 0,
