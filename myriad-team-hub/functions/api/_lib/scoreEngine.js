@@ -127,7 +127,9 @@ export const PARAMS = {
   // 모니터링 주력 공급원 가드 — 한 운영자가 브랜드 수집(삭제건수)의 이 비율 이상이면
   // "모니터링 파이프라인 그 자체"로 보고 A(즉시 제거 타겟) 진입을 차단(B/C만 허용).
   // 법적 제거 시 모니터링 물량이 붕괴해 업무에 차질 → 제거 대상 아님.
-  pipeline: { shareThreshold: 0.40 },
+  //   windowMonths: 점유율을 "최근 N개월" 창으로 계산(전량 누적 X). 현재성 반영 + 장기 휴면 제외.
+  //   일별 이력(MM_DAY_INFRINGE_HIST) 있으면 정확, 없으면 최종 삭제일이 창 안인지로 근사.
+  pipeline: { shareThreshold: 0.40, windowMonths: 6 },
   recurrence: { count: 28, duration: 7 },   // 합 35 (반복성·지속성)
   // 축2 (모니터링 생산성 = 현재성) 합 100
   yield: { recent: 50, recency: 35, trend: 15 },
@@ -170,12 +172,30 @@ export function scoreInfringers(rows, opts = {}) {
     groups.get(c).push(r)
   })
 
-  // 브랜드별 수집 총량(삭제건수) — 파이프라인 점유율 분모. repr_client_id 단위.
+  // ── 파이프라인 점유율: "최근 N개월" 창 기준 (전량 누적 대비 X) ──────────
+  //   "모니터링 주력 공급원" = 지금 우리 모니터링 물량의 다수를 차지하느냐(현재성).
+  //   10년치 전량으로 분모를 잡으면 현재 주력이 과거 총량에 묻혀 모순 → 최근 창으로 한정.
+  //   분자/분모 = 이 창 안의 삭제건수. 일별 이력(dayHist) 있으면 정확, 없으면 폴백.
+  const winStart = new Date(ref); winStart.setMonth(winStart.getMonth() - P.pipeline.windowMonths)
+  const windowVol = (r) => {
+    const hist = dayHist[r.vendor_id]
+    if (hist && hist.length) {
+      let s = 0
+      for (const d of hist) {
+        const dt = new Date(d.basic_ymd)
+        if (dt >= winStart && dt <= ref) s += num(d.removal_count)
+      }
+      return s
+    }
+    // 폴백(일별 이력 없음): 최종 삭제일이 창 안인 판매자만 누적 규모로 근사. 장기 휴면은 0.
+    return r.last_date && new Date(r.last_date) >= winStart ? rowScale(r) : 0
+  }
+  // 브랜드별 최근 창 수집량 — 파이프라인 점유율 분모. repr_client_id 단위.
   const brandTotals = new Map()
   for (const r of rows) {
     const b = r.repr_client_id
     if (!b) continue
-    brandTotals.set(b, (brandTotals.get(b) || 0) + rowScale(r))
+    brandTotals.set(b, (brandTotals.get(b) || 0) + windowVol(r))
   }
 
   const ops = []
@@ -190,13 +210,13 @@ export function scoreInfringers(rows, opts = {}) {
     const deletedSum = members.reduce((s, m) => s + rowScale(m), 0)
     const cumulativeMax = Math.max(0, ...members.map((m) => num(m.total_infringe_count)))
 
-    // 모니터링 점유율 = 이 운영자가 차지하는 브랜드 수집 비율(최댓값, 교차브랜드 대비).
-    // 브랜드별로 멤버 삭제건수 합 / 그 브랜드 전체 → 가장 높은 점유율 채택.
+    // 모니터링 점유율 = 최근 창 기준, 이 운영자가 차지하는 브랜드 수집 비율(최댓값, 교차브랜드 대비).
+    // 브랜드별로 멤버 창내 삭제건수 합 / 그 브랜드 창내 전체 → 가장 높은 점유율 채택.
     const volByBrand = new Map()
     for (const m of members) {
       const b = m.repr_client_id
       if (!b) continue
-      volByBrand.set(b, (volByBrand.get(b) || 0) + rowScale(m))
+      volByBrand.set(b, (volByBrand.get(b) || 0) + windowVol(m))
     }
     let brandShare = 0
     for (const [b, v] of volByBrand) {

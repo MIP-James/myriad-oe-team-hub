@@ -160,20 +160,27 @@ export function generateMockBpm(opts = {}) {
     }))
   }
 
-  // 6) SNS 주력 공급원 (연락처 공란 + 브랜드 수집 과반 + 휴면) — 파이프라인 가드 시연
-  //    신원 완화로 enf 高 + 휴면이라 yield 低 → 옛 로직이면 A로 샐 케이스.
-  //    is_pipeline 가드가 A→B 로 잡아주는지 데모 페이지에서 확인 가능.
+  // 6) SNS 주력 공급원 (연락처 공란 + 최근 N개월 브랜드 수집 과반 + 현재 활동) — 파이프라인 가드 시연
+  //    신원 완화로 enf 高 + 현재 대량 활동 → 점유율 가드로 A 진입 차단(B). 플래그 노출 확인용.
   {
     const snsBrand = 'TORY BURCH'   // 이 브랜드를 SNS 주력으로 연출
-    const cid = clientId(snsBrand)
-    // 주력 1명: 신원 공란, 삭제 대량, 8개월 전 마지막 활동(휴면)
+    // 주력 1명: 신원 공란, 최근까지 대량 활동(꾸준히 신고)
     const big = makeRow(snsBrand, { biz: null, phone: null, president: '', email: null }, {
-      cumulative: 18, pattern: 'decline', lastOffset: 240,
+      cumulative: 18, pattern: 'steady', lastOffset: 8,
     })
     big.platform_id = pick(SNS_PLATFORMS); big.store_name = '밴드대량공급'
     big.deleted = 3000; big.deleted_by_client = 1500
+    // 최근 창 내 조밀한 대량 일별 이력으로 덮어쓰기 — windowVol(창 점유율)이 deleted 와 일관되게.
+    {
+      const series = []
+      for (let d = 150; d >= 5; d -= 3) {
+        const day = new Date(ref); day.setDate(day.getDate() - d)
+        series.push({ basic_ymd: ymd(day), removal_count: 60, monitor_count: 62, report_count: 60, case_count: 0 })
+      }
+      dayHist[big.vendor_id] = series
+    }
     makeAndPush(big)
-    // 같은 브랜드 잔챙이 몇 — 주력 점유율을 과반으로 만들기 위해 소량
+    // 같은 브랜드 잔챙이 몇 — 최근 창 점유율을 과반으로 만들기 위해 소량
     for (let i = 0; i < 4; i++) {
       const r = makeRow(snsBrand, { biz: null, phone: null, president: '', email: null }, {
         cumulative: ri(1, 3), pattern: 'steady', lastOffset: ri(5, 30),
