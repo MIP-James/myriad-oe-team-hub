@@ -387,7 +387,7 @@ function DetailDrawer({ row, onClose, onChanged }) {
           {/* 플래그 */}
           <div className="flex flex-wrap gap-1.5">
             {row.cross_brand && <Flag icon={Link2} tone="rose">교차 브랜드 {row.brand_count}사 — {(row.brands || []).join(', ')}</Flag>}
-            {row.is_pipeline && <Flag icon={Activity} tone="sky">모니터링 주력 공급원 (브랜드 수집 {row.brand_share}% · 제거 시 모니터링 차질 → A 제외)</Flag>}
+            {row.is_pipeline && <Flag icon={Activity} tone="sky">모니터링 주력 공급원 (최근 {row.pipeline_window || 6}개월 수집의 {row.brand_share}% · 제거 시 모니터링 차질 → A 제외)</Flag>}
             {!row.identified && <Flag icon={ShieldAlert} tone="slate">신원 불명 — 확인 선행 필요</Flag>}
             {row.has_legal_pipeline && <Flag icon={ShieldAlert} tone="amber">법무 진행중</Flag>}
           </div>

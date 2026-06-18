@@ -164,6 +164,18 @@ export function scoreInfringers(rows, opts = {}) {
   // 규모 신호 = 삭제 건수(있으면), 없으면 누적으로 폴백(mock 대비)
   const rowScale = (m) => (m.deleted != null && m.deleted !== '' ? num(m.deleted) : num(m.total_infringe_count))
   const P = PARAMS
+  // 브랜드(고객사)별 파이프라인 창(개월) — 보고 주기가 일간/주간/월간/분기로 달라
+  // "현재"의 길이도 브랜드마다 다름. opts.brandWindowMonths(client_id) 로 주입, 없으면 전역 기본.
+  const brandWindowMonths = opts.brandWindowMonths || (() => null)
+  const winOf = (() => {
+    const cache = new Map()
+    return (brand) => {
+      if (cache.has(brand)) return cache.get(brand)
+      const m = brandWindowMonths(brand) || P.pipeline.windowMonths
+      cache.set(brand, m)
+      return m
+    }
+  })()
   const parents = buildClusters(rows)
   const groups = new Map()
   rows.forEach((r, i) => {
@@ -172,23 +184,31 @@ export function scoreInfringers(rows, opts = {}) {
     groups.get(c).push(r)
   })
 
-  // ── 파이프라인 점유율: "최근 N개월" 창 기준 (전량 누적 대비 X) ──────────
+  // ── 파이프라인 점유율: 브랜드별 "최근 N개월" 창 기준 (전량 누적 대비 X) ──────
   //   "모니터링 주력 공급원" = 지금 우리 모니터링 물량의 다수를 차지하느냐(현재성).
   //   10년치 전량으로 분모를 잡으면 현재 주력이 과거 총량에 묻혀 모순 → 최근 창으로 한정.
-  //   분자/분모 = 이 창 안의 삭제건수. 일별 이력(dayHist) 있으면 정확, 없으면 폴백.
-  const winStart = new Date(ref); winStart.setMonth(winStart.getMonth() - P.pipeline.windowMonths)
+  //   창 길이는 브랜드 보고 주기(winOf)별로 다름. 분자/분모 = 그 브랜드 창 안의 삭제건수.
+  //   일별 이력(dayHist) 있으면 정확, 없으면 최종 삭제일이 창 안인지로 근사.
+  const winStartCache = new Map()
+  const winStartOf = (brand) => {
+    if (winStartCache.has(brand)) return winStartCache.get(brand)
+    const d = new Date(ref); d.setMonth(d.getMonth() - winOf(brand))
+    winStartCache.set(brand, d)
+    return d
+  }
   const windowVol = (r) => {
+    const ws = winStartOf(r.repr_client_id)
     const hist = dayHist[r.vendor_id]
     if (hist && hist.length) {
       let s = 0
       for (const d of hist) {
         const dt = new Date(d.basic_ymd)
-        if (dt >= winStart && dt <= ref) s += num(d.removal_count)
+        if (dt >= ws && dt <= ref) s += num(d.removal_count)
       }
       return s
     }
     // 폴백(일별 이력 없음): 최종 삭제일이 창 안인 판매자만 누적 규모로 근사. 장기 휴면은 0.
-    return r.last_date && new Date(r.last_date) >= winStart ? rowScale(r) : 0
+    return r.last_date && new Date(r.last_date) >= ws ? rowScale(r) : 0
   }
   // 브랜드별 최근 창 수집량 — 파이프라인 점유율 분모. repr_client_id 단위.
   const brandTotals = new Map()
@@ -218,10 +238,10 @@ export function scoreInfringers(rows, opts = {}) {
       if (!b) continue
       volByBrand.set(b, (volByBrand.get(b) || 0) + windowVol(m))
     }
-    let brandShare = 0
+    let brandShare = 0, shareWindow = P.pipeline.windowMonths
     for (const [b, v] of volByBrand) {
       const tot = brandTotals.get(b) || 0
-      if (tot > 0) brandShare = Math.max(brandShare, v / tot)
+      if (tot > 0 && v / tot > brandShare) { brandShare = v / tot; shareWindow = winOf(b) }
     }
     const isPipeline = brandShare >= P.pipeline.shareThreshold
     // 재침해 횟수 = 누적 침해 건수 합계 (재적발 라운드 수)
@@ -328,7 +348,7 @@ export function scoreInfringers(rows, opts = {}) {
       link_online: linkOnline, customs, raid, legal,
       has_legal_pipeline: hasLegalPipeline,
       is_big: big,
-      is_pipeline: isPipeline, brand_share: Math.round(brandShare * 100),
+      is_pipeline: isPipeline, brand_share: Math.round(brandShare * 100), pipeline_window: shareWindow,
       enf_score: enf, yield_score: yld,
       trend, trend_pct: trendPct,
       detail: {

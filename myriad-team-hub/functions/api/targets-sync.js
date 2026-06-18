@@ -30,6 +30,15 @@ const BRAND_LABEL = {
   'C-FILA': 'FILA', 'C-TORYB': 'TORY BURCH',
 }
 
+// 보고 주기 → 파이프라인 창(개월). "현재"의 길이는 고객사 보고 주기마다 다름.
+// 값은 운영 감각에 맞춰 조정. (창 ≈ 보고 주기 몇 사이클 — 꾸준한 주력을 놓치지 않게)
+const CADENCE_MONTHS = { daily: 2, weekly: 3, monthly: 6, quarterly: 12 }
+// 브랜드(고객사) ID → 보고 주기. ⚠️ 6/24 DB / 운영 정보 들어오면 여기 채움.
+//   미지정 브랜드는 scoreEngine PARAMS.pipeline.windowMonths(기본 6개월)로 폴백.
+//   예: 'C-APPLE': 'monthly', 'C-TORYB': 'quarterly'
+const BRAND_CADENCE = {}
+const brandWindowMonths = (clientId) => CADENCE_MONTHS[BRAND_CADENCE[clientId]] || null
+
 export async function onRequestPost(context) {
   const { request, env } = context
   try {
@@ -65,7 +74,7 @@ export async function onRequestPost(context) {
 
     // ── 2) 점수 계산 ──
     const { operators, stats, cuts } = scoreInfringers(rows, {
-      refDate: today, dayHist, brandName: (id) => BRAND_LABEL[id] || id,
+      refDate: today, dayHist, brandName: (id) => BRAND_LABEL[id] || id, brandWindowMonths,
     })
 
     // ── 3) 직전 스냅샷 → prev_grade ──
@@ -94,7 +103,7 @@ export async function onRequestPost(context) {
       first_date: o.first_date, last_date: o.last_date, recency_months: o.recency_months,
       identified: o.identified, link_online: o.link_online, customs: o.customs, raid: o.raid, legal: o.legal,
       has_legal_pipeline: o.has_legal_pipeline, is_big: o.is_big,
-      is_pipeline: o.is_pipeline, brand_share: o.brand_share,
+      is_pipeline: o.is_pipeline, brand_share: o.brand_share, pipeline_window: o.pipeline_window,
       enf_score: o.enf_score, yield_score: o.yield_score, grade: o.grade,
       prev_grade: prevGrade[o.cluster_key] || null,
       trend: o.trend, trend_pct: o.trend_pct, detail: o.detail,
