@@ -1,5 +1,7 @@
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
-import { Upload, Printer, GripVertical, ChevronUp, ChevronDown, ListOrdered } from 'lucide-react'
+import { useState, useMemo, useCallback, useRef } from 'react'
+import { Upload, Download, GripVertical, ChevronUp, ChevronDown, ListOrdered } from 'lucide-react'
+import html2canvas from 'html2canvas'
+import { jsPDF } from 'jspdf'
 import {
   C, LOGO_WHITE, LOGO_DARK,
   parseMonitoringExcel, derivePeriod, summarize, uniqBrands, defaultCover,
@@ -157,13 +159,6 @@ export default function MonitoringReport() {
     return seq.map((b) => map[b]).filter(Boolean)
   }, [summaries, order])
 
-  // 인쇄 모드 토글 — body 클래스로 print CSS 격리, 인쇄 후 자동 해제
-  useEffect(() => {
-    const after = () => document.body.classList.remove('mr-printing')
-    window.addEventListener('afterprint', after)
-    return () => { window.removeEventListener('afterprint', after); document.body.classList.remove('mr-printing') }
-  }, [])
-
   const ingest = useCallback(async (file) => {
     setBusy(true)
     setStatus('분석 중…')
@@ -205,11 +200,63 @@ export default function MonitoringReport() {
     })
   }
 
-  const doPrint = () => {
-    if (!rows.length) return
-    document.body.classList.add('mr-printing')
-    window.print()
-  }
+  // PDF 직접 생성 — 각 섹션(표지/브랜드별 요약)을 A4 한 장씩 캔버스로 렌더해 1:1 배치.
+  // 브라우저 인쇄 페이지네이션(여백/배율/머리글 변수)을 완전히 제거 → 어느 환경에서도 표지 1장 + 요약 N장 고정.
+  const doExport = useCallback(async () => {
+    if (!rows.length || busy) return
+    setBusy(true)
+    setStatus('PDF 생성 중… (폰트 준비)')
+    try {
+      // 웹폰트(Noto Serif KR 등)가 로드된 뒤에 캡처해야 글자가 정확히 렌더됨
+      if (document.fonts && document.fonts.ready) await document.fonts.ready
+
+      const PW = 210, PH = 297               // A4 (mm)
+      const RENDER_W = 794                   // 화면 .mr-cover/.mr-page 폭 (= A4 96dpi)
+      const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' })
+      const root = document.getElementById('mr-doc')
+      const sections = Array.from(root.querySelectorAll('.mr-cover, .mr-page'))
+
+      for (let i = 0; i < sections.length; i++) {
+        setStatus('PDF 생성 중… (' + (i + 1) + '/' + sections.length + ' 페이지)')
+        const el = sections[i]
+        const canvas = await html2canvas(el, {
+          scale: 2,
+          backgroundColor: '#FBFAF6',
+          useCORS: true,
+          width: RENDER_W,
+          windowWidth: RENDER_W,
+          // input(표지 브랜드명) 은 html2canvas 가 값을 못 그리는 경우가 있어 div 로 치환
+          onclone: (cdoc) => {
+            cdoc.querySelectorAll('.mr-coverInput').forEach((inp) => {
+              const div = cdoc.createElement('div')
+              div.textContent = inp.value || ''
+              div.style.cssText = 'font-family:inherit;font-size:18px;font-weight:700;color:#17150F;padding:1px 4px;margin:2px 0 0 -4px;max-width:340px;line-height:1.3;'
+              inp.parentNode.replaceChild(div, inp)
+            })
+          },
+        })
+        const imgData = canvas.toDataURL('image/jpeg', 0.92)
+        const imgH = (canvas.height * PW) / canvas.width   // 폭을 210mm 로 맞췄을 때의 높이
+        if (i > 0) doc.addPage()
+        doc.setFillColor(251, 250, 246)                    // 크림 배경 먼저 깔아 빈틈 방지
+        doc.rect(0, 0, PW, PH, 'F')
+        if (imgH <= PH + 0.5) {
+          doc.addImage(imgData, 'JPEG', 0, 0, PW, Math.min(imgH, PH))   // 폭 꽉 채움, 한 페이지
+        } else {
+          const w = (canvas.width * PH) / canvas.height                // 페이지보다 길면 높이 기준 축소(중앙)
+          doc.addImage(imgData, 'JPEG', (PW - w) / 2, 0, w, PH)
+        }
+      }
+
+      const safe = ((coverBrand || 'Monitoring') + '_' + (meta.tag || '')).replace(/[^\w가-힣.\-]+/g, '_').replace(/^_+|_+$/g, '')
+      doc.save(safe + '.pdf')
+      setStatus('PDF 저장 완료 · ' + sections.length + '페이지')
+    } catch (e) {
+      setStatus('PDF 생성 오류: ' + (e?.message || e))
+    } finally {
+      setBusy(false)
+    }
+  }, [rows, busy, coverBrand, meta])
 
   const hasData = rows.length > 0
   const totalPages = orderedSummaries.length + 1
@@ -226,8 +273,8 @@ export default function MonitoringReport() {
             <input type="file" accept=".xlsx,.xls" onChange={onFile} style={{ display: 'none' }} disabled={busy} />
           </label>
           <span style={{ fontSize: 11, color: '#9A938A', maxWidth: 320, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{status}</span>
-          <button onClick={doPrint} disabled={!hasData} style={{ background: hasData ? '#fff' : '#5a564d', color: hasData ? '#17150F' : '#9A938A', border: 'none', borderRadius: 6, padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: hasData ? 'pointer' : 'default', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            <Printer size={14} /> PDF / 인쇄
+          <button onClick={doExport} disabled={!hasData || busy} style={{ background: (hasData && !busy) ? '#fff' : '#5a564d', color: (hasData && !busy) ? '#17150F' : '#9A938A', border: 'none', borderRadius: 6, padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: (hasData && !busy) ? 'pointer' : 'default', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <Download size={14} /> {busy ? 'PDF 생성 중…' : 'PDF 다운로드'}
           </button>
         </div>
       </div>
@@ -247,7 +294,7 @@ export default function MonitoringReport() {
       {hasData && (
         <div className="mr-noprint" style={{ width: 794, maxWidth: '100%', margin: '18px auto 0', background: '#FFF7E6', border: '1px solid #F0D9A0', borderRadius: 8, padding: '10px 14px', fontSize: 12, color: '#7A5A12', display: 'flex', gap: 8, alignItems: 'flex-start', lineHeight: 1.6 }}>
           <span style={{ fontSize: 14 }}>💡</span>
-          <span><b>PDF 저장 팁</b> — 인쇄 대화상자에서 <b style={{ color: C.amberDk }}>여백 → '없음'</b>, <b style={{ color: C.amberDk }}>'머리글과 바닥글' 체크 해제</b> 로 설정하면 표지가 한 페이지에 꽉 차고 하단 띠가 페이지 맨 아래에 깔끔히 붙습니다. (Chrome 이 이 설정을 기억하므로 한 번만 바꾸면 됩니다)</span>
+          <span><b>PDF 다운로드</b> — 우측 상단 <b style={{ color: C.amberDk }}>PDF 다운로드</b> 버튼을 누르면 표지 1장 + 브랜드별 요약이 각각 A4 한 페이지로 정확히 떨어진 PDF 가 바로 저장됩니다. 브라우저 인쇄 설정(여백·배율)과 무관하게 항상 동일하게 출력됩니다.</span>
         </div>
       )}
 
