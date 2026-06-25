@@ -157,7 +157,7 @@ html, body, #root {
 @media print {
   /* 여백 0 — 표지를 A4 한 장에 채우기 위함(본문 여백은 .mr-page 내부 padding 으로 부여) */
   @page { size: A4; margin: 0; }
-  .mr-root { background: #fff !important; padding: 0 !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  .mr-root { background: #FBFAF6 !important; padding: 0 !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
   .mr-root * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
   aside, .mr-toolbar, .mr-noprint { display: none !important; }
   main { overflow: visible !important; }
@@ -171,8 +171,9 @@ html, body, #root {
      그리드는 margin-top:auto 로 하단 배치(균형 잡힌 풀페이지 표지). footer 가 없어졌으므로 그리드가
      페이지 안에 안전히 들어감(넘치던 마지막 요소 제거됨). overflow:hidden 으로 1px 넘침 차단. */
   .mr-cover { box-shadow: none !important; width: auto !important; min-height: 296mm !important; margin: 0 !important; overflow: hidden; }
-  /* 본문 페이지는 @page 여백 0 을 대신해 내부 padding 으로 인쇄 여백 부여 */
-  .mr-page { box-shadow: none !important; padding: 14mm 13mm !important; margin: 0 !important; width: auto !important; min-height: 0 !important; background: #fff !important; break-before: page; }
+  /* 본문 페이지: @page 여백 0 대신 내부 padding + 표지와 동일한 크림 배경으로 한 페이지 채움(min-height:296mm).
+     내용이 길면 자연스럽게 늘어남(min-height 라 클립 안 함). 배경은 표지와 같은 #FBFAF6. */
+  .mr-page { box-shadow: none !important; padding: 14mm 13mm !important; margin: 0 !important; width: auto !important; min-height: 296mm !important; background: #FBFAF6 !important; break-before: page; }
   .mr-chartcard, .mr-kpis { break-inside: avoid; }
   .mr-coverInput { border-color: transparent !important; background: transparent !important; }
 }
