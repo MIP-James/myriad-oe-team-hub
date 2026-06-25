@@ -1,0 +1,8 @@
+# 해시된 정적 자산(JS/CSS/이미지)은 파일명이 빌드마다 바뀌므로 영구 캐시 가능.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# HTML / SPA 라우트는 항상 최신 — 캐시 금지(매 진입 시 최신 자산 해시 참조).
+# 이게 없으면 브라우저가 옛 index.html(옛 CSS/JS 참조)을 재사용해 배포가 안 보일 수 있음.
+/*
+  Cache-Control: no-cache, must-revalidate

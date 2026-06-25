@@ -136,7 +136,9 @@ html, body, #root {
   -webkit-font-smoothing: antialiased;
 }
 .mr-cover {
-  position: relative; width: 794px; min-height: 1123px; background: #FBFAF6; overflow: hidden;
+  /* 높이를 296mm 절대값으로 — A4(297mm) 인쇄영역(여백:없음)보다 1mm 작아 분할/빈페이지 없음.
+     @media print 오버라이드가 아닌 '기본 규칙'에 박아 인쇄 CSS 적용 여부와 무관하게 항상 한 페이지. */
+  position: relative; width: 794px; height: 296mm; background: #FBFAF6; overflow: hidden;
   display: flex; flex-direction: column; box-shadow: 0 3px 18px rgba(0,0,0,.14); margin: 0 auto 30px;
 }
 .mr-page {
