@@ -5,6 +5,9 @@ import {
   parseMonitoringExcel, derivePeriod, summarize, uniqBrands, defaultCover,
 } from '../lib/monitoringReportEngine'
 
+/* 막대 분포 차트용 색상 팔레트 (브랜드 톤 — 막대마다 순환 적용) */
+const BAR_PALETTE = ['#EAA00A', '#17150F', '#B5760C', '#B79A5E', '#6E6757', '#9B8B6A', '#D8B45A', '#3F3A30']
+
 /* ---------- 차트 컴포넌트 ---------- */
 function BarChart({ title, en, items }) {
   if (!items || !items.length) return null
@@ -17,7 +20,7 @@ function BarChart({ title, en, items }) {
       {items.map((p, i) => (
         <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '5px 0' }}>
           <div style={{ width: 130, flex: 'none', fontSize: 12, color: '#332F27', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={p.name}>{p.name}</div>
-          <div style={{ flex: 1, height: 11, background: '#EEE9DC', borderRadius: 3, overflow: 'hidden' }}><div style={{ width: (p.frac * 100) + '%', height: '100%', background: C.ink, borderRadius: 3 }} /></div>
+          <div style={{ flex: 1, height: 11, background: '#EEE9DC', borderRadius: 3, overflow: 'hidden' }}><div style={{ width: (p.frac * 100) + '%', height: '100%', background: BAR_PALETTE[i % BAR_PALETTE.length], borderRadius: 3 }} /></div>
           <div style={{ width: 64, flex: 'none', textAlign: 'right', fontSize: 11, color: '#6E6757' }}><b style={{ color: C.ink }}>{p.count}</b> · {p.pct}%</div>
         </div>
       ))}
