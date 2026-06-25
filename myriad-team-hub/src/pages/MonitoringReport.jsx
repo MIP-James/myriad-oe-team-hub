@@ -302,10 +302,6 @@ export default function MonitoringReport() {
                 </div>
               </div>
             </div>
-            <div style={{ background: '#17150F', color: '#C9C3B6', fontSize: 10, padding: '13px 56px', display: 'flex', justifyContent: 'space-between', letterSpacing: '.03em' }}>
-              <span>본 보고서는 대상 브랜드 전용 기밀 문서입니다. · Confidential — prepared for the client brand only.</span>
-              <span className="mr-mono">01 / {('0' + totalPages).slice(-2)}</span>
-            </div>
           </section>
 
           {/* 브랜드별 요약 (사용자 순서) */}

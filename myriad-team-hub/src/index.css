@@ -131,7 +131,7 @@ html, body, #root {
 .mr-serif { font-family: "Noto Serif KR", serif; }
 .mr-mono { font-family: "IBM Plex Mono", monospace; }
 .mr-doc {
-  width: 794px; margin: 0 auto; padding: 22px 0 40px;
+  width: 794px; margin: 0 auto; padding: 0 0 40px;
   font-family: "Pretendard Variable", Pretendard, "Malgun Gothic", sans-serif; color: #2A2620;
   -webkit-font-smoothing: antialiased;
 }
