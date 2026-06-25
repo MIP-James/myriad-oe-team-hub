@@ -136,7 +136,7 @@ html, body, #root {
   -webkit-font-smoothing: antialiased;
 }
 .mr-cover {
-  position: relative; width: 794px; background: #FBFAF6; overflow: hidden;
+  position: relative; width: 794px; min-height: 1123px; background: #FBFAF6; overflow: hidden;
   display: flex; flex-direction: column; box-shadow: 0 3px 18px rgba(0,0,0,.14); margin: 0 auto 30px;
 }
 .mr-page {
@@ -165,9 +165,10 @@ html, body, #root {
      (100vh 는 인터랙티브 Chrome 인쇄에서 페이지가 아닌 엉뚱한 큰 값으로 계산돼 분할되므로 사용 금지 — 절대단위 mm 만 신뢰 가능.)
      margin 리셋 필수(화면용 margin-bottom:30px 가 남으면 빈 페이지 유발). overflow:hidden 으로 1px 넘침 차단.
      break-after 는 제거 — 다음 .mr-page 의 break-before 만으로 페이지 분리(이중 break = 빈 페이지 방지). */
-  /* 표지는 콘텐츠 높이 그대로(강제 페이지 높이 제거) — 그리드가 상단정렬이라 표지 높이와 무관하게 page1 에 위치.
-     억지 height 를 주지 않으므로 여백/인쇄경로와 무관하게 분할/빈페이지 없음. */
-  .mr-cover { box-shadow: none !important; width: auto !important; min-height: 0 !important; margin: 0 !important; overflow: visible; }
+  /* 표지는 한 페이지를 꽉 채움(min-height:296mm < 인쇄영역 297mm[여백:없음] → 분할/빈페이지 없음).
+     그리드는 margin-top:auto 로 하단 배치(균형 잡힌 풀페이지 표지). footer 가 없어졌으므로 그리드가
+     페이지 안에 안전히 들어감(넘치던 마지막 요소 제거됨). overflow:hidden 으로 1px 넘침 차단. */
+  .mr-cover { box-shadow: none !important; width: auto !important; min-height: 296mm !important; margin: 0 !important; overflow: hidden; }
   /* 본문 페이지는 @page 여백 0 을 대신해 내부 padding 으로 인쇄 여백 부여 */
   .mr-page { box-shadow: none !important; padding: 14mm 13mm !important; margin: 0 !important; width: auto !important; min-height: 0 !important; background: #fff !important; break-before: page; }
   .mr-chartcard, .mr-kpis { break-inside: avoid; }
