@@ -125,3 +125,42 @@ html, body, #root {
   height: 0;
   pointer-events: none;
 }
+
+/* ─── 온라인 모니터링 보고서 (PDF) ─── */
+.mr-root { min-height: 100%; background: #E9E7E1; padding-bottom: 60px; }
+.mr-serif { font-family: "Noto Serif KR", serif; }
+.mr-mono { font-family: "IBM Plex Mono", monospace; }
+.mr-doc {
+  width: 794px; margin: 0 auto; padding: 22px 0 40px;
+  font-family: "Pretendard Variable", Pretendard, "Malgun Gothic", sans-serif; color: #2A2620;
+  -webkit-font-smoothing: antialiased;
+}
+.mr-cover {
+  position: relative; width: 794px; min-height: 1123px; background: #FBFAF6; overflow: hidden;
+  display: flex; flex-direction: column; box-shadow: 0 3px 18px rgba(0,0,0,.14); margin: 0 auto 30px;
+}
+.mr-page {
+  background: #FBFAF6; box-shadow: 0 3px 18px rgba(0,0,0,.14); padding: 42px 50px; margin: 0 auto 30px;
+  width: 794px; min-height: 1123px; display: flex; flex-direction: column;
+}
+.mr-coverInput {
+  font-family: inherit; font-size: 18px; font-weight: 700; color: #17150F; border: 1px dashed transparent;
+  border-radius: 4px; background: transparent; padding: 1px 4px; margin: 2px 0 0 -4px; width: 100%; max-width: 340px;
+}
+.mr-coverInput:hover, .mr-coverInput:focus { border-color: #D8CBA8; background: #FFFDF7; outline: none; }
+
+/* 인쇄 — body.mr-printing 일 때만 적용 (다른 페이지 인쇄에 영향 없음) */
+@media print {
+  @page { size: A4; margin: 12mm; }
+  body.mr-printing { background: #fff !important; }
+  body.mr-printing aside,
+  body.mr-printing .mr-toolbar,
+  body.mr-printing .mr-noprint { display: none !important; }
+  body.mr-printing main { overflow: visible !important; }
+  body.mr-printing .mr-root { background: #fff !important; padding: 0 !important; }
+  body.mr-printing .mr-doc { width: auto !important; padding: 0 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body.mr-printing .mr-cover { box-shadow: none !important; width: auto !important; min-height: 297mm; break-after: page; }
+  body.mr-printing .mr-page { box-shadow: none !important; padding: 0 !important; margin: 0 !important; width: auto !important; min-height: 0 !important; background: #fff !important; break-before: page; }
+  body.mr-printing .mr-chartcard, body.mr-printing .mr-kpis { break-inside: avoid; }
+  body.mr-printing .mr-coverInput { border-color: transparent !important; background: transparent !important; }
+}

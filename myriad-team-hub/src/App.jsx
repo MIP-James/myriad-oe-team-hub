@@ -11,6 +11,7 @@ import Launcher from './pages/Launcher'
 import Jobs from './pages/Jobs'
 import SharedSheets from './pages/SharedSheets'
 import Reports from './pages/Reports'
+import MonitoringReport from './pages/MonitoringReport'
 import ReportGroups from './pages/ReportGroups'
 import ReportGroupDetail from './pages/ReportGroupDetail'
 import Community from './pages/Community'
@@ -43,6 +44,7 @@ export default function App() {
         <Route path="jobs" element={<Jobs />} />
         <Route path="sheets" element={<SharedSheets />} />
         <Route path="reports" element={<Reports />} />
+        <Route path="monitoring-report" element={<MonitoringReport />} />
         <Route path="reports/groups" element={<ReportGroups />} />
         <Route path="reports/groups/:id" element={<ReportGroupDetail />} />
         <Route path="targets" element={<Targets />} />
