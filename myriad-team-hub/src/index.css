@@ -151,7 +151,9 @@ html, body, #root {
 
 /* 인쇄 — body.mr-printing 일 때만 적용 (다른 페이지 인쇄에 영향 없음) */
 @media print {
-  @page { size: A4; margin: 12mm; }
+  /* 여백 0 — 표지를 A4 한 장(297mm)에 정확히 채우기 위함(여백 계산 의존 제거).
+     본문 페이지 여백은 .mr-page 내부 padding 으로 부여. */
+  @page { size: A4; margin: 0; }
   body.mr-printing { background: #fff !important; }
   body.mr-printing aside,
   body.mr-printing .mr-toolbar,
@@ -159,10 +161,11 @@ html, body, #root {
   body.mr-printing main { overflow: visible !important; }
   body.mr-printing .mr-root { background: #fff !important; padding: 0 !important; }
   body.mr-printing .mr-doc { width: auto !important; padding: 0 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  /* 표지는 인쇄 가능 영역(A4 297mm − 상하 여백 24mm)에 정확히 맞춰 1페이지로 고정.
-     min-height:297mm 로 두면 여백만큼 넘쳐 2페이지로 분할되므로 height 로 고정 + overflow 차단. */
-  body.mr-printing .mr-cover { box-shadow: none !important; width: auto !important; height: calc(297mm - 24mm) !important; min-height: 0 !important; overflow: hidden; break-after: page; }
-  body.mr-printing .mr-page { box-shadow: none !important; padding: 0 !important; margin: 0 !important; width: auto !important; min-height: 0 !important; background: #fff !important; break-before: page; }
+  /* 표지 = A4 한 장(297mm) 풀블리드. 여백 0 이므로 297mm 가 곧 페이지 한 장 → 절대 분할되지 않음.
+     overflow:hidden 으로 혹시 모를 1px 넘침도 차단. */
+  body.mr-printing .mr-cover { box-shadow: none !important; width: auto !important; height: 297mm !important; min-height: 0 !important; overflow: hidden; break-after: page; }
+  /* 본문 페이지는 @page 여백 0 을 대신해 내부 padding 으로 인쇄 여백 부여 */
+  body.mr-printing .mr-page { box-shadow: none !important; padding: 14mm 13mm !important; margin: 0 !important; width: auto !important; min-height: 0 !important; background: #fff !important; break-before: page; }
   body.mr-printing .mr-chartcard, body.mr-printing .mr-kpis { break-inside: avoid; }
   body.mr-printing .mr-coverInput { border-color: transparent !important; background: transparent !important; }
 }
