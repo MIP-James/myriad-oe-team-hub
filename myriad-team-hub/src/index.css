@@ -162,11 +162,12 @@ html, body, #root {
   body.mr-printing main { overflow: visible !important; }
   body.mr-printing .mr-root { background: #fff !important; padding: 0 !important; }
   body.mr-printing .mr-doc { width: auto !important; padding: 0 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  /* 표지 높이를 인쇄 가능 영역보다 확실히 작게(271mm) 고정.
-     브라우저가 @page margin:0 을 무시하고 자체 기본 여백(~10mm)을 넣어도(여백:기본)
-     인쇄영역 ~277mm > 271mm 이라 한 장에 들어감. overflow:hidden 으로 넘침 차단.
-     ⚠ '머리글과 바닥글' 옵션을 켜면 인쇄영역이 더 줄어 다시 넘칠 수 있으니 끄고 출력. */
-  body.mr-printing .mr-cover { box-shadow: none !important; width: auto !important; height: calc(297mm - 26mm) !important; min-height: 0 !important; overflow: hidden; break-after: page; }
+  /* 표지 높이를 100vh = '실제 인쇄 가능 영역 높이' 로 잡음.
+     여백이 @page(0) 든 브라우저 기본(~10mm)이든 100vh 가 그 영역에 정확히 맞춰지므로
+     ① 항상 한 장에 들어가고(분할 없음) ② footer 가 페이지 바닥에 딱 붙어 아래 흰 여백이 없음.
+     overflow:hidden 으로 혹시 모를 1px 넘침 차단. (헤드리스 Chrome 검증: /Count 1)
+     ⚠ '머리글과 바닥글' 옵션은 끄고 출력(켜면 인쇄영역이 줄어 표지 내용이 잘릴 수 있음). */
+  body.mr-printing .mr-cover { box-shadow: none !important; width: auto !important; min-height: 100vh !important; height: 100vh !important; overflow: hidden; break-after: page; }
   /* 본문 페이지는 @page 여백 0 을 대신해 내부 padding 으로 인쇄 여백 부여 */
   body.mr-printing .mr-page { box-shadow: none !important; padding: 14mm 13mm !important; margin: 0 !important; width: auto !important; min-height: 0 !important; background: #fff !important; break-before: page; }
   body.mr-printing .mr-chartcard, body.mr-printing .mr-kpis { break-inside: avoid; }
