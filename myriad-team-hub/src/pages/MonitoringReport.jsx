@@ -281,7 +281,7 @@ export default function MonitoringReport() {
               </div>
             </div>
 
-            <div style={{ padding: '0 56px', marginTop: 'auto' }}>
+            <div style={{ padding: '0 56px', marginTop: 64 }}>
               <div style={{ height: 1, background: '#E2DCCC', marginBottom: 22 }} />
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px 40px', paddingBottom: 30 }}>
                 <div>
