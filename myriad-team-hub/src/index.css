@@ -136,9 +136,10 @@ html, body, #root {
   -webkit-font-smoothing: antialiased;
 }
 .mr-cover {
-  /* 높이를 296mm 절대값으로 — A4(297mm) 인쇄영역(여백:없음)보다 1mm 작아 분할/빈페이지 없음.
-     @media print 오버라이드가 아닌 '기본 규칙'에 박아 인쇄 CSS 적용 여부와 무관하게 항상 한 페이지. */
-  position: relative; width: 794px; height: 296mm; background: #FBFAF6; overflow: hidden;
+  /* min-height 296mm 로 페이지를 채움(요약 페이지와 동일 방식). 그리드를 margin-top:auto 로
+     맨 아래 가장자리에 고정하면 인쇄영역이 296mm 와 비슷할 때 살짝 넘쳐 분할되므로,
+     그리드는 제목 아래로 흐르게(상단 영역) 배치 → 페이지 경계와 멀어 어떤 여백/브랜드수에도 안 넘침. */
+  position: relative; width: 794px; min-height: 296mm; background: #FBFAF6; overflow: hidden;
   display: flex; flex-direction: column; box-shadow: 0 3px 18px rgba(0,0,0,.14); margin: 0 auto 30px;
 }
 .mr-page {
