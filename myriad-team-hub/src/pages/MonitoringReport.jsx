@@ -243,9 +243,17 @@ export default function MonitoringReport() {
         </div>
       )}
 
+      {/* ===== PDF 인쇄 설정 안내 (화면 전용) ===== */}
+      {hasData && (
+        <div className="mr-noprint" style={{ width: 794, maxWidth: '100%', margin: '18px auto 0', background: '#FFF7E6', border: '1px solid #F0D9A0', borderRadius: 8, padding: '10px 14px', fontSize: 12, color: '#7A5A12', display: 'flex', gap: 8, alignItems: 'flex-start', lineHeight: 1.6 }}>
+          <span style={{ fontSize: 14 }}>💡</span>
+          <span><b>PDF 저장 팁</b> — 인쇄 대화상자에서 <b style={{ color: C.amberDk }}>여백 → '없음'</b>, <b style={{ color: C.amberDk }}>'머리글과 바닥글' 체크 해제</b> 로 설정하면 표지가 한 페이지에 꽉 차고 하단 띠가 페이지 맨 아래에 깔끔히 붙습니다. (Chrome 이 이 설정을 기억하므로 한 번만 바꾸면 됩니다)</span>
+        </div>
+      )}
+
       {/* ===== 순서 편집 패널 (브랜드 2개 이상일 때만) ===== */}
       {hasData && orderedSummaries.length > 1 && (
-        <div style={{ paddingTop: 22 }}>
+        <div style={{ paddingTop: 14 }}>
           <ReorderPanel order={order.length ? order : summaries.map((s) => s.brand)} summaries={summaries} onMove={move} onReorder={reorder} />
         </div>
       )}
