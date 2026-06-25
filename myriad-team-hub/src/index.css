@@ -159,7 +159,9 @@ html, body, #root {
   body.mr-printing main { overflow: visible !important; }
   body.mr-printing .mr-root { background: #fff !important; padding: 0 !important; }
   body.mr-printing .mr-doc { width: auto !important; padding: 0 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  body.mr-printing .mr-cover { box-shadow: none !important; width: auto !important; min-height: 297mm; break-after: page; }
+  /* 표지는 인쇄 가능 영역(A4 297mm − 상하 여백 24mm)에 정확히 맞춰 1페이지로 고정.
+     min-height:297mm 로 두면 여백만큼 넘쳐 2페이지로 분할되므로 height 로 고정 + overflow 차단. */
+  body.mr-printing .mr-cover { box-shadow: none !important; width: auto !important; height: calc(297mm - 24mm) !important; min-height: 0 !important; overflow: hidden; break-after: page; }
   body.mr-printing .mr-page { box-shadow: none !important; padding: 0 !important; margin: 0 !important; width: auto !important; min-height: 0 !important; background: #fff !important; break-before: page; }
   body.mr-printing .mr-chartcard, body.mr-printing .mr-kpis { break-inside: avoid; }
   body.mr-printing .mr-coverInput { border-color: transparent !important; background: transparent !important; }
