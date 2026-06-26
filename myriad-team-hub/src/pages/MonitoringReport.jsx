@@ -23,7 +23,7 @@ function BarChart({ title, en, items }) {
         <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '2px 0' }}>
           {/* padding 5px 0 = overflow:hidden 클립이 패딩 박스까지라 글자가 위/아래로 삐져나와도 안 잘림(html2canvas 가 글자를 줄 박스 밖으로 렌더하는 현상 흡수). 가로 말줄임은 유지. */}
           <div style={{ width: 130, flex: 'none', fontSize: 12, lineHeight: 1.4, padding: '5px 0', color: '#332F27', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={p.name}>{p.name}</div>
-          <div style={{ flex: 1, height: 11, background: '#EEE9DC', borderRadius: 3, overflow: 'hidden' }}><div style={{ width: (p.frac * 100) + '%', height: '100%', background: BAR_PALETTE[i % BAR_PALETTE.length], borderRadius: 3 }} /></div>
+          <div className="mr-bartrack" style={{ flex: 1, height: 11, background: '#EEE9DC', borderRadius: 3, overflow: 'hidden' }}><div style={{ width: (p.frac * 100) + '%', height: '100%', background: BAR_PALETTE[i % BAR_PALETTE.length], borderRadius: 3 }} /></div>
           <div style={{ width: 64, flex: 'none', textAlign: 'right', fontSize: 11, color: '#6E6757' }}><b style={{ color: C.ink }}>{p.count}</b> · {p.pct}%</div>
         </div>
       ))}
@@ -43,7 +43,7 @@ function TypeChart({ items }) {
       {items.map((t, i) => (
         <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '6px 0', borderBottom: '1px solid #EFEADD' }}>
           <div style={{ flex: 1, fontSize: 12.5, color: '#332F27' }}><span style={{ color: t.col, fontSize: 12, marginRight: 9, verticalAlign: '-1px' }}>■</span>{t.ko} <span style={{ color: '#A39C8C', fontSize: 10 }}>{t.en}</span></div>
-          <div style={{ width: 130, height: 9, background: '#EEE9DC', borderRadius: 3, overflow: 'hidden' }}><div style={{ width: (t.frac * 100) + '%', height: '100%', background: t.col, borderRadius: 3 }} /></div>
+          <div className="mr-bartrack" style={{ width: 130, height: 9, background: '#EEE9DC', borderRadius: 3, overflow: 'hidden' }}><div style={{ width: (t.frac * 100) + '%', height: '100%', background: t.col, borderRadius: 3 }} /></div>
           <div style={{ width: 54, textAlign: 'right', fontSize: 11, color: '#6E6757' }}><b style={{ color: C.ink }}>{t.count}</b> · {t.pct}%</div>
         </div>
       ))}
@@ -232,6 +232,12 @@ export default function MonitoringReport() {
               div.style.cssText = 'font-family:inherit;font-size:18px;font-weight:700;color:#17150F;padding:1px 4px;margin:2px 0 0 -4px;max-width:340px;line-height:1.3;'
               inp.parentNode.replaceChild(div, inp)
             })
+            // html2canvas 는 텍스트를 줄 박스보다 ~5px 아래로 렌더(화면 브라우저와의 고질적 차이).
+            // 그 결과 분포 막대 옆 라벨/퍼센트 텍스트가 막대보다 아래로 어긋남. 캡처 복제본에서만
+            // 막대 트랙을 그만큼 내려 텍스트와 정렬(화면 미리보기 DOM 은 손대지 않아 그대로 정확).
+            const st = cdoc.createElement('style')
+            st.textContent = '.mr-bartrack{transform:translateY(5px)}'
+            cdoc.head.appendChild(st)
           },
         })
         const imgData = canvas.toDataURL('image/jpeg', 0.92)
