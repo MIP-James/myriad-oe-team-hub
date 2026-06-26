@@ -127,7 +127,7 @@ html, body, #root {
 }
 
 /* ─── 온라인 모니터링 보고서 (PDF) ─── */
-.mr-root { min-height: 100%; background: #E9E7E1; padding-bottom: 60px; }
+.mr-root { min-height: 100%; background: #f1f5f9; padding-bottom: 60px; }
 .mr-serif { font-family: "Noto Serif KR", serif; }
 .mr-mono { font-family: "IBM Plex Mono", monospace; }
 .mr-doc {

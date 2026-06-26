@@ -1,9 +1,9 @@
 import { useState, useMemo, useCallback, useRef } from 'react'
-import { Upload, Download, GripVertical, ChevronUp, ChevronDown, ListOrdered } from 'lucide-react'
+import { Upload, Download, GripVertical, ChevronUp, ChevronDown, ListOrdered, FileText } from 'lucide-react'
 import html2canvas from 'html2canvas'
 import { jsPDF } from 'jspdf'
 import {
-  C, LOGO_WHITE, LOGO_DARK,
+  C, LOGO_DARK,
   parseMonitoringExcel, derivePeriod, summarize, uniqBrands, defaultCover,
 } from '../lib/monitoringReportEngine'
 
@@ -100,13 +100,13 @@ function ReorderPanel({ order, summaries, onMove, onReorder }) {
   const dragIdx = useRef(null)
   const byBrand = useMemo(() => Object.fromEntries(summaries.map((s) => [s.brand, s])), [summaries])
   return (
-    <div className="mr-noprint" style={{ width: 794, margin: '0 auto 18px', background: '#fff', border: '1px solid #E2DCCC', borderRadius: 10, padding: '14px 18px', boxShadow: '0 2px 10px rgba(0,0,0,.06)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, color: C.ink }}>
-        <ListOrdered size={16} />
-        <span style={{ fontWeight: 700, fontSize: 13 }}>페이지 순서 편집</span>
-        <span style={{ fontSize: 11, color: '#94918A' }}>드래그하거나 ▲▼ 로 순서를 바꾸세요. 표지는 항상 1페이지 고정입니다.</span>
+    <div className="mr-noprint mx-auto mb-[18px] bg-white border border-slate-200 rounded-2xl px-4 py-4" style={{ width: 794, maxWidth: '100%' }}>
+      <div className="flex items-center gap-2 mb-2.5 text-slate-900">
+        <ListOrdered size={16} className="text-myriad-ink" />
+        <span className="font-semibold text-sm">페이지 순서 편집</span>
+        <span className="text-xs text-slate-400">드래그하거나 ▲▼ 로 순서를 바꾸세요. 표지는 항상 1페이지 고정입니다.</span>
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div className="flex flex-col gap-1.5">
         {order.map((brand, i) => {
           const s = byBrand[brand]
           return (
@@ -116,14 +116,14 @@ function ReorderPanel({ order, summaries, onMove, onReorder }) {
               onDragStart={() => { dragIdx.current = i }}
               onDragOver={(e) => e.preventDefault()}
               onDrop={() => { if (dragIdx.current != null && dragIdx.current !== i) onReorder(dragIdx.current, i); dragIdx.current = null }}
-              style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', background: '#FBFAF6', border: '1px solid #ECE6D8', borderRadius: 8, cursor: 'grab' }}
+              className="flex items-center gap-2.5 px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-lg cursor-grab"
             >
-              <GripVertical size={16} color="#B3AC9C" />
-              <span style={{ width: 22, height: 22, flex: 'none', borderRadius: 6, background: C.ink, color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{i + 1}</span>
-              <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: C.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{brand}</span>
-              <span style={{ fontSize: 11, color: '#8A857A' }}>{s ? s.count + '건' : ''}</span>
-              <button onClick={() => onMove(i, -1)} disabled={i === 0} style={{ border: '1px solid #DED7C6', background: '#fff', borderRadius: 6, padding: '3px 6px', cursor: i === 0 ? 'default' : 'pointer', opacity: i === 0 ? 0.35 : 1 }} title="위로"><ChevronUp size={14} /></button>
-              <button onClick={() => onMove(i, 1)} disabled={i === order.length - 1} style={{ border: '1px solid #DED7C6', background: '#fff', borderRadius: 6, padding: '3px 6px', cursor: i === order.length - 1 ? 'default' : 'pointer', opacity: i === order.length - 1 ? 0.35 : 1 }} title="아래로"><ChevronDown size={14} /></button>
+              <GripVertical size={16} className="text-slate-400" />
+              <span className="w-[22px] h-[22px] flex-none rounded-md bg-myriad-ink text-white text-[11px] font-bold flex items-center justify-center">{i + 1}</span>
+              <span className="flex-1 text-sm font-semibold text-slate-800 whitespace-nowrap overflow-hidden text-ellipsis">{brand}</span>
+              <span className="text-xs text-slate-400">{s ? s.count + '건' : ''}</span>
+              <button onClick={() => onMove(i, -1)} disabled={i === 0} className="border border-slate-200 bg-white rounded-md px-1.5 py-1 text-slate-600 disabled:opacity-35 disabled:cursor-default enabled:hover:border-myriad-primary" title="위로"><ChevronUp size={14} /></button>
+              <button onClick={() => onMove(i, 1)} disabled={i === order.length - 1} className="border border-slate-200 bg-white rounded-md px-1.5 py-1 text-slate-600 disabled:opacity-35 disabled:cursor-default enabled:hover:border-myriad-primary" title="아래로"><ChevronDown size={14} /></button>
             </div>
           )
         })}
@@ -274,44 +274,43 @@ export default function MonitoringReport() {
 
   return (
     <div className="mr-root">
-      {/* ===== 툴바 (화면 전용) ===== */}
-      <div className="mr-toolbar" style={{ position: 'sticky', top: 0, zIndex: 30, background: '#17150F', color: '#fff', display: 'flex', alignItems: 'center', gap: 14, padding: '10px 22px', boxShadow: '0 1px 6px rgba(0,0,0,.25)' }}>
-        <img src={LOGO_WHITE} alt="MYRIAD IP" style={{ height: 24, display: 'block' }} />
-        <span style={{ color: '#8A857A', fontSize: 11 }}>온라인 모니터링 보고서 · 자동 생성</span>
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
-          <label style={{ background: '#EAA00A', color: '#17150F', borderRadius: 6, padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            <Upload size={14} /> 엑셀 업로드
-            <input type="file" accept=".xlsx,.xls" onChange={onFile} style={{ display: 'none' }} disabled={busy} />
-          </label>
-          <span style={{ fontSize: 11, color: '#9A938A', maxWidth: 320, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{status}</span>
-          <button onClick={doExport} disabled={!hasData || busy} style={{ background: (hasData && !busy) ? '#fff' : '#5a564d', color: (hasData && !busy) ? '#17150F' : '#9A938A', border: 'none', borderRadius: 6, padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: (hasData && !busy) ? 'pointer' : 'default', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            <Download size={14} /> {busy ? 'PDF 생성 중…' : 'PDF 다운로드'}
-          </button>
-        </div>
+      {/* ===== 툴바 (화면 전용 — 허브 디자인) ===== */}
+      <div className="mr-toolbar sticky top-0 z-30 bg-white border-b border-slate-200 flex items-center gap-3 px-6 py-3">
+        <FileText className="text-myriad-ink" size={20} />
+        <h1 className="text-lg font-bold text-slate-900">모니터링 보고서 <span className="text-sm font-normal text-slate-400">PDF 생성</span></h1>
+        <div className="flex-1" />
+        <span className="hidden md:block text-xs text-slate-400 max-w-[260px] truncate">{status}</span>
+        <label className={`text-sm font-semibold border border-slate-200 text-slate-700 px-3 py-1.5 rounded-lg inline-flex items-center gap-1.5 transition-colors ${busy ? 'opacity-50 cursor-default' : 'cursor-pointer hover:border-myriad-primary hover:bg-slate-50'}`}>
+          <Upload size={14} /> 엑셀 업로드
+          <input type="file" accept=".xlsx,.xls" onChange={onFile} className="hidden" disabled={busy} />
+        </label>
+        <button onClick={doExport} disabled={!hasData || busy} className="text-sm font-semibold bg-myriad-primary hover:bg-myriad-primaryDark text-myriad-ink disabled:bg-slate-100 disabled:text-slate-400 px-3.5 py-1.5 rounded-lg inline-flex items-center gap-1.5 transition-colors">
+          <Download size={14} /> {busy ? 'PDF 생성 중…' : 'PDF 다운로드'}
+        </button>
       </div>
 
       {/* ===== 빈 상태 ===== */}
       {!hasData && (
-        <div style={{ maxWidth: 560, margin: '80px auto', textAlign: 'center', color: '#6E6757' }}>
-          <div style={{ fontSize: 17, fontWeight: 700, color: C.ink, marginBottom: 8 }}>온라인 모니터링 보고서 생성</div>
-          <p style={{ fontSize: 13, lineHeight: 1.7 }}>
-            셀러 정보가 담긴 모니터링 엑셀(.xlsx)을 업로드하면, 브랜드별 요약(KPI·플랫폼/침해유형/IPR/상품유형 분포)으로<br />
-            자동 구성된 보고서가 생성됩니다. 우측 상단 <b style={{ color: C.amberDk }}>엑셀 업로드</b> 버튼을 눌러 시작하세요.
+        <div className="max-w-xl mx-auto mt-20 text-center px-6">
+          <div className="text-lg font-bold text-slate-900 mb-2">온라인 모니터링 보고서 생성</div>
+          <p className="text-sm text-slate-500 leading-relaxed">
+            셀러 정보가 담긴 모니터링 엑셀(.xlsx)을 업로드하면, 브랜드별 요약(KPI·플랫폼/침해유형/IPR/상품유형 분포)으로
+            자동 구성된 보고서가 생성됩니다. 우측 상단 <b className="text-myriad-ink">엑셀 업로드</b> 버튼을 눌러 시작하세요.
           </p>
         </div>
       )}
 
-      {/* ===== PDF 인쇄 설정 안내 (화면 전용) ===== */}
+      {/* ===== PDF 다운로드 안내 (화면 전용) ===== */}
       {hasData && (
-        <div className="mr-noprint" style={{ width: 794, maxWidth: '100%', margin: '18px auto 0', background: '#FFF7E6', border: '1px solid #F0D9A0', borderRadius: 8, padding: '10px 14px', fontSize: 12, color: '#7A5A12', display: 'flex', gap: 8, alignItems: 'flex-start', lineHeight: 1.6 }}>
-          <span style={{ fontSize: 14 }}>💡</span>
-          <span><b>PDF 다운로드</b> — 우측 상단 <b style={{ color: C.amberDk }}>PDF 다운로드</b> 버튼을 누르면 표지 1장 + 브랜드별 요약이 각각 A4 한 페이지로 정확히 떨어진 PDF 가 바로 저장됩니다. 브라우저 인쇄 설정(여백·배율)과 무관하게 항상 동일하게 출력됩니다.</span>
+        <div className="mr-noprint mx-auto mt-5 bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm text-slate-600 flex gap-2 items-start leading-relaxed" style={{ width: 794, maxWidth: '100%' }}>
+          <span>💡</span>
+          <span><b className="text-slate-700">PDF 다운로드</b> — 우측 상단 <b className="text-myriad-ink">PDF 다운로드</b> 버튼을 누르면 표지 1장 + 브랜드별 요약이 각각 A4 한 페이지로 정확히 떨어진 PDF 가 바로 저장됩니다. 브라우저 인쇄 설정(여백·배율)과 무관하게 항상 동일하게 출력됩니다.</span>
         </div>
       )}
 
       {/* ===== 순서 편집 패널 (브랜드 2개 이상일 때만) ===== */}
       {hasData && orderedSummaries.length > 1 && (
-        <div style={{ paddingTop: 14 }}>
+        <div className="pt-3.5">
           <ReorderPanel order={order.length ? order : summaries.map((s) => s.brand)} summaries={summaries} onMove={move} onReorder={reorder} />
         </div>
       )}
