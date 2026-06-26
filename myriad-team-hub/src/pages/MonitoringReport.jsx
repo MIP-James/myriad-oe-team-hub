@@ -351,11 +351,11 @@ export default function MonitoringReport() {
                 </div>
                 <div>
                   <div style={{ fontSize: 10, letterSpacing: '.08em', textTransform: 'uppercase', color: '#A39C8C' }}>보고 주기 / Cadence</div>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: '#332F27', marginTop: 3 }}>{meta.mode}</div>
+                  <div className="mr-serif" style={{ fontSize: 14, fontWeight: 600, color: '#332F27', marginTop: 3 }}>{meta.mode}</div>
                 </div>
                 <div>
                   <div style={{ fontSize: 10, letterSpacing: '.08em', textTransform: 'uppercase', color: '#A39C8C' }}>발행일 / Issued</div>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: '#332F27', marginTop: 3 }}>{meta.issued}</div>
+                  <div className="mr-serif" style={{ fontSize: 14, fontWeight: 600, color: '#332F27', marginTop: 3 }}>{meta.issued}</div>
                 </div>
               </div>
             </div>
