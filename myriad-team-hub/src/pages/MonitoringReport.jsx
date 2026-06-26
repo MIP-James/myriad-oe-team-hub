@@ -235,8 +235,11 @@ export default function MonitoringReport() {
             // html2canvas 는 텍스트를 줄 박스보다 ~5px 아래로 렌더(화면 브라우저와의 고질적 차이).
             // 그 결과 분포 막대 옆 라벨/퍼센트 텍스트가 막대보다 아래로 어긋남. 캡처 복제본에서만
             // 막대 트랙을 그만큼 내려 텍스트와 정렬(화면 미리보기 DOM 은 손대지 않아 그대로 정확).
+            // overflow:visible 필수 — overflow:hidden 트랙에 translateY 를 크게 주면 html2canvas 가
+            // 색칠된 막대를 잘라내 사라짐(헤드리스 재현 확인). visible 로 두면 색상 유지 + 이동 1:1 적용.
+            // (막대 fill 은 트랙 범위 안이라 clip 제거해도 모양 동일.)
             const st = cdoc.createElement('style')
-            st.textContent = '.mr-bartrack{transform:translateY(11px)}'
+            st.textContent = '.mr-bartrack{overflow:visible !important;transform:translateY(6px)}'
             cdoc.head.appendChild(st)
           },
         })
