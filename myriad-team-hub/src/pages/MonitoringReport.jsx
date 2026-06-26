@@ -242,7 +242,7 @@ export default function MonitoringReport() {
             //   막대: overflow:visible(색상보존)+아래 6px / KPI 라벨·설명 위 8px, 숫자 위 14px(html2canvas 하강 보정)
             //   KPI 설명만 아래 3px(숫자↔설명 간격 확대) / 표지 Week 보조텍스트 아래 15px.
             const st = cdoc.createElement('style')
-            st.textContent = '.mr-bartrack{overflow:visible !important;transform:translateY(6px)} .mr-kpis>div>div{transform:translateY(-8px)} .mr-kpis>div>.mr-serif{transform:translateY(-14px)} .mr-kpis>div>div:last-child{transform:translateY(-3px)} .mr-weeksub{transform:translateY(16px)}'
+            st.textContent = '.mr-bartrack{overflow:visible !important;transform:translateY(6px)} .mr-kpis>div>div{transform:translateY(-8px)} .mr-kpis>div>.mr-serif{transform:translateY(-14px)} .mr-kpis>div>div:last-child{transform:translateY(-3px)} .mr-weeksub{transform:translateY(14px)}'
             cdoc.head.appendChild(st)
           },
         })
