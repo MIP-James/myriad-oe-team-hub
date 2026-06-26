@@ -241,7 +241,7 @@ export default function MonitoringReport() {
             // KPI 카드 3줄(라벨/숫자/설명)이 html2canvas 하강으로 PDF 에서 통째로 낮게 보임 → 미리보기에 맞춰
             // 캡처 복제본에서만 카드 텍스트 줄을 위로 6px(세 줄 함께 → 숫자↔설명 14px 간격은 레이아웃이라 유지).
             const st = cdoc.createElement('style')
-            st.textContent = '.mr-bartrack{overflow:visible !important;transform:translateY(6px)} .mr-kpis>div>div{transform:translateY(-6px)}'
+            st.textContent = '.mr-bartrack{overflow:visible !important;transform:translateY(6px)} .mr-kpis>div>div{transform:translateY(-6px)} .mr-kpis>div>.mr-serif{transform:translateY(-9px)}'
             cdoc.head.appendChild(st)
           },
         })
