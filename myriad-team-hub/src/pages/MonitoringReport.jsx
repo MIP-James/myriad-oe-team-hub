@@ -77,7 +77,7 @@ function BrandSummary({ sum, period, idx, total, brandIndex, brandCount }) {
           <div key={i} style={{ flex: 1, padding: '18px 20px', borderLeft: i ? '1px solid #EFEADD' : 'none' }}>
             <div style={{ fontSize: 10, letterSpacing: '.08em', textTransform: 'uppercase', color: '#A39C8C' }}>{k.en}</div>
             <div className="mr-serif" style={{ fontSize: 40, fontWeight: 700, color: C.ink, lineHeight: 1.05, marginTop: 6 }}>{k.val}</div>
-            <div style={{ fontSize: 11, color: '#6E6757', marginTop: 14 }}>{k.ko} · {k.sub}</div>
+            <div style={{ fontSize: 11, color: '#6E6757', marginTop: 3 }}>{k.ko} · {k.sub}</div>
           </div>
         ))}
       </div>
@@ -238,10 +238,11 @@ export default function MonitoringReport() {
             // overflow:visible 필수 — overflow:hidden 트랙에 translateY 를 크게 주면 html2canvas 가
             // 색칠된 막대를 잘라내 사라짐(헤드리스 재현 확인). visible 로 두면 색상 유지 + 이동 1:1 적용.
             // (막대 fill 은 트랙 범위 안이라 clip 제거해도 모양 동일.)
-            // KPI 카드 3줄(라벨/숫자/설명)이 html2canvas 하강으로 PDF 에서 통째로 낮게 보임 → 미리보기에 맞춰
-            // 캡처 복제본에서만 카드 텍스트 줄을 위로 6px(세 줄 함께 → 숫자↔설명 14px 간격은 레이아웃이라 유지).
+            // ⚠ 모든 위치 보정은 캡처 복제본 전용 — 화면 미리보기 DOM 은 절대 안 건드림(미리보기=원본 고정 기준).
+            //   막대: overflow:visible(색상보존)+아래 6px / KPI 라벨·설명 위 8px, 숫자 위 14px(html2canvas 하강 보정)
+            //   KPI 설명만 아래 3px(숫자↔설명 간격 확대) / 표지 Week 보조텍스트 아래 15px.
             const st = cdoc.createElement('style')
-            st.textContent = '.mr-bartrack{overflow:visible !important;transform:translateY(6px)} .mr-kpis>div>div{transform:translateY(-8px)} .mr-kpis>div>.mr-serif{transform:translateY(-14px)}'
+            st.textContent = '.mr-bartrack{overflow:visible !important;transform:translateY(6px)} .mr-kpis>div>div{transform:translateY(-8px)} .mr-kpis>div>.mr-serif{transform:translateY(-14px)} .mr-kpis>div>div:last-child{transform:translateY(3px)} .mr-weeksub{transform:translateY(15px)}'
             cdoc.head.appendChild(st)
           },
         })
@@ -331,7 +332,7 @@ export default function MonitoringReport() {
               <h1 className="mr-serif" style={{ margin: '14px 0 0', fontWeight: 700, fontSize: 46, lineHeight: 1.18, color: C.ink, letterSpacing: '-.01em' }}>Online Infringement<br />Monitoring &amp; Enforcement<br />Report</h1>
               <div style={{ display: 'flex', alignItems: 'flex-end', gap: 18, marginTop: 42 }}>
                 <div className="mr-serif" style={{ fontSize: 58, fontWeight: 700, color: C.amber, lineHeight: 0.9 }}>{meta.tag}</div>
-                <div style={{ paddingBottom: 3, position: 'relative', top: 10 }}>
+                <div className="mr-weeksub" style={{ paddingBottom: 8 }}>
                   <div style={{ fontSize: 13, color: '#332F27', fontWeight: 600 }}>{meta.range || meta.tag}</div>
                   <div style={{ fontSize: 11, color: '#8A857A' }}>{meta.mode} 보고</div>
                 </div>
