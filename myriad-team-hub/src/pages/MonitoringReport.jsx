@@ -64,7 +64,7 @@ function BrandSummary({ sum, period, idx, total, brandIndex, brandCount }) {
         <div className="mr-mono" style={{ fontSize: 10, letterSpacing: '.04em', color: C.amberDk }}>요약 · Executive Summary</div>
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', borderBottom: '2px solid ' + C.ink, paddingBottom: 4 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', borderBottom: '2px solid ' + C.ink, paddingBottom: 14 }}>
         <h2 className="mr-serif" style={{ margin: 0, fontSize: 23, fontWeight: 700, color: C.ink, lineHeight: 1.3 }}>
           {sum.brand} <span style={{ fontSize: 13, color: '#A39C8C', fontWeight: 500 }}>Executive Summary</span>
         </h2>
