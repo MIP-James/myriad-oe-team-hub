@@ -20,8 +20,9 @@ function BarChart({ title, en, items }) {
         <h3 className="mr-serif" style={{ margin: 0, fontSize: 16, fontWeight: 600, color: C.ink }}>{title} <span style={{ fontSize: 11, color: '#A39C8C', fontWeight: 500 }}>{en}</span></h3>
       </div>
       {items.map((p, i) => (
-        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '5px 0' }}>
-          <div style={{ width: 130, flex: 'none', fontSize: 12, color: '#332F27', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={p.name}>{p.name}</div>
+        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '2px 0' }}>
+          {/* padding 5px 0 = overflow:hidden 클립이 패딩 박스까지라 글자가 위/아래로 삐져나와도 안 잘림(html2canvas 가 글자를 줄 박스 밖으로 렌더하는 현상 흡수). 가로 말줄임은 유지. */}
+          <div style={{ width: 130, flex: 'none', fontSize: 12, lineHeight: 1.4, padding: '5px 0', color: '#332F27', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={p.name}>{p.name}</div>
           <div style={{ flex: 1, height: 11, background: '#EEE9DC', borderRadius: 3, overflow: 'hidden' }}><div style={{ width: (p.frac * 100) + '%', height: '100%', background: BAR_PALETTE[i % BAR_PALETTE.length], borderRadius: 3 }} /></div>
           <div style={{ width: 64, flex: 'none', textAlign: 'right', fontSize: 11, color: '#6E6757' }}><b style={{ color: C.ink }}>{p.count}</b> · {p.pct}%</div>
         </div>
