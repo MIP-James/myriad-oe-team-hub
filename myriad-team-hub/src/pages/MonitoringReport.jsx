@@ -17,7 +17,7 @@ function BarChart({ title, en, items }) {
     <div className="mr-chartcard" style={{ marginTop: 30 }}>
       {/* 아이콘을 제목 안 inline 으로 — html2canvas 가 텍스트를 줄 박스 밖으로 밀어도 아이콘이 함께 따라가 수직 정렬 유지(flex align-items:center 는 아이콘만 제자리 남아 PDF 에서 어긋났음) */}
       <div style={{ marginBottom: 12 }}>
-        <h3 className="mr-serif" style={{ margin: 0, fontSize: 16, fontWeight: 600, color: C.ink }}><span style={{ color: C.amber, fontSize: 11, marginRight: 7, verticalAlign: '1px' }}>■</span>{title} <span style={{ fontSize: 11, color: '#A39C8C', fontWeight: 500 }}>{en}</span></h3>
+        <h3 className="mr-serif" style={{ margin: 0, fontSize: 16, fontWeight: 600, color: C.ink }}><span style={{ color: C.amber, fontSize: 11, marginRight: 7, verticalAlign: '-0.5px' }}>■</span>{title} <span style={{ fontSize: 11, color: '#A39C8C', fontWeight: 500 }}>{en}</span></h3>
       </div>
       {items.map((p, i) => (
         <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '2px 0' }}>
@@ -35,14 +35,14 @@ function TypeChart({ items }) {
   return (
     <div className="mr-chartcard" style={{ marginTop: 30 }}>
       <div style={{ marginBottom: 10 }}>
-        <h3 className="mr-serif" style={{ margin: 0, fontSize: 16, fontWeight: 600, color: C.ink }}><span style={{ color: C.amber, fontSize: 11, marginRight: 7, verticalAlign: '1px' }}>■</span>침해유형별 분포 <span style={{ fontSize: 11, color: '#A39C8C', fontWeight: 500 }}>By Infringement Type</span></h3>
+        <h3 className="mr-serif" style={{ margin: 0, fontSize: 16, fontWeight: 600, color: C.ink }}><span style={{ color: C.amber, fontSize: 11, marginRight: 7, verticalAlign: '-0.5px' }}>■</span>침해유형별 분포 <span style={{ fontSize: 11, color: '#A39C8C', fontWeight: 500 }}>By Infringement Type</span></h3>
       </div>
       <div style={{ display: 'flex', height: 16, borderRadius: 4, overflow: 'hidden', marginBottom: 14 }}>
         {items.map((t, i) => (<div key={i} style={{ width: t.segPct + '%', background: t.col, height: '100%' }} />))}
       </div>
       {items.map((t, i) => (
         <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '6px 0', borderBottom: '1px solid #EFEADD' }}>
-          <div style={{ flex: 1, fontSize: 12.5, color: '#332F27' }}><span style={{ color: t.col, fontSize: 12, marginRight: 9, verticalAlign: '1px' }}>■</span>{t.ko} <span style={{ color: '#A39C8C', fontSize: 10 }}>{t.en}</span></div>
+          <div style={{ flex: 1, fontSize: 12.5, color: '#332F27' }}><span style={{ color: t.col, fontSize: 12, marginRight: 9, verticalAlign: '-0.5px' }}>■</span>{t.ko} <span style={{ color: '#A39C8C', fontSize: 10 }}>{t.en}</span></div>
           <div style={{ width: 130, height: 9, background: '#EEE9DC', borderRadius: 3, overflow: 'hidden' }}><div style={{ width: (t.frac * 100) + '%', height: '100%', background: t.col, borderRadius: 3 }} /></div>
           <div style={{ width: 54, textAlign: 'right', fontSize: 11, color: '#6E6757' }}><b style={{ color: C.ink }}>{t.count}</b> · {t.pct}%</div>
         </div>
