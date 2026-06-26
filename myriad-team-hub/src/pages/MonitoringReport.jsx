@@ -236,7 +236,7 @@ export default function MonitoringReport() {
             // 그 결과 분포 막대 옆 라벨/퍼센트 텍스트가 막대보다 아래로 어긋남. 캡처 복제본에서만
             // 막대 트랙을 그만큼 내려 텍스트와 정렬(화면 미리보기 DOM 은 손대지 않아 그대로 정확).
             const st = cdoc.createElement('style')
-            st.textContent = '.mr-bartrack{transform:translateY(5px)}'
+            st.textContent = '.mr-bartrack{transform:translateY(11px)}'
             cdoc.head.appendChild(st)
           },
         })
