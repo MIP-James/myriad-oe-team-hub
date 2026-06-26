@@ -229,7 +229,7 @@ export default function MonitoringReport() {
             cdoc.querySelectorAll('.mr-coverInput').forEach((inp) => {
               const div = cdoc.createElement('div')
               div.textContent = inp.value || ''
-              div.style.cssText = 'font-family:inherit;font-size:18px;font-weight:700;color:#17150F;padding:1px 4px;margin:2px 0 0 -4px;max-width:340px;line-height:1.3;'
+              div.style.cssText = 'font-family:"Noto Serif KR",serif;font-size:18px;font-weight:700;color:#17150F;padding:1px 4px;margin:2px 0 0 -4px;max-width:340px;line-height:1.3;'
               inp.parentNode.replaceChild(div, inp)
             })
             // html2canvas 는 텍스트를 줄 박스보다 ~5px 아래로 렌더(화면 브라우저와의 고질적 차이).
@@ -347,7 +347,7 @@ export default function MonitoringReport() {
                 </div>
                 <div>
                   <div style={{ fontSize: 10, letterSpacing: '.08em', textTransform: 'uppercase', color: '#A39C8C' }}>발행 / Prepared by</div>
-                  <div style={{ fontSize: 18, fontWeight: 700, color: C.ink, marginTop: 3 }}>Myriad IP</div>
+                  <div className="mr-serif" style={{ fontSize: 18, fontWeight: 700, color: C.ink, marginTop: 3 }}>Myriad IP</div>
                 </div>
                 <div>
                   <div style={{ fontSize: 10, letterSpacing: '.08em', textTransform: 'uppercase', color: '#A39C8C' }}>보고 주기 / Cadence</div>

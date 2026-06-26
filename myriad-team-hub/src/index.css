@@ -147,7 +147,7 @@ html, body, #root {
   width: 794px; min-height: 1123px; display: flex; flex-direction: column;
 }
 .mr-coverInput {
-  font-family: inherit; font-size: 18px; font-weight: 700; color: #17150F; border: 1px dashed transparent;
+  font-family: "Noto Serif KR", serif; font-size: 18px; font-weight: 700; color: #17150F; border: 1px dashed transparent;
   border-radius: 4px; background: transparent; padding: 1px 4px; margin: 2px 0 0 -4px; width: 100%; max-width: 340px;
 }
 .mr-coverInput:hover, .mr-coverInput:focus { border-color: #D8CBA8; background: #FFFDF7; outline: none; }
