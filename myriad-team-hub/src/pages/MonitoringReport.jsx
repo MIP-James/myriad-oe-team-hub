@@ -77,7 +77,7 @@ function BrandSummary({ sum, period, idx, total, brandIndex, brandCount }) {
           <div key={i} style={{ flex: 1, padding: '18px 20px', borderLeft: i ? '1px solid #EFEADD' : 'none' }}>
             <div style={{ fontSize: 10, letterSpacing: '.08em', textTransform: 'uppercase', color: '#A39C8C' }}>{k.en}</div>
             <div className="mr-serif" style={{ fontSize: 40, fontWeight: 700, color: C.ink, lineHeight: 1.05, marginTop: 6 }}>{k.val}</div>
-            <div style={{ fontSize: 11, color: '#6E6757', marginTop: 3 }}>{k.ko} · {k.sub}</div>
+            <div style={{ fontSize: 11, color: '#6E6757', marginTop: 14 }}>{k.ko} · {k.sub}</div>
           </div>
         ))}
       </div>
@@ -238,10 +238,8 @@ export default function MonitoringReport() {
             // overflow:visible 필수 — overflow:hidden 트랙에 translateY 를 크게 주면 html2canvas 가
             // 색칠된 막대를 잘라내 사라짐(헤드리스 재현 확인). visible 로 두면 색상 유지 + 이동 1:1 적용.
             // (막대 fill 은 트랙 범위 안이라 clip 제거해도 모양 동일.)
-            // KPI 카드 안 텍스트(라벨/숫자/설명)도 같은 하강으로 카드 안에서 낮게 보임 → 카드 박스·구분선은
-            // 그대로 두고 카드 내부 텍스트 줄만 위로 6px(캡처 전용). .mr-kpis>div(카드)>div(텍스트 줄) 선택.
             const st = cdoc.createElement('style')
-            st.textContent = '.mr-bartrack{overflow:visible !important;transform:translateY(6px)} .mr-kpis>div>div{transform:translateY(-100px)}'
+            st.textContent = '.mr-bartrack{overflow:visible !important;transform:translateY(6px)}'
             cdoc.head.appendChild(st)
           },
         })
