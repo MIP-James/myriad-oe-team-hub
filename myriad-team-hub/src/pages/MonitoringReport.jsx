@@ -241,7 +241,7 @@ export default function MonitoringReport() {
             // KPI 카드 안 텍스트(라벨/숫자/설명)도 같은 하강으로 카드 안에서 낮게 보임 → 카드 박스·구분선은
             // 그대로 두고 카드 내부 텍스트 줄만 위로 6px(캡처 전용). .mr-kpis>div(카드)>div(텍스트 줄) 선택.
             const st = cdoc.createElement('style')
-            st.textContent = '.mr-bartrack{overflow:visible !important;transform:translateY(6px)} .mr-kpis>div>div{transform:translateY(-6px)}'
+            st.textContent = '.mr-bartrack{overflow:visible !important;transform:translateY(6px)} .mr-kpis>div>div{transform:translateY(-10px)}'
             cdoc.head.appendChild(st)
           },
         })
