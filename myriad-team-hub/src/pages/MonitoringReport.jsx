@@ -277,7 +277,7 @@ export default function MonitoringReport() {
       {/* ===== 툴바 (화면 전용 — 허브 디자인) ===== */}
       <div className="mr-toolbar sticky top-0 z-30 bg-white border-b border-slate-200 flex items-center gap-3 px-6 py-3">
         <FileText className="text-myriad-ink" size={20} />
-        <h1 className="text-lg font-bold text-slate-900">모니터링 보고서 <span className="text-sm font-normal text-slate-400">PDF 생성</span></h1>
+        <h1 className="text-lg font-bold text-slate-900">주간 모니터링 보고서 <span className="text-sm font-normal text-slate-400">PDF 생성</span></h1>
         <div className="flex-1" />
         <span className="hidden md:block text-xs text-slate-400 max-w-[260px] truncate">{status}</span>
         <label className={`text-sm font-semibold border border-slate-200 text-slate-700 px-3 py-1.5 rounded-lg inline-flex items-center gap-1.5 transition-colors ${busy ? 'opacity-50 cursor-default' : 'cursor-pointer hover:border-myriad-primary hover:bg-slate-50'}`}>

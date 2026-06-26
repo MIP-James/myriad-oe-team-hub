@@ -12,7 +12,7 @@ const BASE_NAV = [
   { to: '/schedules', label: '일정', icon: CalendarDays },
   { to: '/sheets', label: '공용 시트', icon: FileSpreadsheet },
   { to: '/reports', label: '월간 동향 보고서', icon: BarChart3 },
-  { to: '/monitoring-report', label: '모니터링 보고서 (PDF)', icon: FileText },
+  { to: '/monitoring-report', label: '주간 모니터링 보고서', icon: FileText },
   { to: '/targets', label: '재침해자 타겟', icon: Crosshair },
   { to: '/utilities', label: '유틸리티', icon: Wrench },
   { to: '/launcher', label: '내 런처', icon: Cpu },
