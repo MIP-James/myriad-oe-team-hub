@@ -331,7 +331,7 @@ export default function MonitoringReport() {
               <h1 className="mr-serif" style={{ margin: '14px 0 0', fontWeight: 700, fontSize: 46, lineHeight: 1.18, color: C.ink, letterSpacing: '-.01em' }}>Online Infringement<br />Monitoring &amp; Enforcement<br />Report</h1>
               <div style={{ display: 'flex', alignItems: 'flex-end', gap: 18, marginTop: 42 }}>
                 <div className="mr-serif" style={{ fontSize: 58, fontWeight: 700, color: C.amber, lineHeight: 0.9 }}>{meta.tag}</div>
-                <div className="mr-weeksub" style={{ paddingBottom: 8 }}>
+                <div className="mr-weeksub mr-serif" style={{ paddingBottom: 8 }}>
                   <div style={{ fontSize: 13, color: '#332F27', fontWeight: 600 }}>{meta.range || meta.tag}</div>
                   <div style={{ fontSize: 11, color: '#8A857A' }}>{meta.mode} 보고</div>
                 </div>
