@@ -242,7 +242,7 @@ export default function MonitoringReport() {
             //   막대: overflow:visible(색상보존)+아래 6px / KPI 라벨·설명 위 8px, 숫자 위 14px(html2canvas 하강 보정)
             //   KPI 설명만 아래 3px(숫자↔설명 간격 확대) / 표지 Week 보조텍스트 아래 15px.
             const st = cdoc.createElement('style')
-            st.textContent = '.mr-bartrack{overflow:visible !important;transform:translateY(6px)} .mr-kpis>div>div{transform:translateY(-8px)} .mr-kpis>div>.mr-serif{transform:translateY(-14px)} .mr-kpis>div>div:last-child{transform:translateY(-3px)} .mr-weeksub{transform:translateY(14px)}'
+            st.textContent = '.mr-bartrack{overflow:visible !important;transform:translateY(6px)} .mr-kpis>div>div{transform:translateY(-8px)} .mr-kpis>div>.mr-serif{transform:translateY(-14px)} .mr-kpis>div>div:last-child{transform:translateY(-3px)} .mr-weeksub{transform:translateY(14px)} .mr-edithint{display:none}'
             cdoc.head.appendChild(st)
           },
         })
@@ -342,7 +342,7 @@ export default function MonitoringReport() {
               <div style={{ height: 1, background: '#E2DCCC', marginBottom: 22 }} />
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px 40px', paddingBottom: 30 }}>
                 <div>
-                  <div style={{ fontSize: 10, letterSpacing: '.08em', textTransform: 'uppercase', color: '#A39C8C' }}>대상 브랜드 / Brand {multi && <span style={{ color: C.amberDk, textTransform: 'none', letterSpacing: 0 }}>· {brands.length}개 (편집 가능)</span>}</div>
+                  <div style={{ fontSize: 10, letterSpacing: '.08em', textTransform: 'uppercase', color: '#A39C8C' }}>대상 브랜드 / Brand {multi && <span className="mr-edithint" style={{ color: C.amberDk, textTransform: 'none', letterSpacing: 0 }}>· {brands.length}개 (편집 가능)</span>}</div>
                   <input className="mr-coverInput" value={coverBrand} onChange={(e) => setCoverBrand(e.target.value)} spellCheck={false} title="표지에 표시할 브랜드명 (직접 수정 가능)" />
                 </div>
                 <div>
