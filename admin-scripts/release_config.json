@@ -42,6 +42,15 @@
       "icon": "📝",
       "category": "editor"
     },
+    "facebook-ad-price-crawler": {
+      "source_folder": "C:\\Users\\MIP James\\Downloads\\Facebook_Ad_Price_Crawler\\dist\\Facebook_Ad_Price_Crawler",
+      "display_name": "Facebook Ad Price Crawler",
+      "exe_name": "Facebook_Ad_Price_Crawler.exe",
+      "utility_type": "executable",
+      "icon": "🏷️",
+      "category": "automation",
+      "description": "Facebook Ad Library URL(엑셀 D열)에서 CTA→판매페이지 진입 후 최저가 크롤링. 설치된 Chrome 사용, 동시 처리 조절, 결과 엑셀 저장."
+    },
     "custom-preset-web-collector": {
       "source_folder": "C:\\Users\\MIP James\\Downloads\\Custom_Preset_Web_Collector_v015",
       "display_name": "Custom Preset Web Collector",
