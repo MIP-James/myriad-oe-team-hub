@@ -51,6 +51,15 @@
       "category": "automation",
       "description": "Facebook Ad Library URL(엑셀 D열)에서 CTA→판매페이지 진입 후 최저가 크롤링. 설치된 Chrome 사용, 동시 처리 조절, 결과 엑셀 저장."
     },
+    "jellycat-image-matcher": {
+      "source_folder": "C:\\Users\\MIP James\\Downloads\\Jellycat_Image_Matcher_Build\\dist\\Jellycat_Image_Matcher",
+      "display_name": "Jellycat Image Matcher",
+      "exe_name": "Jellycat_Image_Matcher.exe",
+      "utility_type": "executable",
+      "icon": "🧸",
+      "category": "image",
+      "description": "Jellycat 공식몰(KR/UK/US) 이미지 DB 와 매칭해 도용 의심 이미지를 즉시 판별. pHash + CLIP 듀얼 시그널 (파일/URL/클립보드 입력, 일괄 처리 시 색상별 분류 엑셀 생성). Update_DB.exe 로 공식몰 재크롤링 갱신."
+    },
     "custom-preset-web-collector": {
       "source_folder": "C:\\Users\\MIP James\\Downloads\\Custom_Preset_Web_Collector_v015",
       "display_name": "Custom Preset Web Collector",
