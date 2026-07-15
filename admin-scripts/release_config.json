@@ -60,6 +60,15 @@
       "category": "image",
       "description": "Jellycat 공식몰(KR/UK/US) 이미지 DB 와 매칭해 도용 의심 이미지를 즉시 판별. pHash + CLIP 듀얼 시그널 (파일/URL/클립보드 입력, 일괄 처리 시 색상별 분류 엑셀 생성). Update_DB.exe 로 공식몰 재크롤링 갱신."
     },
+    "covernat-image-matcher": {
+      "source_folder": "C:\\Users\\MIP James\\Downloads\\COVERNAT_Image_Matcher_Build\\dist\\COVERNAT_Image_Matcher",
+      "display_name": "COVERNAT Image Matcher",
+      "exe_name": "COVERNAT_Image_Matcher.exe",
+      "utility_type": "executable",
+      "icon": "🧢",
+      "category": "image",
+      "description": "COVERNAT 공식몰 이미지 DB 와 매칭해 도용 의심 이미지를 즉시 판별. pHash + CLIP 듀얼 시그널 (파일/URL/클립보드 입력, 일괄 처리 시 색상별 분류 엑셀 생성). Update_DB.exe 로 공식몰 재크롤링 갱신."
+    },
     "custom-preset-web-collector": {
       "source_folder": "C:\\Users\\MIP James\\Downloads\\Custom_Preset_Web_Collector_v015",
       "display_name": "Custom Preset Web Collector",
