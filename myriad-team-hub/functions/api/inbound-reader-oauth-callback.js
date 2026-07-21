@@ -131,9 +131,11 @@ export async function onRequestGet(context) {
   })
 
   // 신규 reader 등록 시 기존 활성 reader 비활성화 (현재 단일 reader 정책)
+  // ⚠️ purpose='case' 로 한정 — VeRO reader('vero')는 별개 인프라라 건드리면 안 됨
   await sb
     .from('inbound_reader_tokens')
     .update({ is_active: false })
+    .eq('purpose', 'case')
     .neq('user_id', userId)
 
   // expires_at 계산 (expires_in 초 단위)
@@ -150,6 +152,7 @@ export async function onRequestGet(context) {
       expires_at: expiresAt,
       scope: tokenData.scope || null,
       is_active: true,
+      purpose: 'case',
       last_poll_status: 'just_registered',
       last_poll_error: null
     },

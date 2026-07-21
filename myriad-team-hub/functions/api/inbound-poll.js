@@ -78,10 +78,12 @@ export async function onRequestPost(context) {
     })
 
     // ── 활성 reader 조회 ─────────────────────────────────────
+    // purpose='case' 만 폴링 — 'vero'(VeRO 코드 조회 전용 reader)는 케이스 생성 대상 아님
     const { data: readers } = await adminSb
       .from('inbound_reader_tokens')
       .select('*')
       .eq('is_active', true)
+      .eq('purpose', 'case')
     if (!readers || readers.length === 0) {
       return json({ ok: true, message: '활성 reader 없음', processed: 0 })
     }
