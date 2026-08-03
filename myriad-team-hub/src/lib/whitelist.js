@@ -477,15 +477,53 @@ export function findMatchingPreset(presets, headers) {
 
 // ───── 확장 토큰 ───────────────────────────────
 
-export async function listExtTokens() {
-  // ⚠️ token_hash 는 절대 select 하지 않음
+/**
+ * 내 토큰 목록.
+ *
+ * ⚠️ `user_id` 를 명시적으로 거는 게 중요하다. mig 036 이후 관리자에게는
+ *    "전원 조회" RLS 정책이 붙어서, 필터가 없으면 관리자 화면의 "내 토큰" 에
+ *    팀원 전원 토큰이 섞여 나온다.
+ * ⚠️ token_hash 는 절대 select 하지 않음.
+ */
+export async function listExtTokens(userId) {
   const { data, error } = await supabase
     .from('whitelist_ext_tokens')
     .select('id, name, created_at, last_used_at, revoked_at')
+    .eq('user_id', userId)
     .is('revoked_at', null)
     .order('created_at', { ascending: false })
   if (error) throw error
   return data ?? []
+}
+
+/**
+ * 관리자 — 팀원 전원 토큰 + 소유자 이름.
+ *
+ * PostgREST 임베딩(`profiles(...)`)을 안 쓰는 이유: whitelist_ext_tokens.user_id 는
+ * auth.users 를 참조하고 profiles 를 직접 참조하지 않아 관계 추론이 안 된다.
+ * 팀 규모가 작아서 profiles 를 따로 읽어 붙이는 게 제약 추가보다 안전하다.
+ */
+export async function listAllExtTokens() {
+  const { data, error } = await supabase
+    .from('whitelist_ext_tokens')
+    .select('id, user_id, name, created_at, last_used_at, revoked_at')
+    .is('revoked_at', null)
+    .order('created_at', { ascending: false })
+  if (error) throw error
+  const tokens = data ?? []
+  if (!tokens.length) return []
+
+  const { data: profs, error: pErr } = await supabase
+    .from('profiles')
+    .select('id, email, full_name')
+    .in('id', [...new Set(tokens.map((t) => t.user_id))])
+  if (pErr) throw pErr
+
+  const byId = new Map((profs ?? []).map((p) => [p.id, p]))
+  return tokens.map((t) => {
+    const p = byId.get(t.user_id)
+    return { ...t, ownerName: p?.full_name || p?.email || '(알 수 없음)', ownerEmail: p?.email || null }
+  })
 }
 
 /** Cloudflare Function 으로 발급 — plain 토큰은 응답에 1회만 노출됨 */

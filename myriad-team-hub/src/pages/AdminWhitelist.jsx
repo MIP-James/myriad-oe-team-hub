@@ -10,13 +10,13 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   ShieldAlert, Plus, X, Save, Trash2, Loader2, ChevronLeft, Search, Upload,
-  Building2, KeyRound, Copy, Check, AlertTriangle, Puzzle, Eye, EyeOff
+  Building2, KeyRound, AlertTriangle, Puzzle, Eye, EyeOff
 } from 'lucide-react'
 import {
   listClients, createClient, deleteClient,
   listSellers, countSellersByClient, createSeller, updateSeller, deleteSeller,
   deleteSellersByClient,
-  listExtTokens, issueExtToken, revokeExtToken
+  listAllExtTokens, revokeExtToken
 } from '../lib/whitelist'
 import WhitelistImportModal from '../components/WhitelistImportModal'
 import { useAuth } from '../contexts/AuthContext'
@@ -603,103 +603,75 @@ function Field({ label, hint, required, small, children }) {
 }
 
 /* ─────────────────────────────────────────────────
- * 크롬 확장 연결 — 토큰 발급/폐기
+ * 크롬 확장 토큰 — 관리자 전체 현황 (조회 + 폐기)
+ *
+ * 발급은 여기가 아니라 팀원이 /whitelist-guard 에서 직접 한다 (mig 036).
+ * 관리자가 대신 발급하면 토큰이 전부 관리자 계정에 묶여 "누구 것인지" 를 알 수 없고,
+ * 비밀 문자열을 메신저로 전달해야 해서 오히려 관리가 나빠진다.
+ * 여기서는 누가 쓰고 있는지 보고, 퇴사자 등 필요할 때 폐기만 한다.
  * ───────────────────────────────────────────────── */
 function ExtensionSection() {
   const [tokens, setTokens] = useState([])
-  const [issued, setIssued] = useState(null)   // { token } — 발급 직후 1회만 표시
-  const [busy, setBusy] = useState(false)
-  const [copied, setCopied] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [err, setErr] = useState(null)
 
   useEffect(() => { load() }, [])
 
   async function load() {
-    try { setTokens(await listExtTokens()) } catch (e) { setErr(e.message) }
+    setLoading(true)
+    try { setTokens(await listAllExtTokens()) } catch (e) { setErr(e.message) } finally { setLoading(false) }
   }
 
-  async function issue() {
-    setBusy(true); setErr(null)
-    try {
-      const r = await issueExtToken('Chrome 확장')
-      setIssued(r)
-      await load()
-    } catch (e) { setErr(e.message) } finally { setBusy(false) }
-  }
-
-  async function revoke(id) {
-    if (!window.confirm('이 토큰을 폐기할까요? 해당 확장은 더 이상 목록을 받지 못합니다.')) return
-    try { await revokeExtToken(id); await load() } catch (e) { setErr(e.message) }
-  }
-
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(issued.token)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    } catch { /* 클립보드 권한 없으면 사용자가 직접 선택복사 */ }
+  async function revoke(t) {
+    if (!window.confirm(
+      `${t.ownerName} 님의 토큰 "${t.name}" 을 폐기할까요?\n` +
+      `해당 확장은 더 이상 화이트리스트를 받지 못합니다.`
+    )) return
+    try { await revokeExtToken(t.id); await load() } catch (e) { setErr(e.message) }
   }
 
   return (
     <section className="mt-10 bg-white border border-slate-200 rounded-2xl p-5">
       <div className="flex items-center gap-2 mb-1">
         <Puzzle size={16} className="text-myriad-ink" />
-        <h2 className="font-bold text-slate-900">크롬 확장 연결</h2>
+        <h2 className="font-bold text-slate-900">크롬 확장 토큰 현황</h2>
       </div>
       <p className="text-xs text-slate-500 mb-4">
-        확장을 처음 설치할 때 한 번만 토큰을 붙여넣으면 됩니다. 토큰은 발급 직후에만 보이고,
-        서버에는 해시만 저장되므로 분실하면 새로 발급해야 합니다.
+        팀원은 <Link to="/whitelist-guard" className="text-myriad-accent font-semibold hover:underline">화이트리스트 가드</Link>
+        {' '}페이지에서 <b>본인 토큰을 직접 발급</b>합니다. 여기서는 전체 현황을 확인하고,
+        퇴사·기기 교체 등의 경우 폐기할 수 있습니다.
       </p>
 
       {err && <div className="mb-3 text-xs text-rose-600">{err}</div>}
 
-      {issued && (
-        <div className="mb-4 bg-amber-50 border border-amber-300 rounded-lg p-3">
-          <p className="text-xs font-semibold text-amber-900 mb-2">
-            아래 토큰을 확장 설정에 붙여넣으세요 — 이 창을 닫으면 다시 볼 수 없습니다.
-          </p>
-          <div className="flex items-center gap-2">
-            <code className="flex-1 bg-white border border-amber-200 rounded px-3 py-2 text-[11px] font-mono break-all">
-              {issued.token}
-            </code>
-            <button
-              onClick={copy}
-              className="flex items-center gap-1.5 bg-myriad-primary hover:bg-myriad-primaryDark text-myriad-ink font-semibold px-3 py-2 rounded-lg text-xs shrink-0"
-            >
-              {copied ? <Check size={13} /> : <Copy size={13} />}
-              {copied ? '복사됨' : '복사'}
-            </button>
-          </div>
+      {loading ? (
+        <div className="py-4 text-center text-sm text-slate-400 flex items-center justify-center gap-2">
+          <Loader2 size={14} className="animate-spin" /> 불러오는 중...
         </div>
-      )}
-
-      <div className="flex items-center gap-2 mb-4">
-        <button
-          onClick={issue}
-          disabled={busy}
-          className="flex items-center gap-2 bg-white border border-slate-300 hover:border-myriad-primary text-slate-700 font-semibold px-4 py-2 rounded-lg text-sm disabled:opacity-50"
-        >
-          {busy ? <Loader2 size={14} className="animate-spin" /> : <KeyRound size={14} />}
-          토큰 발급
-        </button>
-      </div>
-
-      {tokens.length > 0 && (
+      ) : tokens.length === 0 ? (
+        <p className="text-xs text-slate-400 py-2">
+          아직 발급된 토큰이 없습니다. 팀원에게 화이트리스트 가드 페이지를 안내하세요.
+        </p>
+      ) : (
         <ul className="space-y-1.5">
           {tokens.map((t) => (
-            <li key={t.id} className="flex items-center gap-3 text-xs bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
-              <KeyRound size={12} className="text-slate-400" />
-              <span className="font-semibold text-slate-700">{t.name}</span>
+            <li
+              key={t.id}
+              className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs bg-slate-50 border border-slate-200 rounded-lg px-3 py-2"
+            >
+              <KeyRound size={12} className="text-slate-400 shrink-0" />
+              <span className="font-semibold text-slate-800">{t.ownerName}</span>
+              <span className="text-slate-500">{t.name}</span>
               <span className="text-slate-400">
                 발급 {new Date(t.created_at).toLocaleDateString('ko-KR')}
               </span>
-              <span className="text-slate-400">
+              <span className={t.last_used_at ? 'text-emerald-600' : 'text-amber-600'}>
                 {t.last_used_at
-                  ? `마지막 사용 ${new Date(t.last_used_at).toLocaleString('ko-KR')}`
-                  : '아직 사용 안 됨'}
+                  ? `사용 중 · ${new Date(t.last_used_at).toLocaleString('ko-KR')}`
+                  : '아직 미사용'}
               </span>
               <div className="flex-1" />
-              <button onClick={() => revoke(t.id)} className="text-rose-600 hover:underline">폐기</button>
+              <button onClick={() => revoke(t)} className="text-rose-600 hover:underline">폐기</button>
             </li>
           ))}
         </ul>
