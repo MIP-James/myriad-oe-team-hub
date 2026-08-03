@@ -27,20 +27,48 @@
   let lastScan = { checked: 0, offers: [] }  // 마지막 스캔 요약
   let submitConfirmed = false            // 제출 확인을 이미 받았는지
   let observer = null                    // 렌더 중 일시 정지시키려고 참조 보관
+  const bootAt = Date.now()              // "아직 펼치는 중" 과 "못 읽음" 을 구분하는 기준
   const clickedToggles = new WeakSet()   // 같은 토글을 반복 클릭하지 않도록
 
   // ── 0. 페이지 판별 ────────────────────────────────────
+  /**
+   * "권리침해 신고 페이지" 를 뜻하는 문구 — 21개 마켓플레이스 언어.
+   * 영어만 보면 amazon.de 처럼 현지화된 포털에서 확장이 통째로 동작하지 않는다.
+   */
+  const REPORT_PAGE_RE = new RegExp([
+    'report infringement', 'which products would you like to report', 'notice retraction form',
+    'report a violation',
+    'rechtsverletzung', 'verstoß melden', 'verstoss melden',        // 독일어
+    'signaler une contrefaçon', 'atteinte aux droits', 'contrefaçon', // 프랑스어
+    'informar de una infracción', 'denunciar una infracción', 'infracción', // 스페인어
+    'segnala una violazione', 'violazione dei diritti',              // 이탈리아어
+    'denunciar violação', 'violação de propriedade',                 // 포르투갈어
+    'inbreuk melden', 'inbreuk op',                                  // 네덜란드어
+    'rapportera intrång', 'intrång',                                 // 스웨덴어
+    'zgłoś naruszenie', 'naruszenie praw',                           // 폴란드어
+    'ihlal bildir', 'ihlali bildir',                                 // 터키어
+    '権利侵害', '侵害の申告', '知的財産権の侵害',                      // 일본어
+    '권리침해', '침해 신고',                                          // 한국어
+    'انتهاك', 'الإبلاغ عن انتهاك'                                    // 아랍어
+  ].join('|'), 'i')
+
   /**
    * 신고 도구 페이지인지 확인. URL 만으로 판단하지 않는 이유:
    * 아마존 신고 포털 경로가 마켓플레이스마다 다르고 바뀌기도 해서,
    * 페이지 내용으로 판단하는 게 훨씬 안 깨진다.
    */
   function looksLikeReportPage() {
-    const t = document.body?.innerText || ''
-    if (/report infringement/i.test(t)) return true
-    if (/which products would you like to report/i.test(t)) return true
-    if (/notice retraction form/i.test(t)) return true
-    // 표 헤더로도 판단 (다국어 포털 대비)
+    // (1) 경로 — 언어와 무관하게 통하는 신호. amazon.de/report/infringement 처럼
+    //     국가 도메인이 달라도 /report/ 경로는 공통이다.
+    if (/\/report(\/|$)/i.test(location.pathname)) return true
+
+    // (2) 문구 — 마켓플레이스 언어별 "권리침해 신고" 표현.
+    //     경로 검사만 믿으면 안 되는 이유: 포털 경로가 바뀌거나 마켓플레이스마다
+    //     다를 수 있고, 그러면 확장이 조용히 아무 일도 안 한다.
+    const t = (document.body?.innerText || '').slice(0, 5000)
+    if (REPORT_PAGE_RE.test(t)) return true
+
+    // (3) 표 헤더 — 이미 펼쳐진 상태라면 이것만으로도 확실
     return !!findSoldByHeaders().length
   }
 
@@ -49,14 +77,51 @@
     return (el.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase()
   }
 
-  /** 'Sold by' 로 보이는 헤더 셀들 (다국어 일부 포함) */
+  /**
+   * 'Sold by' 로 보이는 헤더 셀들.
+   *
+   * 아마존 신고 포털은 국가 도메인마다 현지화되므로 영어만 보면 amazon.de 등에서
+   * 아무것도 못 읽는다. 21개 마켓플레이스 언어를 모두 넣어둔다.
+   * (콜론·공백은 normText 단계에서 정리되고, 마지막에 부분 일치 폴백도 둔다)
+   */
+  const SOLD_BY_LABELS = [
+    // 영어
+    'sold by', 'seller', 'sold by:', 'merchant',
+    // 독일어
+    'verkauft von', 'verkäufer', 'verkaufer', 'verkauf durch', 'angeboten von',
+    // 프랑스어
+    'vendu par', 'vendeur',
+    // 스페인어 (es / mx)
+    'vendido por', 'vendedor',
+    // 이탈리아어
+    'venduto da', 'venditore',
+    // 포르투갈어 (br)
+    'vendido por', 'vendedor',
+    // 네덜란드어 (nl / be)
+    'verkocht door', 'verkoper',
+    // 스웨덴어
+    'säljs av', 'saljs av', 'säljare',
+    // 폴란드어
+    'sprzedane przez', 'sprzedawca', 'sprzedaje',
+    // 터키어
+    'satıcı', 'satici', 'satan', 'gönderen',
+    // 일본어
+    '販売元', '販売業者', '出荷元', '販売者',
+    // 한국어
+    '판매자', '판매처',
+    // 아랍어 (ae / sa / eg)
+    'يبيعه', 'البائع'
+  ]
+
   function findSoldByHeaders() {
-    const LABELS = ['sold by', 'seller', 'sold by:', '판매자', 'verkäufer', 'vendido por', 'vendu par']
     const out = []
     for (const cell of document.querySelectorAll('th, td')) {
-      const t = normText(cell)
-      if (t.length > 24) continue
-      if (LABELS.includes(t)) out.push(cell)
+      const t = normText(cell).replace(/[:：]\s*$/, '')
+      if (!t || t.length > 24) continue
+      if (SOLD_BY_LABELS.includes(t)) { out.push(cell); continue }
+      // 폴백 — 'Verkauft von dem Händler' 처럼 뒤에 말이 붙는 변형 대비.
+      // 짧은 헤더 셀에서만 보므로 오탐 위험이 낮다.
+      if (SOLD_BY_LABELS.some((l) => l.length >= 6 && t.startsWith(l))) out.push(cell)
     }
     return out
   }
@@ -66,16 +131,51 @@
    * "Show offers (2)" 같은 토글을 눌러 셀러 목록을 DOM 에 올린다.
    * 펼치지 않으면 Sold by 가 존재하지 않아 검사 자체가 불가능하다.
    */
+  // 'offers' 계열 키워드 (마켓플레이스 언어별). 확실한 신호라 실제 링크여도 클릭 허용.
+  const OFFERS_KEYWORD =
+    /(offers?|angebote|offres|ofertas|offerte|aanbiedingen|erbjudanden|oferty|teklif|satıcılar|出品|オファー|販売元|판매자|عروض)/i
+  // 끝에 (숫자) — 접힌 디스클로저의 언어 무관 신호. "Show offers (2)" / "Angebote anzeigen (2)"
+  const COUNT_SUFFIX = /\(\d{1,3}\)\s*$/
+
+  /** 이 컨테이너에 이미 Sold by 헤더가 보이면 펼칠 필요가 없다 (언어 무관 판정) */
+  function containerAlreadyExpanded(container) {
+    if (!container) return false
+    for (const cell of container.querySelectorAll('th, td')) {
+      const t = normText(cell).replace(/[:：]\s*$/, '')
+      if (t && t.length <= 24 && SOLD_BY_LABELS.includes(t)) return true
+    }
+    return false
+  }
+
+  /**
+   * 셀러 목록을 DOM 에 올리기 위해 접힌 토글을 누른다.
+   *
+   * ⚠️ 언어 의존을 피하는 게 핵심. "Show offers (2)" 만 찾으면 amazon.de 의
+   *    "Angebote anzeigen (2)" 를 놓치고, 그러면 Sold by 가 아예 없어서
+   *    조용히 "0명 검사" 가 된다 (경고가 안 뜨는데 안전하다고 착각하는 최악의 실패).
+   *    그래서 **끝에 (숫자) 가 붙은 짧은 클릭 요소** 라는 언어 무관 신호를 주로 쓴다.
+   *    이러면 "Show all images (8)" 도 같이 눌리는데, 이미지 목록이 펼쳐질 뿐 무해하다.
+   *    (놓치는 것보다 여는 게 낫다)
+   */
   function expandOffers() {
-    const RE = /^(show|view)\s+(all\s+)?offers?\s*(\(\d+\))?$/i
     let clicked = 0
-    for (const el of document.querySelectorAll('a, button, span[role="button"], div[role="button"], span')) {
+    for (const el of document.querySelectorAll('a, button, [role="button"], span')) {
       if (clickedToggles.has(el)) continue
       const t = (el.textContent || '').replace(/\s+/g, ' ').trim()
-      if (t.length > 30 || !RE.test(t)) continue
-      // 이미 펼쳐져 있으면(같은 컨테이너에 Sold by 가 보이면) 건드리지 않는다
-      const container = el.closest('tr, li, section, div')
-      if (container && /sold by/i.test(container.innerText || '')) {
+      if (!t || t.length > 40) continue
+
+      const byKeyword = OFFERS_KEYWORD.test(t)
+      const byCount = COUNT_SUFFIX.test(t)
+      if (!byKeyword && !byCount) continue
+
+      // 실제로 이동하는 링크는 누르지 않는다 — 페이지네이션 "(2)" 같은 걸 밟아
+      // 작업 중인 페이지를 떠나버리면 안 되기 때문. 단, offers 키워드가 확실하면 허용.
+      if (el.tagName === 'A' && !byKeyword) {
+        const href = el.getAttribute('href') || ''
+        if (href && !/^#|^javascript:/i.test(href)) continue
+      }
+
+      if (containerAlreadyExpanded(el.closest('tr, li, section, div'))) {
         clickedToggles.add(el)
         continue
       }
@@ -217,6 +317,26 @@
     b.innerHTML = ''
 
     if (!firm.length && !weak.length) {
+      // ⚠️ 가장 위험한 실패 모드 — 셀러를 한 명도 못 읽었는데 초록불이 뜨면
+      //    "검사했고 안전하다" 고 착각한다. 현지화된 페이지(amazon.de 등)에서
+      //    토글 문구를 못 찾으면 정확히 이 상태가 된다. 그래서 구분해서 경고한다.
+      //    (로드 직후엔 펼치는 중이라 0명이 정상 → 3초 유예 후에만 경고)
+      const stalled = lastScan.checked === 0 && Date.now() - bootAt > 3000
+      if (stalled) {
+        b.className = `${NS}-banner ${NS}-warn ${NS}-float`
+        b.innerHTML = `
+          <div class="${NS}-row">
+            <span class="${NS}-ico">⚠️</span>
+            <span class="${NS}-msg"><b>셀러를 읽지 못했습니다</b> — 검사되지 않았습니다.
+              <br><span style="font-size:11px">Show offers 를 직접 펼친 뒤 확장 팝업의 "다시 검사" 를 누르세요.
+              계속 실패하면 팝업의 "진단" 내용을 전달해 주세요.</span></span>
+            <button class="${NS}-close" title="닫기">✕</button>
+          </div>`
+        b.querySelector(`.${NS}-close`).addEventListener('click', () => b.remove())
+        document.body.style.paddingTop = ''
+        return
+      }
+
       // 아무것도 안 걸렸을 때도 "검사했다" 는 걸 알려줘야 신뢰가 생긴다
       b.className = `${NS}-banner ${NS}-clear`
       b.innerHTML = `
@@ -443,6 +563,16 @@
     expandOffers()
     schedule(600)      // 펼침이 비동기로 끝나기를 기다린 뒤 1차 검사
     startObserver()
+
+    // 셀러를 한 명도 못 읽은 채로 조용히 끝나는 걸 막는 안전망.
+    // 페이지가 더 이상 변하지 않으면 옵저버도 안 깨어나므로, 여기서 한 번 더 확인해
+    // "읽지 못했습니다" 경고로 전환한다. (초록불 오해가 이 기능 최악의 실패)
+    setTimeout(() => {
+      if (lastScan.checked === 0) {
+        expandOffers()
+        evaluate()
+      }
+    }, 4000)
   }
 
   function showSetupNotice(msg) {
