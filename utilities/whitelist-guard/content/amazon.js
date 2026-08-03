@@ -353,13 +353,19 @@
     b.classList.remove(`${NS}-float`)
     b.className = `${NS}-banner ${firm.length ? `${NS}-danger` : `${NS}-warn`}`
 
+    // 제목의 건수는 "오퍼 수" 가 아니라 "셀러 수" 여야 한다.
+    // 한 셀러가 오퍼를 2개 올려두면 2건으로 보여서 실제보다 부풀려진다.
+    const firmSellers = groupFindings(firm).length
+    const weakSellers = groupFindings(weak).length
+
     const title = document.createElement('div')
     title.className = `${NS}-row`
     title.innerHTML = `
       <span class="${NS}-ico">${firm.length ? '⛔' : '⚠️'}</span>
       <span class="${NS}-msg"><b>${firm.length
-        ? `화이트리스트 셀러 ${firm.length}건 발견 — 신고하면 안 됩니다`
-        : `확인이 필요한 셀러 ${weak.length}건`}</b></span>
+        ? `화이트리스트 셀러 ${firmSellers}명 발견 — 신고하면 안 됩니다`
+        : `확인이 필요한 셀러 ${weakSellers}명`}</b></span>
+      <span class="${NS}-meta">검사한 셀러 ${lastScan.checked}명</span>
       <button class="${NS}-close" title="닫기">✕</button>`
     title.querySelector(`.${NS}-close`).addEventListener('click', () => {
       b.remove()
@@ -369,20 +375,23 @@
 
     const list = document.createElement('div')
     list.className = `${NS}-list`
-    for (const f of [...firm, ...weak]) {
-      const top = f.matches[0]
+    // 같은 셀러가 오퍼를 여러 건 올려두면 배너에 똑같은 줄이 반복된다
+    // (실사용에서 MetaRetail 이 2줄로 나왔음) → 한 줄로 합치고 건수를 표시.
+    for (const g of groupFindings([...firm, ...weak])) {
+      const top = g.first.matches[0]
       const item = document.createElement('div')
-      item.className = `${NS}-item ${NS}-item-${f.level}`
+      item.className = `${NS}-item ${NS}-item-${g.first.level}`
       item.innerHTML = `
-        <span class="${NS}-tag">${f.level === 'firm' ? '일치' : '의심'}</span>
-        <span class="${NS}-asin">${f.offer.asin || 'ASIN?'}</span>
-        <b class="${NS}-seller">${escapeHtml(f.offer.sellerName)}</b>
+        <span class="${NS}-tag">${g.first.level === 'firm' ? '일치' : '의심'}</span>
+        <span class="${NS}-asin">${g.first.offer.asin || 'ASIN?'}</span>
+        <b class="${NS}-seller">${escapeHtml(g.first.offer.sellerName)}</b>
+        ${g.items.length > 1 ? `<span class="${NS}-count">오퍼 ${g.items.length}건</span>` : ''}
         <span class="${NS}-arrow">→</span>
         <span class="${NS}-store">${escapeHtml(top.entry.raw.store_name)}</span>
         <span class="${NS}-client">${escapeHtml(top.entry.clientName)}</span>
         <span class="${NS}-reason">${escapeHtml(top.reason)}</span>`
       item.addEventListener('click', () => {
-        f.offer.rowEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        g.first.offer.rowEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
       })
       list.appendChild(item)
     }
@@ -392,6 +401,17 @@
     requestAnimationFrame(() => {
       document.body.style.paddingTop = b.offsetHeight + 8 + 'px'
     })
+  }
+
+  /** (셀러명 + 매칭된 화이트리스트 가게) 기준으로 묶기 — 배너 중복 줄 제거 */
+  function groupFindings(findings) {
+    const map = new Map()
+    for (const f of findings) {
+      const key = f.offer.sellerName.trim().toLowerCase() + '|' + (f.matches[0]?.entry.raw.id || '')
+      if (map.has(key)) map.get(key).items.push(f)
+      else map.set(key, { first: f, items: [f] })
+    }
+    return [...map.values()]
   }
 
   function escapeHtml(s) {

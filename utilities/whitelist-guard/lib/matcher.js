@@ -40,7 +40,14 @@ self.WLMatcher = (function () {
     'wholesale', 'distribution', 'distributor', 'trading', 'trade',
     'boutique', 'collection', 'company', 'group', 'global', 'international',
     'products', 'product', 'goods', 'brands', 'brand', 'korea', 'america',
-    'american', 'usa', 'shopee', 'amazon', 'llc', 'inc'
+    'american', 'usa', 'shopee', 'amazon', 'llc', 'inc',
+    // 실사용 오탐에서 추가된 것들 — 업종에서 너무 흔해 식별력이 없는 단어
+    'office', 'retail', 'retailer', 'stores', 'shops', 'trade', 'trading',
+    'fulfillment', 'fulfillments', 'enterprises', 'enterprise', 'holdings',
+    'imports', 'import', 'exports', 'export', 'commerce', 'ecommerce',
+    'bazaar', 'emporium', 'depot', 'warehouse', 'discount', 'discounts',
+    'wholesalers', 'distributors', 'services', 'service', 'solutions',
+    'company', 'corporation', 'limited', 'partners', 'ventures'
   ])
 
   // 스토어가 입점하는 플랫폼 도메인 — 이 경우 도메인이 아니라 경로가 식별자다.
@@ -143,12 +150,14 @@ self.WLMatcher = (function () {
         }
       }
 
-      // weak 매칭용 식별력 있는 토큰 (흔한 단어·짧은 단어 제외)
-      const distinct = new Set()
+      // weak 매칭용 — 이름을 "단어 묶음" 으로 보관.
+      // 단어 하나가 겹치는지가 아니라 이름 전체 구성이 얼마나 닮았는지를 보기 위함.
+      const tokenSets = []
+      const gram = new Set()
       for (const src of [s.store_name, ...(s.aliases || [])]) {
-        for (const t of tokens(src)) {
-          if (t.length >= 5 && !STOPWORD.has(t)) distinct.add(t)
-        }
+        const t = nameToks(src)
+        if (t.length) tokenSets.push({ raw: src, toks: t })
+        for (const g of bigrams(src)) gram.add(g)
       }
 
       return {
@@ -158,7 +167,8 @@ self.WLMatcher = (function () {
         amazonName: s.amazon_seller_name ? norm(s.amazon_seller_name) : null,
         exactKeys,
         nameSources,
-        distinct
+        tokenSets,
+        gram
       }
     })
   }
@@ -189,6 +199,82 @@ self.WLMatcher = (function () {
     return 1 - editDistance(a, b) / longer
   }
 
+  // ── 토큰 집합 유사도 ────────────────────────────────
+  // 실사용에서 "공통 단어 하나" 규칙이 그대로 터졌다:
+  //   NACK OFFICE      ↔ PATINA - OFFICE   (office 하나)
+  //   Jeffrey's Toybox ↔ TERI'S TOYBOX     (toybox 하나)
+  // 업종에서 흔한 단어는 가게가 달라도 겹치기 때문에, 단어 하나가 아니라
+  // **이름 전체의 단어 구성이 서로 대응되는지**를 봐야 한다.
+  //
+  //   TERI'S TOYBOX ↔ Jeffrey's Toybox → toybox만 대응, jeffreys↔teris 무관 → 낮음 → 제외
+  //   TERI'S TOYBOX ↔ Terry Toybox     → toybox 대응 + terry≈teris → 높음 → 의심
+  const TOKEN_PAIR_MIN = 0.6   // 이 밑은 "다른 단어" 로 보고 0점 처리
+  const TOKEN_SET_MIN = 0.65   // 이름 전체 점수가 이 이상일 때만 의심 표시
+  const SHORT_TOKEN_LEN = 4    // 3자 이하 토큰은 오타 유사도를 믿을 수 없어 정확일치만
+
+  /**
+   * 이름 비교용 토큰 — 1글자 토큰을 버린다.
+   *
+   * ⚠️ 실측에서 이것 때문에 양방향으로 틀렸다:
+   *   "Jeffrey's Toybox" → [jeffrey, s, toybox] / "TERI'S TOYBOX" → [teri, s, toybox]
+   *   아포스트로피의 s 가 서로 정확일치(1점)로 잡혀 점수를 67% 로 부풀려 **오탐**,
+   *   동시에 분모를 3으로 키워 "Terry Toybox"(진짜 의심 대상)를 0.6 으로 눌러 **누락**.
+   */
+  function nameToks(s) {
+    return tokens(s).filter((t) => t.length >= 2)
+  }
+
+  /** 문자 2-gram 집합 — 토큰 유사도 계산 전에 걸러내는 값싼 사전 필터용 */
+  function bigrams(s) {
+    const n = norm(s)
+    const out = new Set()
+    for (let i = 0; i < n.length - 1; i++) out.add(n.slice(i, i + 2))
+    return out
+  }
+
+  /** 토큰 하나끼리의 유사도 (짧은 토큰은 정확일치만 인정) */
+  function tokenPairScore(a, b) {
+    if (a === b) return 1
+    if (a.length < SHORT_TOKEN_LEN || b.length < SHORT_TOKEN_LEN) return 0
+    // 길이 차가 크면 다른 단어 — 편집거리 계산 자체를 아낀다
+    if (Math.abs(a.length - b.length) > Math.max(2, Math.min(a.length, b.length) * 0.5)) return 0
+    const s = similarity(a, b)
+    return s >= TOKEN_PAIR_MIN ? s : 0
+  }
+
+  /**
+   * 두 이름의 단어 구성 유사도 (0~1).
+   *
+   * 각 관측 토큰마다 상대 쪽에서 가장 닮은 토큰을 찾아 점수를 모으고,
+   * **토큰 수가 많은 쪽**으로 나눈다 → 한쪽에만 있는 단어가 벌점으로 작용해
+   * "Toybox" 하나만 겹치는 경우가 자동으로 걸러진다.
+   *
+   * 흔한 단어(STOPWORD)로 얻은 점수는 절반만 인정한다 —
+   * office / store / toys 같은 단어가 겹쳐도 같은 가게라는 증거가 되지 못하기 때문.
+   */
+  function tokenSetScore(aToks, bToks) {
+    if (!aToks.length || !bToks.length) return 0
+    let sum = 0
+    for (const a of aToks) {
+      let best = 0
+      for (const b of bToks) {
+        const s = tokenPairScore(a, b)
+        if (s > best) best = s
+      }
+      if (best && STOPWORD.has(a)) best *= 0.5
+      sum += best
+    }
+    return sum / Math.max(aToks.length, bToks.length)
+  }
+
+  /** 관측 이름의 2-gram 중 몇 %가 엔트리에도 있는지 */
+  function gramOverlap(aGram, bGram) {
+    if (!aGram.size || !bGram?.size) return 0
+    let hit = 0
+    for (const g of aGram) if (bGram.has(g)) hit++
+    return hit / aGram.size
+  }
+
   /**
    * 관측된 셀러 1명 → 매칭 결과 배열 (확신도 높은 순).
    *
@@ -202,7 +288,8 @@ self.WLMatcher = (function () {
     const sellerId = (observed?.sellerId || '').trim().toUpperCase()
     const n = norm(name)
     const nStripped = normStripped(name)
-    const obsTokens = new Set(tokens(name).filter((t) => t.length >= 5 && !STOPWORD.has(t)))
+    const obsToks = nameToks(name)
+    const obsGram = bigrams(name)
 
     if (!n && !sellerId) return []
 
@@ -237,23 +324,36 @@ self.WLMatcher = (function () {
         continue
       }
 
-      // ── 4. 부분 포함 — 짧은 쪽이 5자 이상일 때만 ───────
+      // ── 4. 부분 포함 — 짧은 쪽이 긴 쪽의 60% 이상을 차지할 때만 ───
+      //    비율 조건이 없으면 "Toybox" 만으로 "TERI'S TOYBOX" 가 걸린다 (6/11 = 55%).
+      //    반면 "Zonkey Toys" ⊃ "zonkey" 는 6/10 = 60% 로 살아남아야 한다.
       let weak = null
       for (const src of e.nameSources) {
         const k = src.n
         if (k.length < 5) continue
-        if (n.includes(k) || (k.length >= n.length && k.includes(n) && n.length >= 5)) {
-          weak = { score: 70, reason: `${kindLabel(src.kind)} 부분 포함 ("${src.raw}")` }
-          break
-        }
+        const contained = n.includes(k) ? k : (k.includes(n) && n.length >= 5 ? n : null)
+        if (!contained) continue
+        const ratio = contained.length / Math.max(n.length, k.length)
+        if (ratio < 0.6) continue
+        weak = { score: 70, reason: `${kindLabel(src.kind)} 부분 포함 ("${src.raw}")` }
+        break
       }
 
-      // ── 5. 식별력 있는 토큰 공유 ───────────────────────
-      if (!weak && obsTokens.size) {
-        for (const t of obsTokens) {
-          if (e.distinct.has(t)) {
-            weak = { score: 62, reason: `공통 단어 "${t}"` }
-            break
+      // ── 5. 이름 전체의 단어 구성 유사도 ────────────────
+      //    (구 규칙 "공통 단어 하나" 는 office / toybox 에서 실제로 오탐을 냈다)
+      // 값싼 사전 필터 — 문자 2-gram 이 거의 안 겹치면 토큰 유사도를 계산할 가치가 없다.
+      // (642건 × 편집거리를 매번 도는 걸 막아 셀러당 14ms → 1ms 대로 내려간다)
+      if (!weak && obsToks.length && obsGram.size && gramOverlap(obsGram, e.gram) >= 0.25) {
+        let bestScore = 0
+        let bestSrc = null
+        for (const ts of e.tokenSets) {
+          const sc = tokenSetScore(obsToks, ts.toks)
+          if (sc > bestScore) { bestScore = sc; bestSrc = ts.raw }
+        }
+        if (bestScore >= TOKEN_SET_MIN) {
+          weak = {
+            score: 60 + Math.round(bestScore * 20),
+            reason: `이름 구성 유사 ${Math.round(bestScore * 100)}% ("${bestSrc}")`
           }
         }
       }

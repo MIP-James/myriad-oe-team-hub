@@ -95,6 +95,17 @@
 .wlg-item-firm .wlg-tag { background: #FFE4E6; color: #9F1239; }
 .wlg-item-weak .wlg-tag { background: #FEF3C7; color: #92400E; }
 
+/* 같은 셀러가 여러 오퍼를 올린 경우의 건수 표시 */
+.wlg-count {
+  background: #E7E3DE;
+  color: #57534E;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 5px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
 .wlg-asin {
   font-family: Consolas, "Courier New", monospace;
   font-size: 11px;
