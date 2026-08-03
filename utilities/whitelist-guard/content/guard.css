@@ -1,0 +1,145 @@
+/*
+ * 주입 UI 스타일.
+ * MYRIAD 브랜드 색: 골드 #F2B100 / 차콜 #3A3737 / 딥골드 #B98A00
+ * 경고는 위험도에 따라 로즈(즉시 위험) → 앰버(확인 필요) → 에메랄드(이상 없음).
+ *
+ * ⚠️ z-index 를 최대치로 두는 이유: 아마존 페이지에 sticky 헤더/모달이 있어도
+ *    경고가 가려지면 이 확장은 존재 의미가 없다.
+ */
+
+#wlg-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2147483600;
+  font-family: "Segoe UI", "Malgun Gothic", -apple-system, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #2B2928;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.18);
+  max-height: 45vh;
+  overflow-y: auto;
+}
+
+/* 위험 없음 / 안내 — 본문을 밀지 않고 우하단에 작게 띄운다 */
+#wlg-banner.wlg-float {
+  top: auto;
+  left: auto;
+  bottom: 16px;
+  right: 16px;
+  max-width: 420px;
+  border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.16);
+}
+
+.wlg-banner.wlg-danger { background: #FEF2F2; border-bottom: 3px solid #E11D48; }
+.wlg-banner.wlg-warn   { background: #FFFBEB; border-bottom: 3px solid #F2B100; }
+.wlg-banner.wlg-clear  { background: #ECFDF5; border: 1px solid #A7F3D0; }
+
+.wlg-banner.wlg-float.wlg-warn { border: 1px solid #F2B100; border-bottom-width: 1px; }
+
+.wlg-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+}
+
+.wlg-ico { font-size: 18px; flex-shrink: 0; }
+.wlg-msg { flex: 1; }
+.wlg-msg b { font-weight: 700; }
+.wlg-meta { font-size: 11px; color: #8A8580; }
+
+.wlg-close {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 15px;
+  color: #8A8580;
+  padding: 2px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+.wlg-close:hover { background: rgba(0, 0, 0, 0.06); color: #2B2928; }
+
+.wlg-list {
+  padding: 0 16px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.wlg-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: #fff;
+  border: 1px solid #E7E3DE;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.wlg-item:hover { border-color: #B98A00; }
+.wlg-item-firm { border-left: 3px solid #E11D48; }
+.wlg-item-weak { border-left: 3px solid #F2B100; }
+
+.wlg-tag {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.wlg-item-firm .wlg-tag { background: #FFE4E6; color: #9F1239; }
+.wlg-item-weak .wlg-tag { background: #FEF3C7; color: #92400E; }
+
+.wlg-asin {
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 11px;
+  color: #8A8580;
+  flex-shrink: 0;
+}
+.wlg-seller { color: #2B2928; }
+.wlg-arrow { color: #8A8580; flex-shrink: 0; }
+.wlg-store { color: #B98A00; font-weight: 600; }
+.wlg-client {
+  background: #3A3737;
+  color: #fff;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.wlg-reason {
+  color: #8A8580;
+  font-size: 11px;
+  margin-left: auto;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 40%;
+}
+
+/* ── 표 안의 행 강조 ────────────────────────────── */
+/* !important 를 쓰는 이유: 아마존이 행 배경을 인라인/우선순위 높은 규칙으로 칠한다 */
+tr.wlg-hit-firm > * { background: #FEF2F2 !important; }
+tr.wlg-hit-firm { outline: 2px solid #E11D48; outline-offset: -2px; }
+tr.wlg-hit-weak > * { background: #FFFBEB !important; }
+tr.wlg-hit-weak { outline: 2px solid #F2B100; outline-offset: -2px; }
+
+.wlg-badge {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  font-family: "Segoe UI", "Malgun Gothic", sans-serif;
+  white-space: nowrap;
+  cursor: help;
+}
+.wlg-badge-firm { background: #E11D48; color: #fff; }
+.wlg-badge-weak { background: #F2B100; color: #3A3737; }

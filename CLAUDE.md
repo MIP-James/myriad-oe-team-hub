@@ -81,6 +81,7 @@ release.bat <slug> "수정 내용 요약"
 | `jellycat-image-matcher` | 🧸 Jellycat Image Matcher |
 | `covernat-image-matcher` | 🧢 COVERNAT Image Matcher |
 | `custom-preset-web-collector` | 🧩 Custom Preset Web Collector (download_only) |
+| `amazon-whitelist-guard` | 🛡️ Amazon Whitelist Guard (download_only, 크롬 확장) |
 
 **같은 날 두 번 배포:** `--replace` 또는 `--version 2026-04-23b`
 
@@ -105,7 +106,7 @@ release_launcher.bat
   - Scope: `drive` + `gmail.readonly` (둘 다 필수)
 - **Drive**: 공유 드라이브 사용 시 `supportsAllDrives=true` 필수
 - **Admin DB writes**: `admin-scripts/.env` 의 Service Role 키 사용 (사용자 세션과 토큰 충돌 방지)
-- **Migrations**: 1~31 모두 실행 완료 (다음 신규 = 032 부터)
+- **Migrations**: 1~35 모두 실행 완료 (다음 신규 = 036 부터)
   - ⚠️ **2026-10-30 부터 Supabase Data API 정책 변경** — 기존 프로젝트의 **신규 테이블**도 명시 GRANT 필수. mig 032 부터 아래 표준 패턴 적용:
     ```sql
     create table public.X (...);

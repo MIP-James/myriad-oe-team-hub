@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { ShieldCheck, Wrench, Users, ExternalLink, ChevronRight, Mail } from 'lucide-react'
+import { ShieldCheck, Wrench, Users, ExternalLink, ChevronRight, Mail, ShieldAlert } from 'lucide-react'
 
 const SECTIONS = [
   {
@@ -28,6 +28,13 @@ const SECTIONS = [
     label: 'Inbound 자동 케이스화',
     desc: 'Gmail 신고 메일 → 자동 케이스 등록. Reader 등록 + 매핑 룰 + 키워드 관리',
     icon: Mail,
+    ready: true
+  },
+  {
+    to: '/admin/whitelist',
+    label: '화이트리스트 셀러 관리',
+    desc: '고객사 공식 판매처 등록 (엑셀 업로드) → 크롬 확장이 아마존 신고 전 오신고 차단',
+    icon: ShieldAlert,
     ready: true
   }
 ]

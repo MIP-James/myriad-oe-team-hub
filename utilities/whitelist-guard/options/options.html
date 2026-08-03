@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>MYRIAD 화이트리스트 가드 — 설정</title>
+  <style>
+    :root {
+      --gold: #F2B100; --charcoal: #3A3737; --deepgold: #B98A00;
+      --ink: #2B2928; --muted: #8A8580; --line: #E7E3DE; --bg2: #FAF8F4;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: "Segoe UI", "Malgun Gothic", -apple-system, sans-serif;
+      color: var(--ink); background: #fff; margin: 0;
+      padding: 40px 24px; max-width: 720px; margin-inline: auto;
+      font-size: 14px; line-height: 1.6;
+    }
+    h1 { font-size: 20px; margin: 0 0 4px; display: flex; align-items: center; gap: 8px; }
+    .sub { color: var(--muted); font-size: 13px; margin: 0 0 28px; }
+    section { border: 1px solid var(--line); border-radius: 12px; padding: 20px; margin-bottom: 16px; }
+    h2 { font-size: 14px; margin: 0 0 12px; }
+    label { display: block; font-size: 12px; font-weight: 600; color: #57534E; margin-bottom: 6px; }
+    input[type=text], input[type=password] {
+      width: 100%; padding: 9px 12px; border: 1px solid #D6D3D1;
+      border-radius: 8px; font-size: 13px; font-family: Consolas, monospace;
+    }
+    input:focus { outline: 2px solid rgba(242, 177, 0, .4); border-color: var(--gold); }
+    .row { display: flex; gap: 8px; align-items: flex-end; }
+    button {
+      background: var(--gold); color: var(--charcoal); border: none;
+      padding: 9px 18px; border-radius: 8px; font-weight: 700; font-size: 13px;
+      cursor: pointer; white-space: nowrap;
+    }
+    button:hover { background: var(--deepgold); color: #fff; }
+    button.ghost { background: #fff; border: 1px solid #D6D3D1; color: #57534E; font-weight: 600; }
+    button.ghost:hover { background: var(--bg2); border-color: var(--gold); color: var(--ink); }
+    button:disabled { opacity: .5; cursor: default; }
+    .hint { font-size: 12px; color: var(--muted); margin-top: 8px; }
+    .status { margin-top: 14px; padding: 10px 12px; border-radius: 8px; font-size: 13px; display: none; }
+    .status.ok { display: block; background: #ECFDF5; border: 1px solid #A7F3D0; color: #065F46; }
+    .status.err { display: block; background: #FEF2F2; border: 1px solid #FECDD3; color: #9F1239; }
+    ol { padding-left: 20px; margin: 0; }
+    ol li { margin-bottom: 6px; }
+    a { color: var(--deepgold); }
+    code { background: var(--bg2); padding: 1px 5px; border-radius: 3px; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h1>🛡️ 화이트리스트 가드 — 설정</h1>
+  <p class="sub">아마존 신고 페이지에서 고객사 공식 판매처를 자동으로 걸러 오신고를 막습니다.</p>
+
+  <section>
+    <h2>1. 처음 설정하는 방법</h2>
+    <ol>
+      <li>팀 허브 → <b>관리자</b> → <b>화이트리스트 셀러 관리</b> 로 이동</li>
+      <li>페이지 맨 아래 <b>크롬 확장 연결</b> 에서 <b>토큰 발급</b> 클릭</li>
+      <li>표시된 토큰을 복사해 아래에 붙여넣고 <b>저장 후 동기화</b></li>
+    </ol>
+    <p class="hint">
+      토큰은 발급 직후에만 보입니다. 분실하면 허브에서 새로 발급하면 됩니다.
+    </p>
+  </section>
+
+  <section>
+    <h2>2. 연결 토큰</h2>
+    <label for="token">토큰 (myrwl_ 로 시작)</label>
+    <div class="row">
+      <input type="password" id="token" placeholder="myrwl_..." autocomplete="off" spellcheck="false">
+      <button class="ghost" id="reveal" type="button">보기</button>
+      <button id="save" type="button">저장 후 동기화</button>
+    </div>
+    <div class="status" id="status"></div>
+  </section>
+
+  <section>
+    <h2>3. 서버 주소 (보통 그대로 두세요)</h2>
+    <label for="apiBase">팀 허브 주소</label>
+    <input type="text" id="apiBase" placeholder="https://myriad-oe-team-hub.pages.dev" spellcheck="false">
+    <p class="hint">
+      허브 도메인이 바뀐 경우에만 수정합니다. 끝에 <code>/</code> 는 붙이지 않아도 됩니다.
+    </p>
+  </section>
+
+  <section>
+    <h2>4. 현재 상태</h2>
+    <div id="cacheInfo" style="font-size:13px;color:var(--muted)">확인 중...</div>
+    <div class="row" style="margin-top:12px">
+      <button class="ghost" id="refresh" type="button">지금 다시 동기화</button>
+    </div>
+  </section>
+
+  <script src="options.js"></script>
+</body>
+</html>

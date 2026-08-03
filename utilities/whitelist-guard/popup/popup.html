@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>화이트리스트 가드</title>
+  <style>
+    :root {
+      --gold: #F2B100; --charcoal: #3A3737; --deepgold: #B98A00;
+      --ink: #2B2928; --muted: #8A8580; --line: #E7E3DE; --bg2: #FAF8F4;
+    }
+    * { box-sizing: border-box; }
+    body {
+      width: 400px; margin: 0; padding: 14px;
+      font-family: "Segoe UI", "Malgun Gothic", -apple-system, sans-serif;
+      font-size: 13px; color: var(--ink); background: #fff;
+    }
+    header { display: flex; align-items: center; gap: 7px; margin-bottom: 10px; }
+    header h1 { font-size: 14px; margin: 0; flex: 1; }
+    .pill { font-size: 10px; font-weight: 700; padding: 3px 7px; border-radius: 999px; }
+    .pill.on  { background: #ECFDF5; color: #065F46; }
+    .pill.off { background: #FEF2F2; color: #9F1239; }
+    .card { border: 1px solid var(--line); border-radius: 9px; padding: 10px; margin-bottom: 9px; }
+    .card h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
+               color: var(--muted); margin: 0 0 7px; }
+    .kv { display: flex; justify-content: space-between; font-size: 12px; padding: 2px 0; }
+    .kv span:last-child { color: var(--muted); }
+    button {
+      background: var(--gold); color: var(--charcoal); border: none;
+      padding: 7px 13px; border-radius: 7px; font-weight: 700; font-size: 12px; cursor: pointer;
+    }
+    button:hover { background: var(--deepgold); color: #fff; }
+    button.ghost { background: #fff; border: 1px solid #D6D3D1; color: #57534E; font-weight: 600; }
+    button.ghost:hover { background: var(--bg2); border-color: var(--gold); color: var(--ink); }
+    button:disabled { opacity: .5; cursor: default; }
+    .btnrow { display: flex; gap: 6px; flex-wrap: wrap; }
+    input[type=text] {
+      width: 100%; padding: 7px 10px; border: 1px solid #D6D3D1;
+      border-radius: 7px; font-size: 12px;
+    }
+    input:focus { outline: 2px solid rgba(242,177,0,.4); border-color: var(--gold); }
+    .res { margin-top: 8px; max-height: 190px; overflow-y: auto; }
+    .hit {
+      border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px;
+      margin-bottom: 4px; font-size: 12px;
+    }
+    .hit.exact  { border-left: 3px solid #059669; }
+    .hit.strong { border-left: 3px solid #E11D48; }
+    .hit.weak   { border-left: 3px solid var(--gold); }
+    .hit b { color: var(--ink); }
+    .hit .why { color: var(--muted); font-size: 11px; display: block; margin-top: 2px; }
+    .lv { font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 3px; margin-right: 5px; }
+    .lv.exact  { background: #D1FAE5; color: #065F46; }
+    .lv.strong { background: #FFE4E6; color: #9F1239; }
+    .lv.weak   { background: #FEF3C7; color: #92400E; }
+    .empty { color: var(--muted); font-size: 12px; padding: 6px 0; }
+    pre {
+      background: var(--bg2); border: 1px solid var(--line); border-radius: 6px;
+      padding: 8px; font-size: 10.5px; max-height: 200px; overflow: auto;
+      white-space: pre-wrap; word-break: break-all; margin: 8px 0 0;
+    }
+    a { color: var(--deepgold); font-size: 11px; }
+  </style>
+</head>
+<body>
+  <header>
+    <span style="font-size:16px">🛡️</span>
+    <h1>화이트리스트 가드</h1>
+    <span class="pill off" id="pill">확인 중</span>
+  </header>
+
+  <div class="card">
+    <h2>상태</h2>
+    <div class="kv"><span>보관 중인 화이트리스트</span><span id="count">—</span></div>
+    <div class="kv"><span>고객사</span><span id="clients">—</span></div>
+    <div class="kv"><span>마지막 동기화</span><span id="synced">—</span></div>
+    <div id="errline" style="color:#9F1239;font-size:11px;margin-top:5px"></div>
+    <div class="btnrow" style="margin-top:9px">
+      <button class="ghost" id="sync">다시 동기화</button>
+      <button class="ghost" id="opts">설정</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>이 페이지 검사</h2>
+    <div class="kv"><span>읽은 셀러</span><span id="pgSellers">—</span></div>
+    <div class="kv"><span>일치 발견</span><span id="pgHits">—</span></div>
+    <div class="btnrow" style="margin-top:9px">
+      <button class="ghost" id="rescan">다시 검사</button>
+      <button class="ghost" id="diag">진단</button>
+    </div>
+    <pre id="diagOut" style="display:none"></pre>
+  </div>
+
+  <div class="card">
+    <h2>셀러 이름 테스트</h2>
+    <input type="text" id="testName" placeholder="예: Zonkey Toys — 신고 전에 미리 확인">
+    <div class="res" id="testRes"></div>
+  </div>
+
+  <script src="../lib/matcher.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
