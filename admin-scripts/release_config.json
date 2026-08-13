@@ -84,6 +84,15 @@
       "icon": "🧩",
       "category": "browser-extension",
       "description": "크롬 확장 형태 웹 크롤러. 내려받은 폴더를 chrome://extensions 에 \"압축해제된 확장 프로그램 로드\" 로 등록해서 사용."
+    },
+    "bitelab-image-matcher": {
+      "source_folder": "C:\\Users\\MIP James\\Downloads\\BiTELAB_Image_Matcher_Build\\dist\\BiTELAB_Image_Matcher",
+      "display_name": "BiTELAB Image Matcher",
+      "exe_name": "BiTELAB_Image_Matcher.exe",
+      "utility_type": "executable",
+      "icon": "🧪",
+      "category": "image",
+      "description": "BiTELAB(릴리이브) 공식 채널 7곳 이미지 DB 와 매칭해 도용 의심 이미지를 즉시 판별. pHash + CLIP 듀얼 시그널 (파일/URL/클립보드 입력, 일괄 처리 시 색상별 분류 엑셀 생성). 수집 채널: 자사몰(Cafe24/Shopify) · 올리브영 · 카카오 · Qoo10 JP · 네이버 · 쇼피 SG/MY. 움직이는 GIF 는 프레임 단위로 분해 저장해 중간 장면 도용도 탐지. Update_DB.exe 로 재크롤링 갱신."
     }
   }
 }

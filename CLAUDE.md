@@ -82,6 +82,7 @@ release.bat <slug> "수정 내용 요약"
 | `covernat-image-matcher` | 🧢 COVERNAT Image Matcher |
 | `custom-preset-web-collector` | 🧩 Custom Preset Web Collector (download_only) |
 | `amazon-whitelist-guard` | 🛡️ Amazon Whitelist Guard (download_only, 크롬 확장) |
+| `bitelab-image-matcher` | 🧪 BiTELAB Image Matcher |
 
 **같은 날 두 번 배포:** `--replace` 또는 `--version 2026-04-23b`
 
