@@ -85,6 +85,14 @@
       "category": "browser-extension",
       "description": "크롬 확장 형태 웹 크롤러. 내려받은 폴더를 chrome://extensions 에 \"압축해제된 확장 프로그램 로드\" 로 등록해서 사용."
     },
+    "band-url-collector": {
+      "source_folder": "C:\\Users\\MIP James\\Downloads\\band-url-collector",
+      "display_name": "BAND URL Collector",
+      "utility_type": "download_only",
+      "icon": "🔗",
+      "category": "browser-extension",
+      "description": "네이버 밴드 검색 결과 페이지에서 게시물 URL 을 일괄 수집하는 크롬 확장. 무한스크롤을 자동으로 끝까지 내리며 API 응답에서 URL 을 정확히 추출하고, 썸네일 triage 화면에서 제외 항목을 걸러낸 뒤 선택 URL 만 줄바꿈 구분으로 일괄 복사합니다. 내려받은 폴더를 chrome://extensions 에 \"압축해제된 확장 프로그램 로드\" 로 등록 후, 로그인된 크롬에서 밴드 페이지를 새로고침하면 패널이 나타납니다."
+    },
     "bitelab-image-matcher": {
       "source_folder": "C:\\Users\\MIP James\\Downloads\\BiTELAB_Image_Matcher_Build\\dist\\BiTELAB_Image_Matcher",
       "display_name": "BiTELAB Image Matcher",
