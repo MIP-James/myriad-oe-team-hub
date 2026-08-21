@@ -93,6 +93,14 @@
       "category": "browser-extension",
       "description": "네이버 밴드 검색 결과 페이지에서 게시물 URL 을 일괄 수집하는 크롬 확장. 무한스크롤을 자동으로 끝까지 내리며 API 응답에서 URL 을 정확히 추출하고, 썸네일 triage 화면에서 제외 항목을 걸러낸 뒤 선택 URL 만 줄바꿈 구분으로 일괄 복사합니다. 내려받은 폴더를 chrome://extensions 에 \"압축해제된 확장 프로그램 로드\" 로 등록 후, 로그인된 크롬에서 밴드 페이지를 새로고침하면 패널이 나타납니다."
     },
+    "bpm-collector": {
+      "source_folder": "C:\\Users\\MIP James\\Downloads\\BPM_Collector",
+      "display_name": "BPM Collector",
+      "utility_type": "download_only",
+      "icon": "📡",
+      "category": "browser-extension",
+      "description": "온라인 모니터링 수동 크롤링 크롬 확장. 쿠팡·지마켓·옥션·스마트스토어·11번가·알리익스프레스·테무·당근·번개장터·중고나라·밴드·인스타그램·카카오스토리·네이버 카페/블로그 등 15개 플랫폼 상세페이지에서 판정(침해/정상/보류)을 기록해 BPM API 로 업로드하고, 검색 결과에는 이미 판정한 상품을 배지·흐리게 처리로 표시해 중복 열람을 막습니다. 내려받은 폴더를 chrome://extensions 에 \"압축해제된 확장 프로그램 로드\" 로 등록해서 사용."
+    },
     "bitelab-image-matcher": {
       "source_folder": "C:\\Users\\MIP James\\Downloads\\BiTELAB_Image_Matcher_Build\\dist\\BiTELAB_Image_Matcher",
       "display_name": "BiTELAB Image Matcher",

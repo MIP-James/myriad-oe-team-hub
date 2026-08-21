@@ -84,6 +84,7 @@ release.bat <slug> "수정 내용 요약"
 | `amazon-whitelist-guard` | 🛡️ Amazon Whitelist Guard (download_only, 크롬 확장) |
 | `bitelab-image-matcher` | 🧪 BiTELAB Image Matcher |
 | `band-url-collector` | 🔗 BAND URL Collector (download_only, 크롬 확장) |
+| `bpm-collector` | 📡 BPM Collector (download_only, 크롬 확장) |
 
 **같은 날 두 번 배포:** `--replace` 또는 `--version 2026-04-23b`
 
