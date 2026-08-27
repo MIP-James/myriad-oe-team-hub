@@ -126,12 +126,14 @@ def gh_upload(tag: str, title: str, notes: str, zip_path: Path, repo: str) -> st
     r = subprocess.run(
         ["gh", "release", "view", tag, "--repo", repo],
         capture_output=True, text=True,
+        encoding="utf-8", errors="replace",  # gh 출력은 UTF-8 — cp949 디코딩 금지
     )
     if r.returncode == 0:
         print(f"  기존 릴리즈 삭제: {tag}")
         subprocess.run(
             ["gh", "release", "delete", tag, "--yes", "--cleanup-tag", "--repo", repo],
             check=True, capture_output=True, text=True,
+            encoding="utf-8", errors="replace",
         )
 
     print(f"  GitHub 업로드: tag={tag}")
@@ -144,6 +146,7 @@ def gh_upload(tag: str, title: str, notes: str, zip_path: Path, repo: str) -> st
             "--repo", repo,
         ],
         capture_output=True, text=True,
+        encoding="utf-8", errors="replace",  # gh 출력은 UTF-8 — cp949 디코딩 금지
     )
     if r.returncode != 0:
         raise SystemExit(f"[오류] gh release 실패:\n{r.stderr}")

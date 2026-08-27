@@ -140,6 +140,8 @@ def gh_release_exists(tag: str, repo: str) -> bool:
         ["gh", "release", "view", tag, "--repo", repo],
         capture_output=True,
         text=True,
+        encoding="utf-8",   # gh 출력은 UTF-8 — 로케일(cp949) 디코딩 금지
+        errors="replace",
     )
     return r.returncode == 0
 
@@ -151,6 +153,8 @@ def gh_release_delete(tag: str, repo: str) -> None:
         check=True,
         capture_output=True,
         text=True,
+        encoding="utf-8",   # gh 출력은 UTF-8 — 로케일(cp949) 디코딩 금지
+        errors="replace",
     )
 
 
@@ -167,6 +171,8 @@ def gh_release_create(
         ],
         capture_output=True,
         text=True,
+        encoding="utf-8",   # gh 출력은 UTF-8 — 로케일(cp949) 디코딩 금지
+        errors="replace",
     )
     if r.returncode != 0:
         raise SystemExit(f"[오류] gh release create 실패:\n{r.stderr}")
