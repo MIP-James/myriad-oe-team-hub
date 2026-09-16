@@ -5,7 +5,7 @@ const fs = require('fs'), path = require('path');
 const ext = 'C:\\Users\\MIP James\\Downloads\\bpm-assist';
 eval(fs.readFileSync(path.join(ext, 'dict.js'), 'utf8') + '\n' + fs.readFileSync(path.join(ext, 'brand_types.js'), 'utf8') + `
 globalThis.PRODUCT_CATEGORIES=PRODUCT_CATEGORIES; globalThis.KEYWORD_DICT=KEYWORD_DICT;
-globalThis.resolveBrandType=resolveBrandType; globalThis.BRAND_PRODUCT_TYPES=BRAND_PRODUCT_TYPES;`);
+globalThis.resolveBrandType=resolveBrandType; globalThis.BRAND_PRODUCT_TYPES=BRAND_PRODUCT_TYPES; globalThis.normalizeCategory=normalizeCategory;`);
 
 // ── content.js 의 excludedByContext / analyzeText 와 동일 로직 (기본 사전만) ──
 function excludedByContext(text, idx, len, nots) {
@@ -87,7 +87,9 @@ const RESOLVE = [
   ['K_발렌시아가', '여권홀더', 'Key Holder'],
   ['K_발렌시아가', '운동화', 'Footwear'],
   ['K_블랙핑크', '휴대폰줄', 'Toy/Doll'],        // 분류표: 휴대폰줄 = Toy/Doll
-  ['K_블랙핑크', '아크릴스탠드', 'Merchandise (MD)'], // Stand 없음 → MD 폴백
+  ['K_블랙핑크', '아크릴스탠드', null],           // (v1.2.1) Stand·Etc. 없음 → MD 대체 금지 → 대응 없음(null)
+  ['K_블랙핑크', '텀블러', null],                 // Cup→Home 도 없음 → null (MD 로 안 떨어짐)
+  ['K_FC서울', '유니폼 셔츠', null],              // MD 만 있는 고객사 → null
   ['K_헬로키티', '거울', 'Home'],                 // Mirror 없음 → Home
   ['K_헬로키티', '접시', 'Plate'],
   ['K_헬로키티', '자석', 'Magnet'],
@@ -104,5 +106,11 @@ console.log('\n## 2) 오탐 차단');
 for (const [t, bad] of MUST_NOT) { const cats = analyze(t).map(([c]) => c); const ok = !cats.includes(bad); if (!ok) fail++; console.log(`${ok ? 'PASS' : 'FAIL'}  "${t}" 에서 ${bad} ${ok ? '미검출' : '검출됨!'}  [${cats.join(', ') || '없음'}]`); }
 console.log('\n## 3) 고객사 변환');
 for (const [b, t, exp] of RESOLVE) { const cat = top(t); const r = resolveBrandType(cat, BRAND_PRODUCT_TYPES[b]); const got = r ? r.name : null; const ok = got === exp; if (!ok) fail++; console.log(`${ok ? 'PASS' : 'FAIL'}  ${b.padEnd(12)} ${t.padEnd(8)} → ${String(cat).padEnd(20)} → ${String(got).padEnd(24)} (기대 ${exp})`); }
-console.log(`\n총 ${Object.keys(EXPECT).length + MUST_NOT.length + RESOLVE.length}건, 실패 ${fail}건`);
+// ── 4) (v1.2.1) Merchandise (MD) 는 어떤 고객사·어떤 세부 유형에서도 추천 값으로 나오면 안 됨 ──
+console.log('\n## 4) MD 미추천 전수 검사');
+let mdHits = 0;
+for (const [b, t] of Object.entries(BRAND_PRODUCT_TYPES)) for (const k of Object.keys(PRODUCT_CATEGORIES)) { const r = resolveBrandType(k, t); if (r && /merchandise/i.test(r.name)) { mdHits++; if (mdHits <= 5) console.log('FAIL ', b, k, '→', r.name); } }
+if (mdHits) fail++; console.log(`${mdHits ? 'FAIL' : 'PASS'}  고객사 ${Object.keys(BRAND_PRODUCT_TYPES).length}곳 × 세부 유형 ${Object.keys(PRODUCT_CATEGORIES).length}종 → MD 추천 ${mdHits}건`);
+console.log('normalizeCategory MD 레거시 →', ['Merchandise (MD)', 'Character Merchandise (MD)', 'merchandise(md)'].map(normalizeCategory).join(' / '));
+console.log(`\n총 ${Object.keys(EXPECT).length + MUST_NOT.length + RESOLVE.length + 1}건, 실패 ${fail}건`);
 process.exit(fail ? 1 : 0);
