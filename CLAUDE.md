@@ -110,7 +110,7 @@ release_launcher.bat
   - Scope: `drive` + `gmail.readonly` (둘 다 필수)
 - **Drive**: 공유 드라이브 사용 시 `supportsAllDrives=true` 필수
 - **Admin DB writes**: `admin-scripts/.env` 의 Service Role 키 사용 (사용자 세션과 토큰 충돌 방지)
-- **Migrations**: 1~36 모두 실행 완료 (다음 신규 = 037 부터)
+- **Migrations**: 1~36 실행 완료. **037(팀 프로젝트) 작성됨 — 2026-09-18 기준 Supabase 실행 대기** (다음 신규 = 038)
   - ⚠️ **2026-10-30 부터 Supabase Data API 정책 변경** — 기존 프로젝트의 **신규 테이블**도 명시 GRANT 필수. mig 032 부터 아래 표준 패턴 적용:
     ```sql
     create table public.X (...);
@@ -139,6 +139,7 @@ myriad-team-hub/src/
 │   ├── BrandReportComments.jsx
 │   ├── WeeklyPlanModal.jsx
 │   ├── DailyRecordModal.jsx
+│   ├── projects/        ← ProjectBoard·MetricsTable·CampaignPanel·ProjectBrands·ProjectLibrary·ProjectDashboard
 │   └── ReminderSettingsModal.jsx
 ├── contexts/
 │   └── AuthContext.jsx  ← OAuth + Google access_token 보관
@@ -149,6 +150,7 @@ myriad-team-hub/src/
 │   ├── community.js     ← 공지/활동 피드/프로필 헬퍼
 │   ├── cases.js         ← 케이스 + 첨부 + 댓글
 │   ├── weekly.js        ← 주간계획/일일기록/리마인더
+│   ├── projects.js      ← 팀 프로젝트 (posts/metrics/campaigns/brands/resources)
 │   ├── comments.js      ← 브랜드 보고서 댓글
 │   ├── reportStore.js
 │   ├── reportGenerator.js  ← Excel 생성
@@ -171,6 +173,8 @@ myriad-team-hub/src/
     ├── ReportGroups.jsx
     ├── ReportGroupDetail.jsx
     ├── Community.jsx
+    ├── Projects.jsx     ← 팀 프로젝트 목록 (Phase 23)
+    ├── ProjectDetail.jsx ← 프로젝트 하위 탭 9종 (components/projects/*)
     ├── CaseDetail.jsx
     ├── Admin.jsx
     ├── AdminUtilities.jsx
