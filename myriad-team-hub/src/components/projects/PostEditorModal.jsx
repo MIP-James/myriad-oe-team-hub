@@ -20,7 +20,8 @@ import {
 import { useAuth } from '../../contexts/AuthContext'
 import {
   ISSUE_STATUS, SEVERITY, monthLabel, fmtBytes,
-  uploadAttachment, commitTmpAttachments, deleteAttachment, removeTmpFile, listAttachments
+  uploadAttachment, commitTmpAttachments, deleteAttachment, removeTmpFile, listAttachments,
+  listTeamProfiles, profileName
 } from '../../lib/projects'
 
 export default function PostEditorModal({
@@ -40,10 +41,12 @@ export default function PostEditorModal({
     category: initial?.category || '',
     status: initial?.status && initial.status !== 'none' ? initial.status : (kind === 'issues' ? 'open' : 'none'),
     dueOn: initial?.due_on || '',
+    assigneeId: initial?.assignee_id || (kind === 'issues' && !initial ? '' : ''),
     pinned: !!initial?.pinned,
     severity: initial?.severity || 'info'
   }))
   const [existing, setExisting] = useState([])
+  const [profiles, setProfiles] = useState([])
   const [tmp, setTmp] = useState([])
   const [uploading, setUploading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -65,6 +68,7 @@ export default function PostEditorModal({
   useEffect(() => {
     if (initial?.id) listAttachments(initial.id).then(setExisting).catch(() => {})
   }, [initial?.id])
+  useEffect(() => { if (kind === 'issues') listTeamProfiles().then(setProfiles) }, [kind])
 
   // ESC 닫기
   useEffect(() => {
@@ -173,6 +177,11 @@ export default function PostEditorModal({
                   기한
                   <input type="date" value={form.dueOn || ''} onChange={(e) => setForm((f) => ({ ...f, dueOn: e.target.value }))} className={inputCls} />
                 </label>
+                <select value={form.assigneeId || ''} onChange={(e) => setForm((f) => ({ ...f, assigneeId: e.target.value || null }))} className={inputCls}>
+                  <option value="">담당자 미지정</option>
+                  {profiles.map((p) => <option key={p.id} value={p.id}>{profileName(p)}</option>)}
+                  {user?.id && !profiles.some((p) => p.id === user.id) && <option value={user.id}>나</option>}
+                </select>
               </>
             )}
             {showNotice && (

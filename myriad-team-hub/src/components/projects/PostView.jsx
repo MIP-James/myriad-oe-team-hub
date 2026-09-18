@@ -3,7 +3,7 @@
  */
 import { useEffect, useState } from 'react'
 import {
-  X, Paperclip, Download, Edit3, Trash2, Loader2, Send, Pin, Calendar, MessageSquare
+  X, Paperclip, Download, Edit3, Trash2, Loader2, Send, Pin, Calendar, MessageSquare, User
 } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { getProfileShort } from '../../lib/community'
@@ -33,7 +33,7 @@ export default function PostView({ post, section, campaigns = [], onEdit, onDele
   async function loadComments() {
     const c = await listComments(post.id).catch(() => [])
     setComments(c)
-    const ids = [...new Set([post.created_by, ...c.map((x) => x.created_by)].filter(Boolean))]
+    const ids = [...new Set([post.created_by, post.assignee_id, ...c.map((x) => x.created_by)].filter(Boolean))]
     const map = {}
     await Promise.all(ids.map(async (id) => { map[id] = await getProfileShort(id) }))
     setProfiles(map)
@@ -53,6 +53,10 @@ export default function PostView({ post, section, campaigns = [], onEdit, onDele
 
   async function changeStatus(s) {
     await patchPost(post.id, { status: s, updated_by: user.id })
+    onChanged?.()
+  }
+  async function takeIt() {
+    await patchPost(post.id, { assignee_id: post.assignee_id === user.id ? null : user.id, updated_by: user.id })
     onChanged?.()
   }
 
@@ -78,6 +82,9 @@ export default function PostView({ post, section, campaigns = [], onEdit, onDele
             {post.due_on && (
               <span className="text-[10px] font-semibold text-slate-600 inline-flex items-center gap-0.5"><Calendar size={9} /> 기한 {fmtDate(post.due_on)}</span>
             )}
+            {post.assignee_id && (
+              <span className="text-[10px] font-semibold text-[#B98A00] inline-flex items-center gap-0.5"><User size={9} /> 담당 {name(post.assignee_id)}</span>
+            )}
           </div>
           <h3 className="text-lg font-bold text-slate-900 leading-snug">{post.title}</h3>
           <div className="text-xs text-slate-500 mt-1">
@@ -101,6 +108,10 @@ export default function PostView({ post, section, campaigns = [], onEdit, onDele
               {s.label}
             </button>
           ))}
+          <span className="flex-1" />
+          <button onClick={takeIt} className={`px-2 py-0.5 rounded-full font-semibold border inline-flex items-center gap-1 ${post.assignee_id === user?.id ? 'bg-[#F2B100]/25 border-[#F2B100] text-[#2B2928]' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
+            <User size={10} /> {post.assignee_id === user?.id ? '내 담당 (해제)' : '내가 맡기'}
+          </button>
         </div>
       )}
 

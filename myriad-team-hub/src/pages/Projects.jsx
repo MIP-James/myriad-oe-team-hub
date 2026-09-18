@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { FolderKanban, Plus, Loader2, ChevronRight, Building2, Calendar, X, Save, AlertTriangle } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
-import { listProjects, listMetrics, aggregateMetrics, countOpenIssues, createProjectWithDefaults } from '../lib/projects'
+import { listProjects, listMonthSummary, summarize, countOpenIssues, createProjectWithDefaults } from '../lib/projects'
 
 export default function Projects() {
   const { isAdmin, user } = useAuth()
@@ -25,8 +25,8 @@ export default function Projects() {
       setRows(p)
       const s = {}
       await Promise.all(p.map(async (x) => {
-        const [m, oi] = await Promise.all([listMetrics(x.id).catch(() => []), countOpenIssues(x.id)])
-        s[x.id] = { agg: aggregateMetrics(m.filter((r) => r.category !== '저작권')), openIssues: oi }
+        const [m, oi] = await Promise.all([listMonthSummary(x.id).catch(() => []), countOpenIssues(x.id)])
+        s[x.id] = { agg: summarize(m), openIssues: oi }
       }))
       setStats(s)
     } catch (e) { setError(e.message) } finally { setLoading(false) }
@@ -85,7 +85,7 @@ export default function Projects() {
                 {goal > 0 && (
                   <div className="mt-4">
                     <div className="flex items-center justify-between text-[11px] text-[#8A8580] mb-1">
-                      <span>차단 {blocked.toLocaleString()} / 목표 {goal.toLocaleString()} · 신고 {reported.toLocaleString()}</span>
+                      <span>KOIPA 확정 {blocked.toLocaleString()} / 목표 {goal.toLocaleString()} · 보고 {reported.toLocaleString()}</span>
                       <span className="font-bold text-[#2B2928]">{rate.toFixed(2)}%</span>
                     </div>
                     <div className="h-2 bg-[#FAF8F4] border border-[#E7E3DE] rounded-full overflow-hidden relative">
@@ -144,7 +144,7 @@ function NewProjectModal({ userId, onClose, onCreated }) {
             <input type="number" value={form.goal_count} onChange={(e) => setForm((f) => ({ ...f, goal_count: e.target.value }))} className={inputCls} placeholder="목표 건수" />
           </div>
           <textarea value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} rows={3} className={`${inputCls} w-full`} placeholder="한 줄 설명" />
-          <p className="text-xs text-slate-500">기본 탭 7개(공지 · 대시보드 · 월별 실적 · 기획 모니터링 · 참여 브랜드 · 이슈 트래커 · 자료실)가 자동 생성됩니다. 플랫폼 목록·마감 체크리스트는 KOIPA 프로젝트 것을 복사해 오니 필요 시 SQL 로 조정하세요.</p>
+          <p className="text-xs text-slate-500">기본 탭 7개(공지·규칙 · 팀 현황 · 월별 운영 · 기획 모니터링 · 브랜드 & 담당 · 할 일 · 가이드 & 연락처)가 자동 생성됩니다. 마감 체크리스트는 KOIPA 프로젝트 것을 복사해 오니 필요 시 SQL 로 조정하세요.</p>
           {error && <div className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">{error}</div>}
         </div>
         <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-slate-200">

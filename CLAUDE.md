@@ -139,7 +139,7 @@ myriad-team-hub/src/
 │   ├── BrandReportComments.jsx
 │   ├── WeeklyPlanModal.jsx
 │   ├── DailyRecordModal.jsx
-│   ├── projects/        ← ProjectBoard·MetricsTable·CampaignPanel·ProjectBrands·ProjectLibrary·ProjectDashboard
+│   ├── projects/        ← ProjectBoard·PostEditorModal·PostView·CampaignPanel·ProjectBrands·ProjectLibrary·ProjectDashboard (M-Bridge 와 역할 분담: 허브=팀 내부 실무)
 │   └── ReminderSettingsModal.jsx
 ├── contexts/
 │   └── AuthContext.jsx  ← OAuth + Google access_token 보관
@@ -150,7 +150,7 @@ myriad-team-hub/src/
 │   ├── community.js     ← 공지/활동 피드/프로필 헬퍼
 │   ├── cases.js         ← 케이스 + 첨부 + 댓글
 │   ├── weekly.js        ← 주간계획/일일기록/리마인더
-│   ├── projects.js      ← 팀 프로젝트 (posts/metrics/campaigns/brands/resources)
+│   ├── projects.js      ← 팀 프로젝트 (posts/month_summary/campaigns/brands/resources)
 │   ├── comments.js      ← 브랜드 보고서 댓글
 │   ├── reportStore.js
 │   ├── reportGenerator.js  ← Excel 생성

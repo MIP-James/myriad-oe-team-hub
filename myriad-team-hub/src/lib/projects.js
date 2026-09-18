@@ -31,13 +31,13 @@ export const CAMPAIGN_STATUS = {
   done: { label: '완료', cls: 'bg-emerald-100 text-emerald-700' }
 }
 
-export const BRAND_DOCS = [
-  { key: 'doc_poa', label: '3자 권리위임장', short: '위임장' },
-  { key: 'doc_kakao', label: '카카오스토리 위임장', short: '카카오' },
-  { key: 'doc_seal', label: '법인인감증명서', short: '인감' },
-  { key: 'doc_identify', label: '식별자료·공식업체', short: '식별' },
-  { key: 'doc_bizreg', label: '사업자등록증', short: '사업자' }
+export const MONITORING_STATUS = [
+  { key: 'pending', label: '착수 전', cls: 'bg-slate-100 text-slate-600' },
+  { key: 'active', label: '모니터링 중', cls: 'bg-myriad-primary/30 text-myriad-ink' },
+  { key: 'paused', label: '보류', cls: 'bg-amber-100 text-amber-800' },
+  { key: 'done', label: '종료', cls: 'bg-emerald-100 text-emerald-700' }
 ]
+export const MONITORING_STATUS_MAP = Object.fromEntries(MONITORING_STATUS.map((s) => [s.key, s]))
 
 // ───── 날짜 유틸 ────────────────────────────────────────────────
 
@@ -159,6 +159,7 @@ export async function createPost(payload, userId) {
     category: payload.category?.trim() || null,
     status: payload.status || 'none',
     due_on: payload.dueOn || null,
+    assignee_id: payload.assigneeId || null,
     pinned: !!payload.pinned,
     severity: payload.severity || 'info',
     created_by: userId,
@@ -184,6 +185,7 @@ export async function updatePost(id, payload, userId) {
     category: payload.category?.trim() || null,
     status: payload.status || 'none',
     due_on: payload.dueOn || null,
+    assignee_id: payload.assigneeId || null,
     pinned: !!payload.pinned,
     severity: payload.severity || 'info',
     updated_by: userId
@@ -349,34 +351,28 @@ export async function deleteComment(id) {
   if (error) throw error
 }
 
-// ───── Metrics ──────────────────────────────────────────────────
+// ───── 월별 KOIPA 확정 인정 건수 ────────────────────────────────
+// 플랫폼별 세부 실적표는 M-Bridge 정본. 여기는 월 1행.
 
-export async function listMetrics(projectId, month = null) {
-  let q = supabase.from('project_metrics_monthly').select('*').eq('project_id', projectId)
-  if (month) q = q.eq('month', month)
-  const { data, error } = await q.order('month', { ascending: true })
+export async function listMonthSummary(projectId) {
+  const { data, error } = await supabase
+    .from('project_month_summary')
+    .select('*')
+    .eq('project_id', projectId)
+    .order('month', { ascending: true })
   if (error) throw error
   return data ?? []
 }
 
-/** 한 행 upsert — (project_id, month, platform) 유니크 키 */
-export async function upsertMetric(row, userId) {
-  const payload = {
-    project_id: row.project_id,
-    month: row.month,
-    category: row.category,
-    platform: row.platform,
-    collected: toInt(row.collected),
-    reported_k: toInt(row.reported_k),
-    reported_m: toInt(row.reported_m),
-    blocked_k: toInt(row.blocked_k),
-    blocked_m: toInt(row.blocked_m),
-    note: row.note?.trim() || null,
-    updated_by: userId
+export async function upsertMonthSummary(projectId, month, patch, userId) {
+  const row = { project_id: projectId, month, updated_by: userId }
+  for (const k of ['confirmed_blocked', 'reported', 'copyright_sent', 'copyright_blocked']) {
+    if (patch[k] !== undefined) row[k] = toInt(patch[k])
   }
+  if (patch.note !== undefined) row.note = patch.note?.trim() || null
   const { data, error } = await supabase
-    .from('project_metrics_monthly')
-    .upsert(payload, { onConflict: 'project_id,month,platform' })
+    .from('project_month_summary')
+    .upsert(row, { onConflict: 'project_id,month' })
     .select().single()
   if (error) throw error
   return data
@@ -386,25 +382,19 @@ function toInt(v) {
   return Number.isFinite(n) ? n : 0
 }
 
-/** 대시보드 집계 */
-export function aggregateMetrics(rows) {
-  const total = { collected: 0, reported_k: 0, reported_m: 0, blocked_k: 0, blocked_m: 0 }
-  const byMonth = {}
-  const byPlatform = {}
-  for (const r of rows) {
-    for (const k of Object.keys(total)) total[k] += r[k] || 0
-    const m = (byMonth[r.month] ||= { month: r.month, ...Object.fromEntries(Object.keys(total).map((k) => [k, 0])) })
-    for (const k of Object.keys(total)) m[k] += r[k] || 0
-    const p = (byPlatform[r.platform] ||= { platform: r.platform, category: r.category, ...Object.fromEntries(Object.keys(total).map((k) => [k, 0])) })
-    for (const k of Object.keys(total)) p[k] += r[k] || 0
+/** 대시보드 집계 — 확정 차단 누계 / 보고 누계 / 저작권 */
+export function summarize(rows) {
+  const out = { blocked: 0, reported: 0, copyrightSent: 0, copyrightBlocked: 0, byMonth: [] }
+  let cum = 0
+  for (const r of [...rows].sort((a, b) => a.month.localeCompare(b.month))) {
+    out.blocked += r.confirmed_blocked || 0
+    out.reported += r.reported || 0
+    out.copyrightSent += r.copyright_sent || 0
+    out.copyrightBlocked += r.copyright_blocked || 0
+    cum += r.confirmed_blocked || 0
+    out.byMonth.push({ ...r, cumulative: cum })
   }
-  return {
-    total,
-    reported: total.reported_k + total.reported_m,
-    blocked: total.blocked_k + total.blocked_m,
-    byMonth: Object.values(byMonth).sort((a, b) => a.month.localeCompare(b.month)),
-    byPlatform
-  }
+  return out
 }
 
 // ───── Campaigns ────────────────────────────────────────────────
@@ -465,9 +455,8 @@ export async function saveBrand(row) {
     brand_count: row.brand_count === '' || row.brand_count == null ? null : Number(row.brand_count),
     wave: Number(row.wave) || 1,
     category: row.category?.trim() || null,
-    doc_poa: !!row.doc_poa, doc_kakao: !!row.doc_kakao, doc_seal: !!row.doc_seal,
-    doc_identify: !!row.doc_identify, doc_bizreg: !!row.doc_bizreg,
-    report_owner: row.report_owner === 'M' ? 'M' : 'K',
+    assignee_id: row.assignee_id || null,
+    monitoring_status: row.monitoring_status || 'pending',
     note: row.note?.trim() || null,
     is_active: row.is_active ?? true
   }
@@ -555,7 +544,7 @@ export async function countOpenIssues(projectId) {
 export async function listUpcomingIssues(projectId, limit = 6) {
   const { data, error } = await supabase
     .from('project_posts')
-    .select('id,title,status,due_on,section_id')
+    .select('id,title,status,due_on,section_id,assignee_id')
     .eq('project_id', projectId)
     .in('status', ['open', 'in_progress'])
     .order('due_on', { ascending: true, nullsFirst: false })
@@ -590,21 +579,20 @@ export async function setMonthCheck(projectId, month, key, done, userId) {
 // ───── 신규 프로젝트 (관리자) ────────────────────────────────────
 
 const DEFAULT_SECTIONS = [
-  { key: 'notice', label: '공지', icon: 'Megaphone', kind: 'notice', description: '바뀌지 않는 규칙은 상단 고정(핀).' },
-  { key: 'dashboard', label: '대시보드', icon: 'Gauge', kind: 'dashboard', description: '목표 대비 진행 현황. 월별 실적 탭 입력값이 자동 집계됩니다.' },
-  { key: 'monthly', label: '월별 실적', icon: 'CalendarRange', kind: 'monthly', description: '월 단위 마감 체크리스트 + 실적표 + 정보 공유 게시판.' },
+  { key: 'notice', label: '공지·규칙', icon: 'Megaphone', kind: 'notice', description: '팀 내부 규칙·필독. 바뀌지 않는 원칙은 상단 고정(핀).' },
+  { key: 'dashboard', label: '팀 현황', icon: 'Gauge', kind: 'dashboard', description: '이번 주 마감 · 내 할 일 · 라운드 일정 · 브랜드 담당.' },
+  { key: 'monthly', label: '월별 운영', icon: 'CalendarRange', kind: 'monthly', description: '월 단위 마감 체크리스트 + 확정 건수 + 내부 기록·유선 협의 메모.' },
   { key: 'campaign', label: '기획 모니터링', icon: 'Target', kind: 'campaign', description: '차수별 기획 모니터링 진행 기록.' },
-  { key: 'brands', label: '참여 브랜드 & 서류', icon: 'Building2', kind: 'brands', description: '브랜드사 × 서류 현황.' },
-  { key: 'issues', label: '이슈 트래커', icon: 'ListTodo', kind: 'issues', description: '요청·보완사항을 상태와 기한으로 추적.' },
-  { key: 'library', label: '자료실 & 연락처', icon: 'Library', kind: 'library', description: '양식·링크·담당자 연락처.' }
+  { key: 'brands', label: '브랜드 & 담당', icon: 'Building2', kind: 'brands', description: '브랜드사별 담당 팀원·착수 상태·특이사항.' },
+  { key: 'issues', label: '할 일', icon: 'ListTodo', kind: 'issues', description: '팀 내부 액션 (담당자·기한).' },
+  { key: 'library', label: '가이드 & 연락처', icon: 'Library', kind: 'library', description: '실무 가이드 + 링크 + 연락처.' }
 ]
 
-/** 프로젝트 + 기본 섹션 생성. 플랫폼/마감 사이클 설정은 첫 프로젝트(정렬 최상위) 것을 복사. */
+/** 프로젝트 + 기본 섹션 생성. 마감 사이클 설정은 첫 프로젝트(정렬 최상위) 것을 복사. */
 export async function createProjectWithDefaults(form, userId) {
   const { data: tmpl } = await supabase.from('projects').select('config').order('sort_order').limit(1).maybeSingle()
   const config = {
     goal_count: form.goal_count ?? null,
-    platforms: tmpl?.config?.platforms ?? [],
     report_cycle: tmpl?.config?.report_cycle ?? []
   }
   const { data: p, error } = await supabase
@@ -622,4 +610,31 @@ export async function createProjectWithDefaults(form, userId) {
     .insert(DEFAULT_SECTIONS.map((s, i) => ({ ...s, project_id: p.id, sort_order: i })))
   if (e2) throw e2
   return p
+}
+
+export async function listMyOpenIssues(projectId, userId, limit = 8) {
+  if (!userId) return []
+  const { data, error } = await supabase
+    .from('project_posts')
+    .select('id,title,status,due_on,section_id,assignee_id')
+    .eq('project_id', projectId)
+    .eq('assignee_id', userId)
+    .in('status', ['open', 'in_progress'])
+    .order('due_on', { ascending: true, nullsFirst: false })
+    .limit(limit)
+  if (error) return []
+  return data ?? []
+}
+
+/** 팀원 프로필 목록 (담당자 선택용) — profiles 는 authenticated 전원 select 가능 */
+export async function listTeamProfiles() {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id,email,full_name,avatar_url')
+    .order('full_name', { ascending: true })
+  if (error) return []
+  return data ?? []
+}
+export function profileName(p) {
+  return p?.full_name || p?.email?.split('@')[0] || '—'
 }

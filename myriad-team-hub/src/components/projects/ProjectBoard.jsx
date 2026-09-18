@@ -6,7 +6,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
-  Plus, Loader2, Pin, Paperclip, MessageSquare, Search, X, AlertTriangle, Calendar, Inbox
+  Plus, Loader2, Pin, Paperclip, MessageSquare, Search, X, AlertTriangle, Calendar, Inbox, User
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
@@ -34,6 +34,7 @@ export default function ProjectBoard({
   const [cmtCounts, setCmtCounts] = useState({})
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState(section.kind === 'issues' ? 'active' : '')
+  const [mineOnly, setMineOnly] = useState(false)
   const [editor, setEditor] = useState(null) // null | { initial }
 
   const isIssues = section.kind === 'issues'
@@ -56,7 +57,7 @@ export default function ProjectBoard({
       const ids = data.map((r) => r.id)
       const [ac, cc] = await Promise.all([countAttachments(ids), countComments(ids)])
       setAttCounts(ac); setCmtCounts(cc)
-      const uids = [...new Set(data.map((r) => r.created_by).filter(Boolean))]
+      const uids = [...new Set(data.flatMap((r) => [r.created_by, r.assignee_id]).filter(Boolean))]
       const map = {}
       await Promise.all(uids.map(async (id) => { map[id] = await getProfileShort(id) }))
       setProfiles(map)
@@ -70,6 +71,7 @@ export default function ProjectBoard({
   const filtered = useMemo(() => {
     let list = rows
     if (isIssues) {
+      if (mineOnly) list = list.filter((r) => r.assignee_id === user?.id)
       if (statusFilter === 'active') list = list.filter((r) => r.status === 'open' || r.status === 'in_progress')
       else if (statusFilter) list = list.filter((r) => r.status === statusFilter)
       // 열린 건 우선, 기한 임박 순
@@ -87,7 +89,7 @@ export default function ProjectBoard({
       list = list.filter((r) => r.title.toLowerCase().includes(s) || (r.body_text || '').toLowerCase().includes(s) || (r.category || '').toLowerCase().includes(s))
     }
     return list
-  }, [rows, search, statusFilter, isIssues])
+  }, [rows, search, statusFilter, isIssues, mineOnly, user?.id])
 
   const openPost = rows.find((r) => r.id === openId) || null
 
@@ -129,6 +131,10 @@ export default function ProjectBoard({
                 {s.label}
               </button>
             ))}
+            <button onClick={() => setMineOnly((v) => !v)}
+              className={`px-2.5 py-1 rounded-full border font-semibold inline-flex items-center gap-1 ${mineOnly ? 'bg-[#F2B100]/25 border-[#F2B100] text-[#2B2928]' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
+              <User size={10} /> 내 할 일
+            </button>
           </div>
         )}
         <div className="relative flex-1 min-w-[180px] max-w-xs">
@@ -204,6 +210,11 @@ export default function ProjectBoard({
                       )}
                       {attCounts[r.id] > 0 && <span className="inline-flex items-center gap-0.5"><Paperclip size={11} />{attCounts[r.id]}</span>}
                       {cmtCounts[r.id] > 0 && <span className="inline-flex items-center gap-0.5"><MessageSquare size={11} />{cmtCounts[r.id]}</span>}
+                      {isIssues && (
+                        <span className={`w-16 truncate text-right inline-flex items-center justify-end gap-0.5 ${r.assignee_id ? 'text-[#B98A00] font-semibold' : 'text-slate-300'}`} title="담당자">
+                          <User size={10} /> {r.assignee_id ? name(r.assignee_id) : '미지정'}
+                        </span>
+                      )}
                       <span className="w-16 truncate text-right">{name(r.created_by)}</span>
                       <span className="w-12 text-right">{fmtDate(r.created_at)}</span>
                     </div>
