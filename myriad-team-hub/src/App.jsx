@@ -15,6 +15,8 @@ import MonitoringReport from './pages/MonitoringReport'
 import ReportGroups from './pages/ReportGroups'
 import ReportGroupDetail from './pages/ReportGroupDetail'
 import Community from './pages/Community'
+import Projects from './pages/Projects'
+import ProjectDetail from './pages/ProjectDetail'
 import CaseDetail from './pages/CaseDetail'
 import Targets from './pages/Targets'
 import Vero from './pages/Vero'
@@ -53,6 +55,8 @@ export default function App() {
         <Route path="targets" element={<Targets />} />
         <Route path="vero" element={<Vero />} />
         <Route path="whitelist-guard" element={<WhitelistGuard />} />
+        <Route path="projects" element={<Projects />} />
+        <Route path="projects/:slug" element={<ProjectDetail />} />
         <Route path="community" element={<Community />} />
         <Route path="community/cases/new" element={<CaseDetail mode="new" />} />
         <Route path="community/cases/:id" element={<CaseDetail />} />
