@@ -101,6 +101,33 @@ export async function getProjectBySlug(slug) {
   return data
 }
 
+/**
+ * 프로젝트 마스터 수정 (관리자 RLS). patch 에 config 가 있으면 기존 config 와 얕게 병합.
+ * @returns 갱신된 projects 행
+ */
+export async function updateProject(projectId, patch) {
+  const { config, ...rest } = patch
+  const row = { ...rest }
+  if (config) {
+    const { data: cur, error: e0 } = await supabase.from('projects').select('config').eq('id', projectId).single()
+    if (e0) throw e0
+    row.config = { ...(cur?.config || {}), ...config }
+  }
+  const { data, error } = await supabase
+    .from('projects')
+    .update(row)
+    .eq('id', projectId)
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+/** 마감 체크리스트 항목 키 생성 (project_month_checks.key 와 연결되므로 저장 후 변경 금지) */
+export function newCycleKey() {
+  return `c_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+}
+
 export async function listSections(projectId) {
   const { data, error } = await supabase
     .from('project_sections')

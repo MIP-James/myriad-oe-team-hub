@@ -144,7 +144,7 @@ function NewProjectModal({ userId, onClose, onCreated }) {
             <input type="number" value={form.goal_count} onChange={(e) => setForm((f) => ({ ...f, goal_count: e.target.value }))} className={inputCls} placeholder="목표 건수" />
           </div>
           <textarea value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} rows={3} className={`${inputCls} w-full`} placeholder="한 줄 설명" />
-          <p className="text-xs text-slate-500">기본 탭 7개(공지·규칙 · 팀 현황 · 월별 운영 · 기획 모니터링 · 브랜드 & 담당 · 할 일 · 가이드 & 연락처)가 자동 생성됩니다. 마감 체크리스트는 KOIPA 프로젝트 것을 복사해 오니 필요 시 SQL 로 조정하세요.</p>
+          <p className="text-xs text-slate-500">기본 탭 7개(공지·규칙 · 팀 현황 · 월별 운영 · 기획 모니터링 · 브랜드 & 담당 · 할 일 · 가이드 & 연락처)가 자동 생성됩니다. 마감 체크리스트는 첫 프로젝트 것을 복사해 오며, 기간·목표·체크리스트는 생성 후 프로젝트 페이지에서 수정할 수 있습니다.</p>
           {error && <div className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">{error}</div>}
         </div>
         <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-slate-200">

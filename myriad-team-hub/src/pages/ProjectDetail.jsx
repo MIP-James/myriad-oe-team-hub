@@ -7,7 +7,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import {
   FolderKanban, Megaphone, Gauge, CalendarRange, Target, Crosshair, Copyright, Building2, ListTodo, Library,
-  Loader2, ChevronLeft, CheckSquare, Square, Info, Check
+  Loader2, ChevronLeft, CheckSquare, Square, Info, Check, Settings, Edit3, Plus
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import {
@@ -19,13 +19,17 @@ import ProjectDashboard from '../components/projects/ProjectDashboard'
 import CampaignPanel from '../components/projects/CampaignPanel'
 import ProjectBrands from '../components/projects/ProjectBrands'
 import ProjectLibrary from '../components/projects/ProjectLibrary'
+import ProjectSettingsModal from '../components/projects/ProjectSettingsModal'
+import ChecklistEditorModal from '../components/projects/ChecklistEditorModal'
 
 const ICONS = { Megaphone, Gauge, CalendarRange, Target, Crosshair, Copyright, Building2, ListTodo, Library, FolderKanban }
 
 export default function ProjectDetail() {
   const { slug } = useParams()
+  const { isAdmin } = useAuth()
   const [params, setParams] = useSearchParams()
   const [project, setProject] = useState(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [sections, setSections] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -71,14 +75,26 @@ export default function ProjectDetail() {
       <Link to="/projects" className="text-xs text-slate-500 hover:text-slate-800 inline-flex items-center gap-1 mb-2"><ChevronLeft size={12} /> 팀 프로젝트</Link>
       <header className="mb-5 flex items-start gap-3">
         <div className="w-11 h-11 rounded-xl bg-[#3A3737] text-[#F2B100] flex items-center justify-center shrink-0"><FolderKanban size={22} /></div>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <h1 className="text-2xl font-bold text-slate-900 leading-tight">{project.name}</h1>
           <div className="text-sm text-slate-500 mt-0.5">
             {project.client}
             {project.starts_on && <span className="ml-2 text-slate-400">· {project.starts_on} ~ {project.ends_on || '진행 중'}</span>}
+            {project.config?.goal_count > 0 && <span className="ml-2 text-slate-400">· 목표 {Number(project.config.goal_count).toLocaleString()}건</span>}
+            {project.is_active === false && <span className="ml-2 text-[10px] font-bold bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded align-middle">종료</span>}
           </div>
         </div>
+        {isAdmin && (
+          <button onClick={() => setSettingsOpen(true)} title="프로젝트 설정 (기간·목표·이름)"
+            className="shrink-0 flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:border-myriad-primary hover:text-myriad-ink bg-white">
+            <Settings size={13} /> 프로젝트 설정
+          </button>
+        )}
       </header>
+      {settingsOpen && (
+        <ProjectSettingsModal project={project} hasCopyright={sections.some((s) => s.kind === 'copyright')}
+          onClose={() => setSettingsOpen(false)} onSaved={(p) => { setProject(p); setSettingsOpen(false) }} />
+      )}
 
       <div className="flex gap-1 border-b border-slate-200 mb-5 overflow-x-auto">
         {sections.map((s) => {
@@ -98,17 +114,17 @@ export default function ProjectDetail() {
           {section.description && (
             <p className="text-xs text-slate-500 mb-3 flex items-start gap-1.5"><Info size={12} className="mt-0.5 shrink-0 text-slate-400" /> {section.description}</p>
           )}
-          <SectionRenderer key={section.id} project={project} section={section} sections={sections} goTab={goTab} params={params} setParams={setParams} />
+          <SectionRenderer key={section.id} project={project} section={section} sections={sections} goTab={goTab} params={params} setParams={setParams} onProjectChange={setProject} />
         </>
       )}
     </div>
   )
 }
 
-function SectionRenderer({ project, section, sections, goTab, params, setParams }) {
+function SectionRenderer({ project, section, sections, goTab, params, setParams, onProjectChange }) {
   switch (section.kind) {
     case 'dashboard': return <ProjectDashboard project={project} sections={sections} goTab={goTab} />
-    case 'monthly': return <MonthlySection project={project} section={section} params={params} setParams={setParams} />
+    case 'monthly': return <MonthlySection project={project} section={section} params={params} setParams={setParams} onProjectChange={onProjectChange} />
     case 'copyright': return <CopyrightSection project={project} section={section} params={params} setParams={setParams} />
     case 'campaign': return <CampaignSection project={project} section={section} kind="planned" params={params} setParams={setParams} />
     case 'adhoc': return <CampaignSection project={project} section={section} kind="adhoc" params={params} setParams={setParams} />
@@ -191,10 +207,11 @@ function NumField({ label, value, onCommit, hint }) {
 // ─────────────────────────────────────────────────────
 // 월별 운영: 체크리스트 + KOIPA 확정 건수 + 게시판
 // ─────────────────────────────────────────────────────
-function MonthlySection({ project, section, params, setParams }) {
-  const { user } = useAuth()
+function MonthlySection({ project, section, params, setParams, onProjectChange }) {
+  const { user, isAdmin } = useAuth()
   const { months, month, setMonth } = useMonthTabs(project, params, setParams)
   const [checks, setChecks] = useState({})
+  const [editingCycle, setEditingCycle] = useState(false)
   const [summary, setSummary] = useState([])
   const cycle = project.config?.report_cycle || []
   const goal = project.config?.goal_count || 0
@@ -220,12 +237,25 @@ function MonthlySection({ project, section, params, setParams }) {
       <MonthTabs months={months} month={month} setMonth={setMonth} />
 
       <div className="grid lg:grid-cols-5 gap-4 mb-4">
-        {cycle.length > 0 && (
+        {(cycle.length > 0 || isAdmin) && (
           <section className="lg:col-span-3 bg-white border border-[#E7E3DE] rounded-xl p-4">
-            <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center justify-between mb-2 gap-2">
               <h3 className="font-bold text-slate-900 text-sm">{shortMonthLabel(month)} 마감 체크리스트</h3>
-              <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${doneN === cycle.length ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>{doneN}/{cycle.length}</span>
+              <div className="flex items-center gap-2">
+                {isAdmin && (
+                  <button onClick={() => setEditingCycle(true)} title="체크리스트 항목 추가·수정·삭제"
+                    className="text-[11px] font-semibold text-slate-500 hover:text-myriad-ink flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-[#FAF8F4]">
+                    <Edit3 size={12} /> 편집
+                  </button>
+                )}
+                {cycle.length > 0 && <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${doneN === cycle.length ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>{doneN}/{cycle.length}</span>}
+              </div>
             </div>
+            {cycle.length === 0 && (
+              <button onClick={() => setEditingCycle(true)} className="w-full text-xs text-slate-400 hover:text-myriad-ink py-4 text-center border border-dashed border-slate-200 rounded-lg hover:border-myriad-primary flex items-center justify-center gap-1">
+                <Plus size={12} /> 체크리스트 항목이 없습니다. 클릭해서 추가하세요.
+              </button>
+            )}
             <ul className="space-y-1">
               {cycle.map((c) => {
                 const done = !!checks[c.key]?.done
@@ -264,6 +294,11 @@ function MonthlySection({ project, section, params, setParams }) {
       <h3 className="font-bold text-slate-900 text-sm mb-2">{monthLabel(month)} 내부 기록 · 유선 협의 · 검수 메모</h3>
       <ProjectBoard project={project} section={section} periodMonth={month} months={months}
         emptyHint={`${monthLabel(month)} 기록이 없습니다. 유선 협의 내용, 내부 검수 결과, 제출 전 확인 사항을 남겨두세요.`} />
+
+      {editingCycle && (
+        <ChecklistEditorModal project={project} onClose={() => setEditingCycle(false)}
+          onSaved={(p) => { onProjectChange?.(p); setEditingCycle(false) }} />
+      )}
     </div>
   )
 }
