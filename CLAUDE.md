@@ -86,6 +86,7 @@ release.bat <slug> "수정 내용 요약"
 | `band-url-collector` | 🔗 BAND URL Collector (download_only, 크롬 확장) |
 | `bpm-collector` | 📡 BPM Collector (download_only, 크롬 확장) |
 | `bpm-assist` | 🧭 BPM 검수 어시스트 (download_only, 크롬 확장) |
+| `myriad-ext-installer` | 🧷 MYRIAD 확장 설치 도우미 (download_only, EXE — 알바용 크롬 확장 설치/자동 업데이트, 소스 `utilities/ext-installer`, `build.bat` 후 release) |
 
 **같은 날 두 번 배포:** `--replace` 또는 `--version 2026-04-23b`
 
