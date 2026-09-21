@@ -117,6 +117,15 @@
       "icon": "🧭",
       "category": "browser-extension",
       "description": "BPM ADMIN 판매 정보 상세 입력을 반자동화하는 크롬 확장. 판매 내용·상품명을 분석해 상품 유형 top 3 를 근거와 함께 추천하고 [적용] 한 번으로 드롭다운 선택, 지정상품 검색어 칩 클릭으로 검색 모달 자동 오픈·조회·일치 행 하이라이트, [변경 적용] 원클릭(확인 팝업 자동) 후 다음 건 자동 이동. 팀 공유 사전·선택 이력(dbp-tm-search Supabase)으로 추천이 브랜드별 실제 지정상품 쪽으로 학습됩니다. 내려받은 폴더를 chrome://extensions 에 \"압축해제된 확장 프로그램 로드\" 로 등록해서 사용."
+    },
+    "myriad-ext-installer": {
+      "source_folder": "C:\\Users\\MIP James\\Downloads\\Claude Project\\utilities\\ext-installer\\dist\\MYRIAD_Extension_Installer",
+      "display_name": "MYRIAD 확장 설치 도우미",
+      "exe_name": "MYRIAD_Extension_Installer.exe",
+      "utility_type": "download_only",
+      "icon": "🧷",
+      "category": "browser-extension",
+      "description": "크롬 확장(BPM Collector·BAND URL Collector)을 컴퓨터에 익숙하지 않은 실무자도 설치·업데이트할 수 있게 하는 도우미 EXE. 최신 zip 자동 다운로드 → 고정 폴더 설치 → 크롬 등록 여부 자동 판별 → 미등록 시 경로 복사 + 3단계 그림 안내. 이후에는 PC 시작 시 자동으로 새 버전 교체(크롬 다시 열기만). 알바 분에게 EXE 파일 하나만 전달하면 됩니다."
     }
   }
 }
