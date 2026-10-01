@@ -40,9 +40,13 @@ export async function onRequestGet(context) {
       auth: { persistSession: false, autoRefreshToken: false }
     })
 
+    // 토큰 2종 허용 — myrwl_ (확장 전용) / myrlnch_ (런처 기기 토큰).
+    // 둘 다 팀원 계정에 귀속되고 화이트리스트는 로그인 팀원 전원이 볼 수 있는 자료라
+    // 신뢰 수준이 같다. 새 PC 에서 런처 토큰만 받은 경우에도 그대로 쓰게 한다.
     const tokenHash = await sha256Hex(token)
+    const table = token.startsWith('myrlnch_') ? 'launcher_device_tokens' : 'whitelist_ext_tokens'
     const { data: tok, error: tokErr } = await sb
-      .from('whitelist_ext_tokens')
+      .from(table)
       .select('id, user_id, revoked_at')
       .eq('token_hash', tokenHash)
       .is('revoked_at', null)
@@ -51,10 +55,13 @@ export async function onRequestGet(context) {
     if (!tok) return json({ error: '토큰이 유효하지 않습니다. 팀 허브에서 재발급하세요.' }, 401)
 
     // 사용 기록 — 누가/언제 받아갔는지 감사 추적. 실패해도 본 응답은 계속 진행.
-    sb.from('whitelist_ext_tokens')
-      .update({ last_used_at: new Date().toISOString() })
-      .eq('id', tok.id)
-      .then(() => {}, () => {})
+    // 런처 토큰의 last_used_at 은 런처 heartbeat 가 관리하므로 건드리지 않는다.
+    if (table === 'whitelist_ext_tokens') {
+      sb.from('whitelist_ext_tokens')
+        .update({ last_used_at: new Date().toISOString() })
+        .eq('id', tok.id)
+        .then(() => {}, () => {})
+    }
 
     const { data: clients, error: cErr } = await sb
       .from('whitelist_clients')

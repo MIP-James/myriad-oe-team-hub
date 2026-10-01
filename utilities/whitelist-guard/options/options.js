@@ -51,9 +51,9 @@ $('save').addEventListener('click', async () => {
   const apiBase = ($('apiBase').value.trim() || DEFAULT_BASE).replace(/\/+$/, '')
 
   if (!token) { setStatus('err', '토큰을 입력하세요.'); return }
-  if (!token.startsWith('myrwl_')) {
+  if (!token.startsWith('myrwl_') && !token.startsWith('myrlnch_')) {
     // 형식만 안내하고 막지는 않는다 (나중에 접두어가 바뀔 수 있음)
-    setStatus('err', '토큰이 myrwl_ 로 시작하지 않습니다. 허브에서 복사한 값이 맞는지 확인하세요.')
+    setStatus('err', '토큰이 myrwl_ 또는 myrlnch_ 로 시작하지 않습니다. 허브에서 복사한 값이 맞는지 확인하세요.')
   }
 
   $('save').disabled = true
