@@ -72,7 +72,7 @@ release.bat <slug> "수정 내용 요약"
 **등록된 slug** (변경 시 `admin-scripts/release_config.json` 확인):
 | slug | 이름 |
 |---|---|
-| `myriad-enforcement-tools` | 🛡️ MYRIAD Enforcement Tools |
+| `myriad-enforcement-tools` | 🛡️ MYRIAD Enforcement Tools (통합런처, 소스 `utilities/enforcement-packer` — zip 첨부 불필요, README 의 빌드 절차) |
 | `market-image-matcher` | 🖼️ Market Image Matcher |
 | `sonny-angel-image-matcher` | 👶 Sonny Angel Image Matcher |
 | `report-generator` | 📊 Report Generator |
