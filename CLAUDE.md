@@ -209,3 +209,8 @@ myriad-team-hub/src/
 - `project_backlog.md` — 보류 기능 (PWA push, Notion 자동 보고 등)
 - `project_stack_constraints.md` — free tier 제약 + 호스팅 결정
 - `user_role.md` — 사용자 협업 스타일
+
+## 포트폴리오 로그 (2026-10-06~)
+- 작업 세션이 끝날 때마다 `portfolio/WORKLOG.md` 에 한 항목 추가 (날짜 · 분류 · 제목 / 문제 / 한 일 / 결과·배운 점)
+- **고객사명·내부 도메인·이메일·토큰 금지** (개인 GitHub 공개 예정). `portfolio/` 는 gitignore — 팀 레포에 커밋 안 됨
+- 큰 마일스톤이면 `portfolio/README.md` 의 숫자/사례도 갱신

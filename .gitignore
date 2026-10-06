@@ -17,3 +17,6 @@ client_secret*.json
 구글*클라우드*.txt
 *.pem
 *.key
+
+# --- 개인 포트폴리오 (팀 공개 레포에 올리지 않음) ---
+portfolio/
