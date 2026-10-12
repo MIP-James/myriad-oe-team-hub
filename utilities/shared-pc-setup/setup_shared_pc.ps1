@@ -29,11 +29,27 @@ Write-Host "MYRIAD Shared PC setup - computer name: $env:COMPUTERNAME" -Foregrou
 
 # --- 1. Remote Desktop -------------------------------------------------------
 Step 1 'Enable Remote Desktop'
-Set-ItemProperty 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name fDenyTSConnections -Value 0
 Set-ItemProperty 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name UserAuthentication -Value 1
-# '@FirewallAPI.dll,-28752' = Remote Desktop rule group (language independent)
-Enable-NetFirewallRule -Group '@FirewallAPI.dll,-28752'
-Write-Host '  OK - RDP on, NLA on, firewall opened'
+# Registry fDenyTSConnections alone does NOT start the 3389 listener on a running service.
+# The WMI method is what the Settings toggle uses - applies live. Restart as a safety net.
+$ts = Get-CimInstance -Namespace root/cimv2/TerminalServices -ClassName Win32_TerminalServiceSetting
+Invoke-CimMethod -InputObject $ts -MethodName SetAllowTSConnections -Arguments @{AllowTSConnections=1; ModifyFirewallException=1} | Out-Null
+# TermService often refuses to stop -> then a reboot is required (checked below)
+try { Restart-Service TermService -Force -ErrorAction Stop } catch { Write-Host '  (TermService restart refused - reboot may be needed)' -ForegroundColor Yellow }
+# '@FirewallAPI.dll,-28752' = Remote Desktop rule group (language independent). All profiles.
+Set-NetFirewallRule -Group '@FirewallAPI.dll,-28752' -Profile Any -Enabled True
+# Windows marks a newly joined Wi-Fi as Public -> inbound blocked. Office LAN = Private.
+Get-NetConnectionProfile | Where-Object NetworkCategory -eq 'Public' | Set-NetConnectionProfile -NetworkCategory Private
+Start-Sleep -Seconds 5
+if (Get-NetTCPConnection -LocalPort 3389 -State Listen -ErrorAction SilentlyContinue) {
+    Write-Host '  OK - RDP listening on 3389, NLA on, firewall opened, network = Private'
+} else {
+    Write-Host '  WARNING - port 3389 not listening yet. REBOOT this PC (settings are saved; no re-run needed).' -ForegroundColor Red
+}
+$fw = Get-CimInstance -Namespace root/SecurityCenter2 -ClassName FirewallProduct -ErrorAction SilentlyContinue
+if ($fw) {
+    Write-Host "  NOTE - 3rd-party firewall found: $($fw.displayName -join ', '). Allow Remote Desktop (TCP 3389) there too." -ForegroundColor Yellow
+}
 
 # --- 2. Local accounts -------------------------------------------------------
 Step 2 'Team member accounts'
