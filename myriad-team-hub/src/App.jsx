@@ -27,6 +27,7 @@ import AdminExternalShortcuts from './pages/AdminExternalShortcuts'
 import AdminUsers from './pages/AdminUsers'
 import AdminInboundStatus from './pages/AdminInboundStatus'
 import AdminWhitelist from './pages/AdminWhitelist'
+import AdminSharedPcs from './pages/AdminSharedPcs'
 import NotFound from './pages/NotFound'
 
 export default function App() {
@@ -66,6 +67,7 @@ export default function App() {
         <Route path="admin/users" element={<AdminGate><AdminUsers /></AdminGate>} />
         <Route path="admin/inbound-status" element={<AdminGate><AdminInboundStatus /></AdminGate>} />
         <Route path="admin/whitelist" element={<AdminGate><AdminWhitelist /></AdminGate>} />
+        <Route path="admin/shared-pcs" element={<AdminGate><AdminSharedPcs /></AdminGate>} />
       </Route>
       <Route path="*" element={<NotFound />} />
     </Routes>

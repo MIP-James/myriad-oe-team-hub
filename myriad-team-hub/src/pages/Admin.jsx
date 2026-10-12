@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { ShieldCheck, Wrench, Users, ExternalLink, ChevronRight, Mail, ShieldAlert } from 'lucide-react'
+import { ShieldCheck, Wrench, Users, ExternalLink, ChevronRight, Mail, ShieldAlert, Monitor } from 'lucide-react'
 
 const SECTIONS = [
   {
@@ -35,6 +35,13 @@ const SECTIONS = [
     label: '화이트리스트 셀러 관리',
     desc: '고객사 공식 판매처 등록 (엑셀 업로드) → 크롬 확장이 아마존 신고 전 오신고 차단',
     icon: ShieldAlert,
+    ready: true
+  },
+  {
+    to: '/admin/shared-pcs',
+    label: '공용 PC 원격 접속',
+    desc: '공용 PC 등록 + 윈도우 계정 ↔ 팀원 연결 (대시보드 사용 현황 / 원격 접속 버튼)',
+    icon: Monitor,
     ready: true
   }
 ]

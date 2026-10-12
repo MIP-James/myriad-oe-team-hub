@@ -10,6 +10,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { listAnnouncements, getMyReadIds } from '../lib/community'
 import { listRecentCases, STATUS_LABELS, STATUS_COLORS, getCaseBrands, getCasePlatforms } from '../lib/cases'
 import { listActiveShortcuts, getColorClasses } from '../lib/externalShortcuts'
+import SharedPcWidget from '../components/SharedPcWidget'
 
 export default function Dashboard() {
   const { user, isAdmin } = useAuth()
@@ -111,6 +112,9 @@ export default function Dashboard() {
           </ul>
         </section>
       )}
+
+      {/* ─── 공용 PC 원격 접속 (등록된 PC 있을 때만) ─── */}
+      <SharedPcWidget />
 
       {/* ─── 1. 정보 위젯 3종 (오늘 일정 / 최근 메모 / 최근 케이스) ─── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">

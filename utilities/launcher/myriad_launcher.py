@@ -139,7 +139,7 @@ def notify(title: str, message: str, success: bool = True) -> None:
         logging.warning(f"Toast failed: {e}")
 
 
-LAUNCHER_VERSION = "2026-05-15"
+LAUNCHER_VERSION = "2026-10-12"
 POLL_INTERVAL_SEC = 60.0
 HEARTBEAT_INTERVAL_SEC = 300.0
 MAX_OUTPUT_CHARS = 8000
@@ -871,6 +871,11 @@ class Launcher:
 
 
 def main():
+    # 공용 PC 에이전트 모드 (SYSTEM 예약 작업) — 트레이/작업 실행 없이 세션 보고만
+    if "--shared-pc-agent" in sys.argv:
+        from shared_pc_agent import run_agent
+        sys.exit(run_agent(LAUNCHER_VERSION, DEFAULT_API_BASE_URL))
+
     setup_logging()
     logging.info(f"Launcher v{LAUNCHER_VERSION} starting")
 
