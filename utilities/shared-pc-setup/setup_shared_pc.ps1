@@ -1,11 +1,13 @@
 # MYRIAD Shared PC setup (Phase 24) - run ONCE on the shared laptop (Win11 Pro).
-# Re-run safe: every step is idempotent. Re-run step 5 after a launcher update.
+# Re-run safe: every step is idempotent. Re-run step 7 after a launcher update.
 #
 #   1. Enable Remote Desktop (+ firewall, NLA)
 #   2. Create local accounts per team member + allow RDP
 #   3. Power: never sleep on AC, lid close = do nothing
 #   4. Windows Update active hours 08-20 (no auto restart during work)
-#   5. Install the session agent (SYSTEM scheduled task at boot)
+#   5. Shut down / restart = Administrators only (one click would kill everyone's work)
+#   6. Disconnected sessions auto sign-out after 24h
+#   7. Install the session agent (SYSTEM scheduled task at boot)
 #
 # Messages are English on purpose (PowerShell 5.1 + Korean = encoding breakage).
 
@@ -18,7 +20,7 @@ if (-not (New-Object Security.Principal.WindowsPrincipal($id)).IsInRole([Securit
     exit
 }
 
-function Step($n, $title) { Write-Host ""; Write-Host "[$n/5] $title" -ForegroundColor Cyan }
+function Step($n, $title) { Write-Host ""; Write-Host "[$n/7] $title" -ForegroundColor Cyan }
 function Ask-YesNo($q) { (Read-Host "$q (y/n)") -match '^[yY]' }
 
 # Well-known SIDs (language independent - group NAMES differ on Korean Windows)
@@ -34,8 +36,11 @@ Set-ItemProperty 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStat
 # The WMI method is what the Settings toggle uses - applies live. Restart as a safety net.
 $ts = Get-CimInstance -Namespace root/cimv2/TerminalServices -ClassName Win32_TerminalServiceSetting
 Invoke-CimMethod -InputObject $ts -MethodName SetAllowTSConnections -Arguments @{AllowTSConnections=1; ModifyFirewallException=1} | Out-Null
+# Restart ONLY if not listening yet - restarting drops every connected RDP session (incl. the one running this).
 # TermService often refuses to stop -> then a reboot is required (checked below)
-try { Restart-Service TermService -Force -ErrorAction Stop } catch { Write-Host '  (TermService restart refused - reboot may be needed)' -ForegroundColor Yellow }
+if (-not (Get-NetTCPConnection -LocalPort 3389 -State Listen -ErrorAction SilentlyContinue)) {
+    try { Restart-Service TermService -Force -ErrorAction Stop } catch { Write-Host '  (TermService restart refused - reboot may be needed)' -ForegroundColor Yellow }
+}
 # '@FirewallAPI.dll,-28752' = Remote Desktop rule group (language independent). All profiles.
 Set-NetFirewallRule -Group '@FirewallAPI.dll,-28752' -Profile Any -Enabled True
 # Windows marks a newly joined Wi-Fi as Public -> inbound blocked. Office LAN = Private.
@@ -85,8 +90,39 @@ Set-ItemProperty $wu -Name ActiveHoursStart -Value 8
 Set-ItemProperty $wu -Name ActiveHoursEnd -Value 20
 Write-Host '  OK'
 
-# --- 5. Session agent --------------------------------------------------------
-Step 5 'Session agent (reports who is connected to the hub)'
+# --- 5. Shut down restricted to Administrators ------------------------------
+Step 5 'Shut down / restart = Administrators only'
+# Default holders: Administrators, Backup Operators, Users. Drop Users so team accounts
+# can only sign out / disconnect. secedit applies ONLY the right listed in the template.
+$inf = Join-Path $env:TEMP 'myriad_shutdown.inf'
+$sdb = Join-Path $env:TEMP 'myriad_shutdown.sdb'
+$tpl = "[Unicode]`r`nUnicode=yes`r`n[Version]`r`nsignature=`"`$CHICAGO`$`"`r`nRevision=1`r`n[Privilege Rights]`r`nSeShutdownPrivilege = *S-1-5-32-544,*S-1-5-32-551`r`n"
+[IO.File]::WriteAllText($inf, $tpl, [Text.Encoding]::Unicode)
+secedit /configure /db $sdb /cfg $inf /areas USER_RIGHTS /quiet | Out-Null
+# verify: export current rights and make sure Users (S-1-5-32-545) is gone
+secedit /export /cfg $inf /areas USER_RIGHTS /quiet | Out-Null
+$line = Get-Content $inf -ErrorAction SilentlyContinue | Where-Object { $_ -like 'SeShutdownPrivilege*' }
+Remove-Item $inf, $sdb -Force -ErrorAction SilentlyContinue
+if ($line -like '*S-1-5-32-545*') { Write-Host "  WARNING - shutdown right not changed: $line" -ForegroundColor Red }
+# no shutdown button on the sign-in screen either
+Set-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' -Name shutdownwithoutlogon -Value 0
+# 'PC\user' -> 'user' (split on backslash = [char]92)
+$admins = Get-LocalGroupMember -SID 'S-1-5-32-544' | ForEach-Object { $_.Name.Split([char]92)[-1] }
+$rdpOnly = Get-LocalGroupMember -SID $SID_RDP_USERS -ErrorAction SilentlyContinue | ForEach-Object { $_.Name.Split([char]92)[-1] }
+$adminTeam = $rdpOnly | Where-Object { $admins -contains $_ }
+if ($adminTeam) { Write-Host "  NOTE - these team accounts are Administrators and can still shut down: $($adminTeam -join ', ')" -ForegroundColor Yellow }
+Write-Host '  OK - team accounts: sign out / disconnect only (takes effect at their next sign-in)'
+
+# --- 6. Disconnected session limit ------------------------------------------
+Step 6 'Disconnected sessions: auto sign-out after 24h'
+$tsPol = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services'
+if (-not (Test-Path $tsPol)) { New-Item $tsPol -Force | Out-Null }
+Set-ItemProperty $tsPol -Name MaxDisconnectionTime -Value 86400000 -Type DWord   # ms = 24h
+gpupdate /target:computer /force | Out-Null
+Write-Host '  OK - a session left disconnected (X) for 24h is signed out (its apps close)'
+
+# --- 7. Session agent --------------------------------------------------------
+Step 7 'Session agent (reports who is connected to the hub)'
 if (Ask-YesNo '  Install / update the agent now?') {
     Write-Host '  Folder that contains MyriadLauncher.exe + config.json (an already set-up launcher on THIS PC):'
     $src = (Read-Host '  Launcher folder').Trim('"', ' ')
