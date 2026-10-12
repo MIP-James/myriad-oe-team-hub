@@ -17,7 +17,7 @@
  *   2. 토큰에 device_id 가 NULL 이면 launcher_devices INSERT 후 토큰에 link
  *      (= 최초 1회 pairing)
  *   3. device 의 last_seen / is_online / version / platform / name 업데이트
- *   4. 해당 user 의 pending job 1건 반환
+ *   4. 해당 user 의 pending job 중 이 device 를 지정한 1건 반환
  */
 import { createClient } from '@supabase/supabase-js'
 
@@ -88,11 +88,15 @@ export async function onRequestPost(context) {
     }
 
     // ─ pending job 1건 fetch ─────────────────────────────────────────
+    // 이 device 를 지정한 job 만 가져감 — 같은 계정에 런처가 2대 이상일 때
+    // 먼저 poll 한 런처가 남의 job 을 가로채던 문제 방지.
+    // device_id NULL(대상 device 삭제됨 등) job 은 기존처럼 아무 런처나 처리.
     const { data: jobs } = await adminSb
       .from('launcher_jobs')
       .select('*')
       .eq('user_id', user_id)
       .eq('status', 'pending')
+      .or(`device_id.eq.${activeDeviceId},device_id.is.null`)
       .order('requested_at', { ascending: true })
       .limit(1)
 

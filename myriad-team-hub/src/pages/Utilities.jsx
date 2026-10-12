@@ -13,10 +13,20 @@ function isFresh(lastSeenAt) {
   return Date.now() - new Date(lastSeenAt).getTime() < STALE_THRESHOLD_MS
 }
 
+// 실행 대상 PC — 브라우저마다 기억 (팀 노트북 브라우저 = 팀 노트북 런처)
+const TARGET_DEVICE_KEY = 'myriad_target_device_id'
+function readTargetDeviceId() {
+  try { return localStorage.getItem(TARGET_DEVICE_KEY) } catch { return null }
+}
+function saveTargetDeviceId(id) {
+  try { localStorage.setItem(TARGET_DEVICE_KEY, id) } catch { /* 저장 불가해도 이번 화면에선 동작 */ }
+}
+
 export default function Utilities() {
   const { user } = useAuth()
   const [items, setItems] = useState([])
   const [devices, setDevices] = useState([])
+  const [targetDeviceId, setTargetDeviceId] = useState(readTargetDeviceId)
   const [recentJobs, setRecentJobs] = useState({})  // key: utility_id → latest job
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -86,15 +96,35 @@ export default function Utilities() {
   }, [items, query, categoryFilter])
 
   const hasOnlineDevice = devices.length > 0
+  // 저장된 PC 가 온라인이면 그것. 저장된 게 없을 때만 온라인 1대 자동 선택.
+  // 저장된 PC 가 오프라인이면 다른 PC 로 넘기지 않음 (엉뚱한 PC 실행 방지).
+  const savedDevice = devices.find((d) => d.id === targetDeviceId)
+  const savedOffline = !!targetDeviceId && !savedDevice
+  const targetDevice =
+    savedDevice ?? (!targetDeviceId && devices.length === 1 ? devices[0] : null)
+  const canRun = !!targetDevice
+  const showDeviceSelect = devices.length >= 2 || (savedOffline && hasOnlineDevice)
+
+  function chooseTargetDevice(id) {
+    setTargetDeviceId(id)
+    saveTargetDeviceId(id)
+    setError(null)
+  }
 
   async function runUtility(utility) {
     if (!hasOnlineDevice) {
       setError('온라인 상태인 런처가 없습니다. "내 런처" 메뉴에서 런처를 연결하세요.')
       return
     }
+    if (!targetDevice) {
+      setError(savedOffline
+        ? '이 브라우저에 지정된 PC 의 런처가 오프라인입니다. 런처를 켜거나 상단에서 다른 PC 를 선택하세요.'
+        : '실행할 PC 를 먼저 선택하세요.')
+      return
+    }
     const { error } = await supabase.from('launcher_jobs').insert({
       user_id: user.id,
-      device_id: devices[0].id,
+      device_id: targetDevice.id,
       utility_id: utility.id,
       utility_slug: utility.slug,
       utility_name: utility.name,
@@ -106,7 +136,7 @@ export default function Utilities() {
       logActivity('utility_executed', {
         target_type: 'utility',
         target_id: utility.id,
-        payload: { utility_name: utility.name, utility_slug: utility.slug }
+        payload: { utility_name: utility.name, utility_slug: utility.slug, device_name: targetDevice.name }
       })
     }
   }
@@ -117,6 +147,13 @@ export default function Utilities() {
         <Wrench className="text-myriad-ink" />
         <h1 className="text-2xl font-bold text-slate-900">유틸리티</h1>
         <div className="flex-1" />
+        {showDeviceSelect && (
+          <TargetDeviceSelect
+            devices={devices}
+            value={targetDevice?.id ?? ''}
+            onChange={chooseTargetDevice}
+          />
+        )}
         <LauncherBadge count={devices.length} />
       </header>
 
@@ -176,7 +213,7 @@ export default function Utilities() {
             key={u.id}
             utility={u}
             latestJob={recentJobs[u.id]}
-            canRun={hasOnlineDevice}
+            canRun={canRun}
             onRun={() => runUtility(u)}
             onOpenDetail={() => setSelected(u)}
           />
@@ -187,12 +224,35 @@ export default function Utilities() {
         <UtilityDetail
           utility={selected}
           latestJob={recentJobs[selected.id]}
-          canRun={hasOnlineDevice}
+          canRun={canRun}
           onRun={() => runUtility(selected)}
           onClose={() => setSelected(null)}
         />
       )}
     </div>
+  )
+}
+
+function TargetDeviceSelect({ devices, value, onChange }) {
+  return (
+    <label
+      className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs border ${
+        value ? 'bg-white border-slate-200 text-slate-600' : 'bg-amber-50 border-amber-300 text-amber-800'
+      }`}
+      title="이 브라우저에서 '실행'을 누르면 선택한 PC 의 런처가 실행합니다 (브라우저별로 기억)"
+    >
+      실행할 PC
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="bg-transparent font-semibold text-slate-800 focus:outline-none cursor-pointer"
+      >
+        {!value && <option value="" disabled>선택하세요</option>}
+        {devices.map((d) => (
+          <option key={d.id} value={d.id}>{d.name || 'Unnamed Device'}</option>
+        ))}
+      </select>
+    </label>
   )
 }
 
@@ -256,7 +316,7 @@ function UtilityCard({ utility, latestJob, canRun, onRun, onOpenDetail }) {
           onClick={onRun}
           disabled={!canRun || latestJob?.status === 'running' || latestJob?.status === 'dispatched'}
           className="flex items-center gap-1.5 bg-myriad-primary hover:bg-myriad-primaryDark disabled:bg-slate-100 disabled:text-slate-400 text-myriad-ink font-semibold px-3 py-1.5 rounded-lg text-sm disabled:cursor-not-allowed"
-          title={!canRun ? '온라인 런처가 없습니다' : (utility.utility_type === 'download_only' ? 'Downloads 폴더로 받기' : '실행')}
+          title={!canRun ? '실행할 PC 가 없거나 선택되지 않았습니다' : (utility.utility_type === 'download_only' ? 'Downloads 폴더로 받기' : '실행')}
         >
           {utility.utility_type === 'download_only' ? (
             <><Download size={12} /> 받기</>
@@ -379,7 +439,7 @@ function UtilityDetail({ utility, latestJob, canRun, onRun, onClose }) {
             onClick={onRun}
             disabled={!canRun || latestJob?.status === 'running' || latestJob?.status === 'dispatched'}
             className="flex items-center gap-2 bg-myriad-primary hover:bg-myriad-primaryDark disabled:bg-slate-100 disabled:text-slate-400 text-myriad-ink font-semibold px-4 py-2 rounded-lg disabled:cursor-not-allowed"
-            title={!canRun ? '온라인 런처가 없습니다' : (utility.utility_type === 'download_only' ? 'Downloads 폴더로 받기' : '실행')}
+            title={!canRun ? '실행할 PC 가 없거나 선택되지 않았습니다' : (utility.utility_type === 'download_only' ? 'Downloads 폴더로 받기' : '실행')}
           >
             {utility.utility_type === 'download_only' ? (
               <><Download size={16} /> 받기</>
