@@ -4,6 +4,7 @@
  *
  *   node scripts/targets-bpm-sync.mjs                 BPM 수집 → 점수 계산 → 허브 반영
  *   node scripts/targets-bpm-sync.mjs --dry-run       수집 + 점수 계산만 (허브 반영 안 함)
+ *   node scripts/targets-bpm-sync.mjs --dry-run --months 2   최근 2개월만 (빠른 테스트)
  *   node scripts/targets-bpm-sync.mjs --clients 몽클   BPM 고객사 이름/ID 검색 (대상 브랜드 설정용)
  *   node scripts/targets-bpm-sync.mjs --from-file x.json [--dry-run]
  *                                                     API 대신 리스팅 JSON 파일로 실행 (테스트용)
@@ -81,8 +82,9 @@ async function bpm(pathname, body, { headerKey = true } = {}) {
     }
     const code = json?.code
     if (code === 'OK') return json.data
-    // 조회 시간 초과(E2050) / 서버 오류는 재시도
-    const retryable = code === 'E2050' || res.status >= 500
+    // 조회 시간 초과(E2050) / 서버 오류는 재시도.
+    // 실측: 대량 브랜드는 응답 30초 안팎이라 게이트웨이 타임아웃이 HTTP 200 + COM.ERR_9000.500 으로 옴 → 재요청하면 정상.
+    const retryable = code === 'E2050' || /^COM\.ERR_9000/.test(code || '') || res.status >= 500
     if (retryable && attempt < waits.length) {
       console.log(`  · ${code || res.status} 응답, ${waits[attempt] / 1000}초 후 재시도`)
       await sleep(waits[attempt]); continue
@@ -104,19 +106,40 @@ async function fetchAllClients() {
   }
 }
 
-async function fetchListings(clientId, fromDate, toDate) {
+// 월 단위로 쪼개 조회 — 2년치 한 번에(대량 브랜드 5만 건+)는 뒤 페이지 OFFSET 이 커져 느려지고 타임아웃.
+// dateBasis 는 'detection'(위반확인일). 실측(2026-10-14, Moncler 10월 50건): 'any'(3개 날짜 합집합) 27초 →
+// 게이트웨이 30초에 걸려 COM.ERR_9000 / 'detection' 0.9초. 수집 기간 첫머리 이전에 확인된 건의 삭제만 빠지는 정도라 영향 미미.
+// 중복은 원칙상 없지만 페이지 경계 안전장치로 listingId 중복 제거는 유지.
+function monthWindows(fromDate, toDate) {
   const out = []
-  for (let page = 1; ; page++) {
-    const d = await bpm('/oms/ext/api/enforcement/listings', {
-      clientId, fromDate, toDate, dateBasis: 'any', page, pageSize: 500,
-    })
-    out.push(...(d.items || []))
-    process.stdout.write(`\r  · ${out.length}${d.total != null ? ' / ' + d.total : ''}건`)
-    if (!d.items || d.items.length < 500 || (d.total != null && out.length >= d.total)) break
-    await sleep(300)
+  let cur = fromDate
+  while (cur <= toDate) {
+    const d = new Date(cur + 'T00:00:00Z')
+    const end = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).toISOString().slice(0, 10)
+    out.push([cur, end < toDate ? end : toDate])
+    cur = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1)).toISOString().slice(0, 10)
+  }
+  return out
+}
+
+async function fetchListings(clientId, fromDate, toDate) {
+  const byId = new Map()
+  let calls = 0
+  const t0 = Date.now()
+  for (const [from, to] of monthWindows(fromDate, toDate)) {
+    for (let page = 1; ; page++) {
+      const d = await bpm('/oms/ext/api/enforcement/listings', {
+        clientId, fromDate: from, toDate: to, dateBasis: 'detection', page, pageSize: 500,
+      })
+      calls++
+      for (const it of d.items || []) byId.set(it.listingId || `${calls}:${byId.size}`, it)
+      process.stdout.write(`\r  · ${from.slice(0, 7)} · 누적 ${byId.size}건 · 호출 ${calls}회 · ${Math.round((Date.now() - t0) / 1000)}초   `)
+      if (!d.items || d.items.length < 500 || (d.total != null && page * 500 >= d.total)) break
+      await sleep(300)
+    }
   }
   process.stdout.write('\n')
-  return out
+  return Array.from(byId.values())
 }
 
 // ── 대상 브랜드 해석 ──────────────────────────────────
@@ -158,7 +181,8 @@ async function main() {
 
   const today = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10) // KST 기준일
   const cfg = loadBrandConfig()
-  const months = Number(cfg.months) || 24
+  // --months N 으로 이번 실행만 기간 축소 (테스트용). 기본은 설정 파일 값
+  const months = Number(valueOf('--months')) || Number(cfg.months) || 24
   const from = new Date(today); from.setMonth(from.getMonth() - months)
   const fromDate = from.toISOString().slice(0, 10)
 
@@ -181,6 +205,11 @@ async function main() {
       b.listings = items.length
       listings.push(...items)
     }
+    // 원본 캐시 (git 제외 logs/) — 재수집 없이 --from-file 로 다시 돌려볼 수 있게
+    const cacheDir = path.join(ADMIN, 'logs')
+    fs.mkdirSync(cacheDir, { recursive: true })
+    fs.writeFileSync(path.join(cacheDir, 'targets_listings_cache.json'), JSON.stringify(listings))
+    console.log(`원본 ${listings.length}건 저장: admin-scripts\\logs\\targets_listings_cache.json`)
   }
 
   const { rows, dayHist, brandLabels, stats: conv } = listingsToInfringers(listings)

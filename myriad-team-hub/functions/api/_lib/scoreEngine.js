@@ -73,10 +73,14 @@ function buildClusters(rows) {
     const biz = normBiz(row.trans_biz_reg_no || row.biz_reg_no)
     const phone = normPhone(row.trans_seller_phone_no || row.seller_phone_no)
     const email = normEmail(row.seller_email)
+    // 같은 플랫폼 · 같은 판매자 계정 = 같은 운영자 (BPM 리스팅 변환은 브랜드별로 행이 나뉨 —
+    // 밴드/카카오스토리처럼 사업자번호·전화가 없는 판매자도 브랜드를 넘어 묶이도록)
+    const acct = row.seller_account && row.platform_id ? `a:${row.platform_id}/${String(row.seller_account).trim()}` : null
     return [
       biz && !isJunk(biz) ? 'b:' + biz : null,
       phone && !isJunk(phone) ? 'p:' + phone : null,
       email ? 'e:' + email : null,
+      acct,
     ].filter(Boolean)
   }
   rows.forEach((row, i) => {
@@ -99,7 +103,7 @@ function clusterKey(rows) {
   }
   const basis = parts.length
     ? Array.from(new Set(parts)).sort().join('|')
-    : 'v:' + rows.map((r) => `${r.platform_id}/${r.vendor_id}`).sort().join('|')
+    : 'v:' + Array.from(new Set(rows.map((r) => `${r.platform_id}/${r.seller_account || r.vendor_id}`))).sort().join('|')
   let h = 5381
   for (let i = 0; i < basis.length; i++) h = ((h << 5) + h + basis.charCodeAt(i)) >>> 0
   return 'op_' + h.toString(36)
