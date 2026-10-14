@@ -338,7 +338,8 @@ export function scoreInfringers(rows, opts = {}) {
       rep_president: pick('president_name'),
       platforms: Array.from(new Set(members.map((m) => m.platform_id).filter(Boolean))).join(', '),
       brands, brand_count: brandIds.length, cross_brand: crossBrand,
-      account_count: new Set(members.map((m) => `${m.platform_id}/${m.vendor_id}`)).size,
+      // 같은 계정이 브랜드별로 여러 행(BPM 리스팅 변환)이어도 계정 1개로 센다
+      account_count: new Set(members.map((m) => `${m.platform_id}/${m.seller_account || m.vendor_id}`)).size,
       deleted_sum: Math.round(deletedSum),
       cumulative_max: cumulativeMax,
       first_date: first ? first.toISOString().slice(0, 10) : null,
@@ -352,10 +353,10 @@ export function scoreInfringers(rows, opts = {}) {
       enf_score: enf, yield_score: yld,
       trend, trend_pct: trendPct,
       detail: {
-        accounts: members.map((m) => ({
-          platform: m.platform_id, vendor_id: m.vendor_id, store: m.store_name,
+        accounts: Array.from(new Map(members.map((m) => [`${m.platform_id}/${m.seller_account || m.vendor_id}`, {
+          platform: m.platform_id, vendor_id: m.seller_account || m.vendor_id, store: m.store_name,
           biz: m.biz_reg_no, phone: m.seller_phone_no, email: m.seller_email,
-        })),
+        }])).values()),
         evidence: {
           customs: members.filter((m) => m.customs_case_id).map((m) => ({ id: m.customs_case_id, ymd: m.case_reg_ymd })),
           enforce: members.filter((m) => m.enforce_case_id).map((m) => ({ id: m.enforce_case_id, ymd: m.enforce_req_ymd })),

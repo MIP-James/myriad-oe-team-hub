@@ -5,7 +5,7 @@ import {
   Link2, ShieldAlert, X, ExternalLink, TrendingUp, TrendingDown, Minus, Activity
 } from 'lucide-react'
 import {
-  loadTargets, updateTargetStatus, runSync, applyScopeGrades,
+  loadTargets, loadLastRun, updateTargetStatus, runSync, applyScopeGrades,
   GRADE_META, TREND_META, STATUS_META
 } from '../lib/targets'
 
@@ -18,6 +18,7 @@ export default function Targets() {
   const [error, setError] = useState(null)
   const [info, setInfo] = useState(null)
   const [selected, setSelected] = useState(null)
+  const [lastRun, setLastRun] = useState(null)
 
   // 필터
   const [brand, setBrand] = useState('all')
@@ -30,7 +31,10 @@ export default function Targets() {
 
   async function load() {
     setLoading(true); setError(null)
-    try { setRows(await loadTargets()) }
+    try {
+      const [t, run] = await Promise.all([loadTargets(), loadLastRun()])
+      setRows(t); setLastRun(run)
+    }
     catch (e) { setError(e.message) }
     finally { setLoading(false) }
   }
@@ -87,6 +91,18 @@ export default function Targets() {
           <span className="text-xs text-slate-400">
             기준 {new Date(rows[0].scored_at).toLocaleString('ko-KR')}
           </span>
+        )}
+        {lastRun && (
+          lastRun.source === 'bpm' ? (
+            <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200"
+              title={(lastRun.brands || []).map((b) => b.name).join(', ')}>
+              BPM 실데이터 · 브랜드 {(lastRun.brands || []).length}곳 · 매주 자동 갱신
+            </span>
+          ) : (
+            <span className="text-xs px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+              샘플 데이터
+            </span>
+          )
         )}
         <div className="flex-1" />
         <button

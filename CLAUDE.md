@@ -111,7 +111,7 @@ release_launcher.bat
   - Scope: `drive` + `gmail.readonly` (둘 다 필수)
 - **Drive**: 공유 드라이브 사용 시 `supportsAllDrives=true` 필수
 - **Admin DB writes**: `admin-scripts/.env` 의 Service Role 키 사용 (사용자 세션과 토큰 충돌 방지)
-- **Migrations**: 1~38 모두 실행 완료 (038 = 공용 PC 원격 접속, 2026-10-12). 다음 신규 = 039
+- **Migrations**: 1~39 (038 = 공용 PC 원격 접속, 2026-10-12 / 039 = 재침해자 타겟보드 동기화 기록, 2026-10-14). 다음 신규 = 040
   - ⚠️ **2026-10-30 부터 Supabase Data API 정책 변경** — 기존 프로젝트의 **신규 테이블**도 명시 GRANT 필수. mig 032 부터 아래 표준 패턴 적용:
     ```sql
     create table public.X (...);

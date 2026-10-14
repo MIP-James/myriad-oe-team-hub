@@ -1,0 +1,8 @@
+{
+  "_설명": "재침해자 타겟 보드 대상 브랜드. name = BPM 고객사 이름(--clients 로 검색), 이름이 겹치면 clientId 로 지정. cadence = 보고 주기(daily/weekly/monthly/quarterly, 생략시 6개월 창). months = 수집 기간(개월).",
+  "months": 24,
+  "brands": [
+    { "name": "Moncler", "cadence": "monthly" },
+    { "name": "Stone Island", "cadence": "monthly" }
+  ]
+}

@@ -80,7 +80,18 @@ export async function updateTargetStatus(clusterKey, patch) {
   if (error) throw error
 }
 
-// "지금 갱신" — 동기화 함수 호출 (admin 토큰)
+// 마지막 동기화 기록 (mig 039) — 샘플/BPM 실데이터 구분 표시용. 표가 없으면 null.
+export async function loadLastRun() {
+  const { data, error } = await supabase
+    .from('targets_sync_runs')
+    .select('source, ran_at, brands')
+    .order('ran_at', { ascending: false })
+    .limit(1)
+  if (error) return null
+  return data?.[0] ?? null
+}
+
+// "지금 갱신" — 동기화 함수 호출 (admin 토큰). BPM 실데이터 반영 후엔 함수가 409 로 안내.
 export async function runSync() {
   const { data: { session } } = await supabase.auth.getSession()
   const token = session?.access_token
