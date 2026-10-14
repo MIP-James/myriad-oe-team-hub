@@ -62,14 +62,23 @@ export function applyScopeGrades(ops) {
   })
 }
 
+// PostgREST 는 요청 1번에 최대 1000행 — BPM 실데이터(수천 명)는 페이지로 나눠 전부 받는다.
+// 일부만 받으면 applyScopeGrades 가 잘린 분포로 등급을 다시 매겨 수치가 틀어짐.
 export async function loadTargets() {
-  const { data, error } = await supabase
-    .from('infringer_targets')
-    .select('*')
-    .order('grade', { ascending: true })
-    .order('enf_score', { ascending: false })
-  if (error) throw error
-  return data ?? []
+  const PAGE = 1000
+  const all = []
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from('infringer_targets')
+      .select('*')
+      .order('grade', { ascending: true })
+      .order('enf_score', { ascending: false })
+      .order('cluster_key', { ascending: true })   // 동점 행이 페이지 경계에서 중복/누락되지 않게
+      .range(from, from + PAGE - 1)
+    if (error) throw error
+    all.push(...(data ?? []))
+    if (!data || data.length < PAGE) return all
+  }
 }
 
 export async function updateTargetStatus(clusterKey, patch) {
