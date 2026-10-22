@@ -20,3 +20,6 @@ client_secret*.json
 
 # --- 개인 포트폴리오 (팀 공개 레포에 올리지 않음) ---
 portfolio/
+
+# --- 외부 API·스펙 원문 (내부 문서 — 공개 레포 금지) ---
+reference/
