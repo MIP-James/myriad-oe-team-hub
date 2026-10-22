@@ -99,7 +99,7 @@
       "utility_type": "download_only",
       "icon": "📡",
       "category": "browser-extension",
-      "description": "온라인 모니터링 수동 크롤링 크롬 확장. 쿠팡·지마켓·옥션·스마트스토어·11번가·알리익스프레스·테무·당근·번개장터·중고나라·밴드·인스타그램·카카오스토리·네이버 카페/블로그 등 15개 플랫폼 상세페이지에서 판정(침해/정상/보류)을 기록해 BPM API 로 업로드하고, 검색 결과에는 이미 판정한 상품을 배지·흐리게 처리로 표시해 중복 열람을 막습니다. 내려받은 폴더를 chrome://extensions 에 \"압축해제된 확장 프로그램 로드\" 로 등록해서 사용."
+      "description": "온라인 모니터링 수동 크롤링 크롬 확장. 쿠팡·지마켓·옥션·스마트스토어·11번가·알리익스프레스·테무·쇼피·라자다·타오바오·티몰·당근·번개장터·중고나라·밴드·인스타그램·카카오스토리·네이버 카페/블로그 등 19개 플랫폼 상세페이지에서 판정(침해/정상/보류)을 기록해 BPM API 로 업로드하고, 검색 결과에는 이미 판정한 상품을 배지·흐리게 처리로 표시해 중복 열람을 막습니다. 내려받은 폴더를 chrome://extensions 에 \"압축해제된 확장 프로그램 로드\" 로 등록해서 사용."
     },
     "bitelab-image-matcher": {
       "source_folder": "C:\\Users\\MIP James\\Downloads\\BiTELAB_Image_Matcher_Build\\dist\\BiTELAB_Image_Matcher",
