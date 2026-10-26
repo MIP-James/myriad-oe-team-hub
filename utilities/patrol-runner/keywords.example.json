@@ -1,0 +1,26 @@
+{
+ "brand": "ExampleBrand",
+ "pages": 3,
+ "platforms": [
+  "gmarket",
+  "auction",
+  
+  "11st"
+ ],
+ "common_exclude": [
+  "중고",
+  "리퍼"
+ ],
+ "keywords": [
+  {
+   "row": 1,
+   "keyword": "검색어 예시",
+   "model_type": "Model Type 예시",
+   "max_price": null,
+   "exclude": [
+    "제외어 예시"
+   ],
+   "enabled": true
+  }
+ ]
+}

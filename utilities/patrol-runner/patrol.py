@@ -1,0 +1,216 @@
+"""무인 순찰 실행기 (1단계: 수동 실행 → 엑셀 저장).
+
+설치된 Chrome 을 순찰 전용 프로필로 띄워 키워드를 신규순으로 검색하고,
+처음 보는 상품만 골라 엑셀로 저장한다. 상세 수집은 BPM URL 작업이 맡는다.
+
+  py -3.13 patrol.py                       # keywords.local.json 전체
+  py -3.13 patrol.py --platforms auction --limit 2 --pages 1 --dry
+
+봇 확인(지마켓·옥션 Cloudflare)이 뜨면 그 플랫폼만 멈추고 사람이 체크박스를
+누를 때까지 기다린다(기본 30분). 자동 클릭은 하지 않는다.
+"""
+import argparse
+import json
+import os
+import random
+import sys
+import time
+from datetime import datetime
+from pathlib import Path
+
+from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
+
+from platforms import PLATFORMS, ORDER
+import report
+
+HERE = Path(__file__).resolve().parent
+DATA_DIR = Path(os.environ.get("LOCALAPPDATA", HERE)) / "MyriadPatrol"
+PROFILE_DIR = DATA_DIR / "chrome-profile"
+SEEN_PATH = DATA_DIR / "seen.json"
+
+
+def log(msg):
+    print(f"[{datetime.now():%H:%M:%S}] {msg}", flush=True)
+
+
+def human_pause(lo=3.0, hi=7.0):
+    time.sleep(random.uniform(lo, hi))
+
+
+def load_json(path, default):
+    try:
+        return json.loads(Path(path).read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return default
+
+
+def save_json(path, data):
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    tmp = Path(str(path) + ".tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+    tmp.replace(path)
+
+
+def scroll_through(page):
+    """사람처럼 끝까지 천천히 내려 지연 로딩 카드를 채운다."""
+    for _ in range(12):
+        page.mouse.wheel(0, random.randint(700, 1100))
+        time.sleep(random.uniform(0.3, 0.7))
+        if page.evaluate("innerHeight + scrollY >= document.body.scrollHeight - 50"):
+            break
+    time.sleep(0.8)
+
+
+def wait_bot_check(platform, page, minutes):
+    log(f"⚠ {platform.name}: 봇 확인 화면 — 브라우저에서 체크박스를 눌러 주세요 (최대 {minutes}분 대기)")
+    deadline = time.time() + minutes * 60
+    while time.time() < deadline:
+        time.sleep(5)
+        try:
+            st = platform.state(page)
+        except Exception:
+            continue
+        if st != "bot_check":
+            log(f"{platform.name}: 봇 확인 통과 → 재개")
+            return True
+    return False
+
+
+def open_search(platform, page, keyword, pageno, bot_wait):
+    """검색 결과 페이지를 연다. 반환: ok / empty / bot_timeout / blocked / error"""
+    url = platform.search_url(keyword, pageno)
+    try:
+        resp = page.goto(url, wait_until="domcontentloaded", timeout=45000)
+    except PWTimeout:
+        return "error"
+    try:
+        page.wait_for_load_state("networkidle", timeout=15000)
+    except PWTimeout:
+        pass
+    if resp is not None and resp.status in (403, 418, 429) and platform.state(page) != "bot_check":
+        return "blocked"
+    st = platform.state(page)
+    if st == "bot_check":
+        if not wait_bot_check(platform, page, bot_wait):
+            return "bot_timeout"
+        try:
+            page.wait_for_load_state("networkidle", timeout=15000)
+        except PWTimeout:
+            pass
+        st = platform.state(page)
+        if st == "bot_check":
+            return "bot_timeout"
+    return st
+
+
+def judge(item, kw, common_exclude):
+    """제외 사유(없으면 '')."""
+    title = item["title"] or ""
+    for w in list(common_exclude) + list(kw.get("exclude", [])):
+        if w and w.lower() in title.lower():
+            return f"제외어: {w}"
+    cap = kw.get("max_price")
+    if cap and item["price"] and item["price"] > cap:
+        return f"가격 상한 초과 ({item['price']:,} > {cap:,})"
+    return ""
+
+
+def run(args):
+    cfg = load_json(args.config, None)
+    if cfg is None:
+        sys.exit(f"설정 파일이 없습니다: {args.config}  (keywords.example.json 을 복사해 만드세요)")
+    keywords = [k for k in cfg["keywords"] if k.get("enabled", True)]
+    if args.limit:
+        keywords = keywords[: args.limit]
+    pages = args.pages or cfg.get("pages", 3)
+    common_exclude = cfg.get("common_exclude", [])
+    platforms = [PLATFORMS[k] for k in (args.platforms.split(",") if args.platforms else cfg.get("platforms", ORDER))]
+
+    seen = load_json(SEEN_PATH, {})
+    today = datetime.now().strftime("%Y-%m-%d")
+    started = datetime.now()
+    new_rows, excluded_rows, summary = [], [], []
+
+    with sync_playwright() as p:
+        ctx = p.chromium.launch_persistent_context(
+            str(PROFILE_DIR), channel="chrome", headless=False,
+            viewport={"width": 1366, "height": 900}, locale="ko-KR",
+            args=["--disable-blink-features=AutomationControlled"],
+        )
+        page = ctx.pages[0] if ctx.pages else ctx.new_page()
+        try:
+            for pf in platforms:
+                pf_seen = seen.setdefault(pf.key, {})
+                had_history = bool(pf_seen)
+                pf_status = "완료"
+                log(f"=== {pf.name} 시작 (키워드 {len(keywords)}개 × 최대 {pages}페이지)")
+                for kw in keywords:
+                    found = fresh = 0
+                    note = ""
+                    for n in range(1, pages + 1):
+                        st = open_search(pf, page, kw["keyword"], n, args.bot_wait)
+                        if st in ("bot_timeout", "blocked"):
+                            pf_status = "봇 확인 무응답 → 오늘 건너뜀" if st == "bot_timeout" else "차단 감지 → 중단"
+                            note = pf_status
+                            break
+                        if st == "error":
+                            note = f"{n}페이지 로딩 실패"
+                            break
+                        if st == "empty":
+                            break
+                        scroll_through(page)
+                        items = pf.extract(page)
+                        if not items:
+                            note = f"{n}페이지 0건 — 사이트 구조 변경 의심"
+                            log(f"⚠ {pf.name} '{kw['keyword']}' {note}")
+                            break
+                        page_new = 0
+                        for it in items:
+                            found += 1
+                            if it["id"] in pf_seen:
+                                continue
+                            pf_seen[it["id"]] = today
+                            page_new += 1
+                            row = {"platform": pf.name, "keyword": kw["keyword"], "model_type": kw.get("model_type", ""), **it}
+                            reason = judge(it, kw, common_exclude)
+                            if reason:
+                                excluded_rows.append({**row, "reason": reason})
+                            else:
+                                new_rows.append(row)
+                                fresh += 1
+                        log(f"{pf.name} '{kw['keyword']}' p{n}: {len(items)}건 중 처음 본 것 {page_new}")
+                        # 신규순이라 한 페이지가 통째로 이미 본 것이면 뒤 페이지는 더 오래된 것
+                        if had_history and page_new == 0:
+                            break
+                        human_pause()
+                    summary.append({"platform": pf.name, "keyword": kw["keyword"], "found": found, "new": fresh, "note": note})
+                    if pf_status != "완료":
+                        log(f"{pf.name}: {pf_status}")
+                        break
+                    human_pause(2, 5)
+                if not args.dry:
+                    save_json(SEEN_PATH, seen)
+        finally:
+            ctx.close()
+
+    if args.dry:
+        log("--dry: 본 상품 기록(seen.json)은 갱신하지 않음")
+    out = Path(args.out) / f"patrol_{started:%Y-%m-%d_%H%M}.xlsx"
+    report.write(out, new_rows, excluded_rows, summary, started, datetime.now())
+    log(f"저장: {out}  (신규 {len(new_rows)}건 / 제외 {len(excluded_rows)}건)")
+
+
+def main():
+    ap = argparse.ArgumentParser(description="무인 순찰 실행기 (1단계)")
+    ap.add_argument("--config", default=str(HERE / "keywords.local.json"))
+    ap.add_argument("--platforms", help="쉼표 구분: gmarket,auction,smartstore,11st")
+    ap.add_argument("--pages", type=int, help="키워드당 페이지 수 (기본: 설정 파일 값)")
+    ap.add_argument("--limit", type=int, help="앞에서부터 키워드 N개만 (시험용)")
+    ap.add_argument("--bot-wait", type=float, default=30, help="봇 확인 대기 시간(분)")
+    ap.add_argument("--out", default=str(HERE / "output"))
+    ap.add_argument("--dry", action="store_true", help="본 상품 기록을 남기지 않음 (시험용)")
+    run(ap.parse_args())
+
+
+if __name__ == "__main__":
+    main()
