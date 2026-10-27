@@ -64,6 +64,12 @@ class RefDB:
         i = int(d.argmin())
         return int(d[i]), self.meta[i]
 
+    def save(self, folder=HERE):
+        np.save(Path(folder) / "ref_hashes.local.npy", self.h)
+        meta_path = Path(folder) / "ref_meta.local.json"
+        old = json.loads(meta_path.read_text(encoding="utf-8")) if meta_path.exists() else {}
+        meta_path.write_text(json.dumps({**old, "items": self.meta}, ensure_ascii=False), encoding="utf-8")
+
     def mask(self, model_types):
         key = tuple(sorted(model_types))
         if key not in self._masks:

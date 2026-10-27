@@ -55,6 +55,18 @@ run_patrol.bat --platforms auction --limit 2 --pages 1 --dry   시험
 - 공식 판매처·재침해자·BPM 등록 여부는 지금은 설정 파일 목록, 2단계에서 BPM client/list·타겟 보드·sell-info 조회로 자동화
 - 브랜드 단어·기준값은 `keywords.local.json` 에만 (공개 레포 금지)
 
+## BPM 연동 (`bpm.py`)
+순찰 시작 때 자동 실행(12시간 안에 받았으면 건너뜀). 설정 = `keywords.local.json` 의 `"bpm"`(host / secret_key / public_api_key / client_id).
+| 기능 | 방법 | 결과 |
+|---|---|---|
+| 등록 중복 제외 | sell-info/list (2025년~, 상태 무관) → 지마켓·옥션·스마트스토어·11번가는 **상품번호**, 그 외는 URL 비교 | X "BPM 등록됨" |
+| 공식 판매처 | client/list 의 officialSellers | X "공식 판매처" (Apple 은 2026-10-27 기준 등록 0곳) |
+| 위반 이력 판매자 | 위반 확정(INF) 게시물의 스토어명·판매자 계정 | 3건 이상 = "재침해자"(A 근거), 1~2건 = 가점. 몰 채널(`channel_sellers`: 신세계몰·현대Hmall 등)은 가점만 |
+| 기준 이미지 갱신 | 기준 DB 에 없는 위반 확정 건의 대표 이미지(media API, thumb) | 순찰마다 최신순 최대 600건 추가 |
+- 첫 동기화 = 2025·2026 전체(약 9.3만 건, 1분 내외), 이후 `updatedSince` 로 바뀐 것만. 실패하면 이전 캐시로 순찰 계속.
+- 수동 실행: `py -3.13 bpm.py` (`--force` = 12시간 무시)
+- ⚠ 지마켓·옥션 URL 은 상품번호가 `?` 뒤에 있어 URL 비교하면 전부 같은 값이 됨 → 상품번호 비교 필수
+
 ## 동작 규칙
 - 크롬은 순찰 전용 프로필(`%LOCALAPPDATA%\MyriadPatrol\chrome-profile`)로 **평소처럼 실행한 뒤 디버그 포트(9333)로 연결**합니다. 순찰이 끝나면 창을 닫습니다.
 - 본 상품 기록: `%LOCALAPPDATA%\MyriadPatrol\seen.json` — 한 번 본 상품번호는 다음부터 제외

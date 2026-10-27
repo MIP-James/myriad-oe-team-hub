@@ -31,6 +31,7 @@ DEFAULTS = {
     "exclude_brand_terms": [],  # 수집 제외 브랜드 직접 지정 (MFi 목록 외 정식 액세서리 브랜드)
     "exclude_brand_aliases": {},  # {"한글 표기": "mfi 영문 브랜드"} — 제목이 한글이라 필요
     "image_first_terms": [],    # 이 말만 있고 브랜드 직접 언급이 없으면 썸네일 1차 확인 대상 (예: 갤럭시용)
+    "channel_sellers": [],      # 신세계몰·현대Hmall 등 몰 채널명 — BPM 위반 이력은 가점만, 재침해자(A 근거) 아님
     "official_sellers": {},     # {"플랫폼명": ["스토어명", ...]} — 2단계에서 BPM client/list 로 대체
     "known_sellers": {},        # {"플랫폼명": ["스토어명", ...]} — 재침해자(타겟 보드) 2단계에서 DB 로 대체
     "bpm_registered_urls": [],  # 2단계에서 BPM sell-info 조회로 대체
@@ -95,10 +96,16 @@ class BrandMatcher:
         return ""
 
 
-def load_rules(cfg):
+def load_rules(cfg, bpm_cache=None):
     rules = dict(DEFAULTS)
     rules.update((cfg or {}).get("triage", {}))
     rules["_brands"] = BrandMatcher.load(rules)
+    if bpm_cache is None:
+        import bpm
+        bpm_cache = json.loads(bpm.CACHE.read_text(encoding="utf-8")) if bpm.CACHE.exists() else None
+    if bpm_cache:
+        import bpm
+        rules["_bpm"] = bpm.Index(bpm_cache)
     return rules
 
 
@@ -115,10 +122,12 @@ def triage(rows, keywords_by_text, rules, seller_counts=None):
         kw = keywords_by_text.get(r.get("keyword"), {})
         reasons, score, tier = [], 30, None
 
+        bpm_idx = rules.get("_bpm")
+        import bpm as bpm_mod
         # --- 확실히 제외 (X)
-        if seller.lower() in official.get(plat, set()):
+        if seller.lower() in official.get(plat, set()) or (bpm_idx and bpm_idx.official(seller, r.get("url"))):
             tier, reasons = "X", ["공식 판매처"]
-        elif _norm_url(r.get("url")) in registered:
+        elif _norm_url(r.get("url")) in registered or (bpm_idx and bpm_idx.registered(r.get("url"))):
             tier, reasons = "X", ["BPM 등록됨"]
         elif rules["_brands"].find(title, seller):
             tier, reasons = "X", [f"MFi·정식 브랜드: {rules['_brands'].find(title, seller)}"]
@@ -148,7 +157,18 @@ def triage(rows, keywords_by_text, rules, seller_counts=None):
             elif _has(title, rules["compat_terms"]):
                 reasons.append("호환 표기 (디자인 확인 필요)")
             # --- 판매자
-            if seller.lower() in known.get(plat, set()):
+            past = bpm_idx.violation_count(plat, seller) if bpm_idx else 0
+            channel = _has(seller, rules["channel_sellers"])  # 여러 판매자가 한 이름으로 파는 몰 채널 → 개인 재침해 아님
+            if past and channel:
+                score += 15
+                reasons.append(f"몰 채널 위반 이력 {past}건 ({channel[0]})")
+            elif past >= bpm_mod.REPEAT_MIN:
+                score += 30
+                reasons.append(f"재침해자 (BPM 위반 확정 {past}건)")
+            elif past:
+                score += 15
+                reasons.append(f"BPM 위반 확정 이력 {past}건")
+            elif seller.lower() in known.get(plat, set()):
                 score += 30
                 reasons.append("재침해자")
             n = seller_counts.get((plat, seller), 0)
@@ -175,7 +195,7 @@ def triage(rows, keywords_by_text, rules, seller_counts=None):
                 reasons.append(f"위반 확정과 유사 (거리 {dist})")
             tier = "A" if score >= rules["tier_a"] else "B" if score >= rules["tier_b"] else "C"
             # A = 확신 근거(정품 표방 / 위반 확정과 같은 사진 / 재침해자)가 있을 때만. 유사 디자인만으론 B 맨 위
-            if tier == "A" and not (claim or same_photo or "재침해자" in reasons):
+            if tier == "A" and not (claim or same_photo or any(x.startswith("재침해자") for x in reasons)):
                 tier = "B"
             # 판매자 규모는 오늘 결과만 보고 센 값이라 one-off 판단이 약함 → A 까지는 못 가게만 (같은 사진이면 예외)
             if tier == "A" and not same_photo and any(x.startswith("one-off") for x in reasons):

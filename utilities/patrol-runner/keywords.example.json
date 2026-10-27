@@ -48,6 +48,13 @@
   "claim_window": 4,
   "exclude_brand_terms": [],
   "exclude_brand_aliases": {},
-  "image_first_terms": []
+  "image_first_terms": [],
+  "channel_sellers": []
+ },
+ "bpm": {
+  "host": "https://bpm-admin.myriadip.com",
+  "secret_key": "",
+  "public_api_key": "",
+  "client_id": ""
  }
 }

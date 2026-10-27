@@ -26,6 +26,7 @@ from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
 from collections import Counter
 
 from platforms import PLATFORMS, ORDER
+import bpm
 import imgsim
 import report
 import triage
@@ -239,7 +240,11 @@ def run(args):
         keywords = keywords[: args.limit]
     pages = args.pages or cfg.get("pages", 3)
     common_exclude = cfg.get("common_exclude", [])
-    rules = triage.load_rules(cfg)
+    bpm_cache = None
+    if cfg.get("bpm", {}).get("secret_key"):
+        bpm_cache = bpm.sync(cfg["bpm"], log)          # 등록 중복·공식 판매처·위반 이력 판매자
+        bpm.update_ref_images(cfg["bpm"], bpm_cache, log)  # 새 위반 확정 이미지 → 기준 DB
+    rules = triage.load_rules(cfg, bpm_cache)
     platforms = [PLATFORMS[k] for k in (args.platforms.split(",") if args.platforms else cfg.get("platforms", ORDER))]
 
     seen = load_json(SEEN_PATH, {})
