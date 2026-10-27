@@ -1,9 +1,9 @@
-"""순찰 결과 후처리 — 신규 URL 을 A(바로 BPM) / B(사람 검토) / C(참고) / X(제외) 로 나눈다.
+"""자동 수집 결과 후처리 — 신규 URL 을 A(바로 BPM) / B(사람 검토) / C(참고) / X(제외) 로 나눈다.
 
 브랜드별 단어 목록·기준값은 설정 파일(keywords.local.json 의 "triage")에 둔다 (공개 레포 금지).
 판정 자체는 BPM·M-Verify 가 하고, 여기서는 "무엇부터 볼지"와 "확실히 안 볼 것"만 정한다.
 
-  py -3.13 triage.py output\\patrol_2026-10-27_0936.xlsx      # 기존 순찰 엑셀 재분류
+  py -3.13 triage.py output\\patrol_2026-10-27_0936.xlsx      # 기존 자동 수집 엑셀 재분류
 """
 import argparse
 import json
@@ -115,7 +115,7 @@ def load_rules(cfg, bpm_cache=None):
 
 
 def triage(rows, keywords_by_text, rules, seller_counts=None):
-    """rows: 순찰 신규 행(dict). 각 행에 tier/score/reasons 를 붙여 돌려준다."""
+    """rows: 자동 수집 신규 행(dict). 각 행에 tier/score/reasons 를 붙여 돌려준다."""
     if seller_counts is None:
         seller_counts = Counter((r["platform"], r.get("seller") or "") for r in rows)
     official = {p: {s.lower() for s in v} for p, v in rules["official_sellers"].items()}
@@ -293,7 +293,7 @@ def _read_new_rows(xlsx):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="순찰 결과 등급 분류")
+    ap = argparse.ArgumentParser(description="자동 수집 결과 등급 분류")
     ap.add_argument("xlsx")
     ap.add_argument("--config", default=str(HERE / "keywords.local.json"))
     args = ap.parse_args()

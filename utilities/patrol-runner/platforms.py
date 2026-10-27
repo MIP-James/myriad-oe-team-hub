@@ -77,7 +77,7 @@ class Platform:
     referer = None
 
     def prepare(self, page):
-        """순찰 전 준비. 건너뛸 이유가 있으면 문자열 반환."""
+        """자동 수집 전 준비. 건너뛸 이유가 있으면 문자열 반환."""
         return ""
 
     def ready(self, page):

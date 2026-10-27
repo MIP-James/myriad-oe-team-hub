@@ -1,6 +1,6 @@
-"""무인 순찰 실행기 (1단계: 수동 실행 → 엑셀 저장).
+"""자동 수집 실행기 (1단계: 수동 실행 → 엑셀 저장).
 
-설치된 Chrome 을 순찰 전용 프로필로 띄워 키워드를 신규순으로 검색하고,
+설치된 Chrome 을 자동 수집 전용 프로필로 띄워 키워드를 신규순으로 검색하고,
 처음 보는 상품만 골라 엑셀로 저장한다. 상세 수집은 BPM URL 작업이 맡는다.
 
   py -3.13 patrol.py                       # keywords.local.json 전체
@@ -228,12 +228,12 @@ def judge(item, kw, common_exclude, brands=None):
 
 
 def login(args):
-    """순찰 크롬을 네이버 로그인 화면으로 띄우고, 사람이 로그인하면 닫는다 (비밀번호는 다루지 않음)."""
+    """자동 수집 크롬을 네이버 로그인 화면으로 띄우고, 사람이 로그인하면 닫는다 (비밀번호는 다루지 않음)."""
     from platforms import naver_logged_in
     with browser(args) as ctx:
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         page.goto("https://nid.naver.com/nidlogin.login?url=https%3A%2F%2Fshopping.naver.com%2F")
-        log("순찰 크롬에서 네이버에 로그인해 주세요 ('로그인 상태 유지' 체크). 최대 10분 대기")
+        log("자동 수집 크롬에서 네이버에 로그인해 주세요 ('로그인 상태 유지' 체크). 최대 10분 대기")
         deadline = time.time() + 600
         while time.time() < deadline:
             if naver_logged_in(ctx):
@@ -337,7 +337,7 @@ def run(args):
             n = sum(1 for r in new_rows if r.get("model_type") == "MagSafe iPhone case")
             log(f"맥세이프 케이스 {n}건 카메라 홀 판정 중…")
             camera.annotate(new_rows, imgsim.fetch_bytes)
-        except Exception as e:  # 모델·torch 문제여도 순찰 결과는 저장
+        except Exception as e:  # 모델·torch 문제여도 자동 수집 결과는 저장
             log(f"⚠ 카메라 홀 판정 건너뜀: {e}")
     if cfg.get("triage") and new_rows:
         # 판매자 규모는 오늘 본 전체(필터 제외 포함) 기준
@@ -351,7 +351,7 @@ def run(args):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="무인 순찰 실행기 (1단계)")
+    ap = argparse.ArgumentParser(description="자동 수집 실행기 (1단계)")
     ap.add_argument("--config", default=str(HERE / "keywords.local.json"))
     ap.add_argument("--platforms", help="쉼표 구분: gmarket,auction,smartstore,11st")
     ap.add_argument("--pages", type=int, help="키워드당 페이지 수 (기본: 설정 파일 값)")
@@ -362,7 +362,7 @@ def main():
     ap.add_argument("--launch", action="store_true", help="Playwright 가 크롬을 직접 띄움 (기본: 평소처럼 실행 후 연결)")
     ap.add_argument("--driver", choices=["uc", "playwright"], default="uc",
                     help="브라우저 방식 (기본 uc = undetected-chromedriver)")
-    ap.add_argument("--login", action="store_true", help="순찰 크롬에 네이버 로그인 (스마트스토어용, 1회)")
+    ap.add_argument("--login", action="store_true", help="자동 수집 크롬에 네이버 로그인 (스마트스토어용, 1회)")
     args = ap.parse_args()
     login(args) if args.login else run(args)
 

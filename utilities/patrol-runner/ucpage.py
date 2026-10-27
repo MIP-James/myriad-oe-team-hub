@@ -1,6 +1,6 @@
 """UC(undetected-chromedriver) 브라우저를 Playwright page 처럼 쓰게 하는 얇은 어댑터.
 
-순찰 코드(platforms.py·patrol.py)가 쓰는 메서드만 흉내 낸다:
+자동 수집 코드(platforms.py·patrol.py)가 쓰는 메서드만 흉내 낸다:
 goto / reload / title / url / inner_text / locator().count() / evaluate / mouse.wheel / screenshot / context.cookies.
 사용자 결정(2026-10-27): Playwright 연결 방식은 네이버에서 페이지마다 제한 화면 → UC 로 전환.
 """

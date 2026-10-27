@@ -1,4 +1,4 @@
-# 무인 순찰 실행기 (1단계 — 수동 실행, 엑셀 저장)
+# 자동 수집 실행기 (1단계 — 수동 실행, 엑셀 저장)
 
 키워드를 오픈마켓에서 **신규순**으로 검색해, **처음 보는 상품 URL만** 엑셀로 뽑습니다.
 상세 수집·스크린샷·중복 체크는 BPM `작업 추가 (URL)` 가 그대로 맡습니다.
@@ -9,7 +9,7 @@
 3. `setup_patrol.bat` 실행 (playwright·openpyxl 설치)
 4. `run_patrol.bat --login` → 뜬 크롬에서 네이버 로그인 (**로그인 상태 유지** 체크)
 5. 시험: `run_patrol.bat --limit 2 --pages 1 --dry` → 스마트스토어: `run_patrol.bat --platforms smartstore --limit 2 --pages 2 --dry`
-- 순찰 프로필·본 상품 기록은 PC 마다 따로 → 노트북 첫 순찰은 전부 "처음 본 상품"
+- 자동 수집 프로필·본 상품 기록은 PC 마다 따로 → 노트북 첫 자동 수집은 전부 "처음 본 상품"
 
 ## 준비 (1회)
 ```
@@ -35,7 +35,7 @@ run_patrol.bat --platforms auction --limit 2 --pages 1 --dry   시험
 결과: `output\patrol_YYYY-MM-DD_HHMM.xlsx` — 시트 `신규` / `제외`(사유 포함) / `실행 요약`.
 
 ## 후처리 — 등급 분류 (`triage.py`)
-설정 파일에 `"triage"` 가 있으면 순찰 엑셀이 등급별 시트로 나옵니다. 이미 나온 엑셀은 `py -3.13 triage.py output\patrol_….xlsx` 로 재분류(`_triage.xlsx`).
+설정 파일에 `"triage"` 가 있으면 자동 수집 엑셀이 등급별 시트로 나옵니다. 이미 나온 엑셀은 `py -3.13 triage.py output\patrol_….xlsx` 로 재분류(`_triage.xlsx`).
 
 | 등급 | 뜻 | 기준 |
 |---|---|---|
@@ -45,7 +45,7 @@ run_patrol.bat --platforms auction --limit 2 --pages 1 --dry   시험
 | X 제외 | 안 봄 | 공식 판매처, BPM 에 이미 등록된 URL |
 
 - **A 는 확신 근거가 있을 때만**: 정품 표방 / 위반 확정과 같은 사진 / 재침해자. 유사 디자인만으론 B 맨 위
-- one-off 판단은 **그날 순찰 결과 안의 판매자 리스팅 수**로 셈 (전체 재고 아님 → A 승격만 막음, 같은 사진이면 예외)
+- one-off 판단은 **그날 자동 수집 결과 안의 판매자 리스팅 수**로 셈 (전체 재고 아님 → A 승격만 막음, 같은 사진이면 예외)
 - **썸네일 ↔ 위반 확정 이미지 비교** (`imgsim.py`, 기준 DB = `build_ref.py` 로 BPM sell_info_list 썸네일 삽입본에서 생성)
   - pHash + dHash 두 지문 중 큰 거리 사용, **같은 Model Type 묶음 안에서만** 비교 (흰 배경 단순 사진의 우연한 닮음 배제)
   - 거리 ≤4 = 같은 사진(+40), ≤8 = 유사(+15). 2026-10-27 보정: 무관 상품 200건 최소 거리 14, 거리 10 은 링 모양만 닮은 다른 기기
@@ -56,19 +56,19 @@ run_patrol.bat --platforms auction --limit 2 --pages 1 --dry   시험
 - 브랜드 단어·기준값은 `keywords.local.json` 에만 (공개 레포 금지)
 
 ## BPM 연동 (`bpm.py`)
-순찰 시작 때 자동 실행(12시간 안에 받았으면 건너뜀). 설정 = `keywords.local.json` 의 `"bpm"`(host / secret_key / public_api_key / client_id).
+자동 수집 시작 때 자동 실행(12시간 안에 받았으면 건너뜀). 설정 = `keywords.local.json` 의 `"bpm"`(host / secret_key / public_api_key / client_id).
 | 기능 | 방법 | 결과 |
 |---|---|---|
 | 등록 중복 제외 | sell-info/list (2025년~, 상태 무관) → 지마켓·옥션·스마트스토어·11번가는 **상품번호**, 그 외는 URL 비교 | X "BPM 등록됨" |
 | 공식 판매처 | client/list 의 officialSellers | X "공식 판매처" (Apple 은 2026-10-27 기준 등록 0곳) |
 | 위반 이력 판매자 | 위반 확정(INF) 게시물의 스토어명·판매자 계정 | 3건 이상 = "재침해자"(A 근거), 1~2건 = 가점. 몰 채널(`channel_sellers`: 신세계몰·현대Hmall 등)은 가점만 |
-| 기준 이미지 갱신 | 기준 DB 에 없는 위반 확정 건의 대표 이미지(media API, thumb) | 순찰마다 최신순 최대 600건 추가 |
-- 첫 동기화 = 2025·2026 전체(약 9.3만 건, 1분 내외), 이후 `updatedSince` 로 바뀐 것만. 실패하면 이전 캐시로 순찰 계속.
+| 기준 이미지 갱신 | 기준 DB 에 없는 위반 확정 건의 대표 이미지(media API, thumb) | 자동 수집마다 최신순 최대 600건 추가 |
+- 첫 동기화 = 2025·2026 전체(약 9.3만 건, 1분 내외), 이후 `updatedSince` 로 바뀐 것만. 실패하면 이전 캐시로 자동 수집 계속.
 - 수동 실행: `py -3.13 bpm.py` (`--force` = 12시간 무시)
 - ⚠ 지마켓·옥션 URL 은 상품번호가 `?` 뒤에 있어 URL 비교하면 전부 같은 값이 됨 → 상품번호 비교 필수
 
 ## 동작 규칙
-- 크롬은 순찰 전용 프로필(`%LOCALAPPDATA%\MyriadPatrol\chrome-profile`)로 **평소처럼 실행한 뒤 디버그 포트(9333)로 연결**합니다. 순찰이 끝나면 창을 닫습니다.
+- 크롬은 자동 수집 전용 프로필(`%LOCALAPPDATA%\MyriadPatrol\chrome-profile`)로 **평소처럼 실행한 뒤 디버그 포트(9333)로 연결**합니다. 자동 수집이 끝나면 창을 닫습니다.
 - 본 상품 기록: `%LOCALAPPDATA%\MyriadPatrol\seen.json` — 한 번 본 상품번호는 다음부터 제외
 - 신규순이라 **한 페이지가 통째로 이미 본 상품이면 그 키워드는 뒤 페이지를 건너뜀**
 - 페이지 사이 3~7초, 스크롤은 사람 속도
@@ -82,4 +82,4 @@ run_patrol.bat --platforms auction --limit 2 --pages 1 --dry   시험
 | 지마켓 | 동작 확인 (60건/페이지). Cloudflare 확인이 뜨지만 **크롬을 평소처럼 실행 후 연결(기본 방식)이면 몇 초 뒤 저절로 통과**. Playwright 가 직접 띄우면(`--launch`) 체크박스를 눌러도 안 풀림 |
 | 옥션 | 동작 확인 (100건/페이지, 상품명·가격·판매자) |
 | 11번가 | 동작 확인 (84건/페이지, 상단 광고·추천 자동 제외) |
-| 스마트스토어 | 동작 확인 (키워드 2×2페이지 139건, 누락 0). 네이버 로그인 필요(`run_patrol.bat --login`, 순찰 크롬에서 사람이 직접 로그인 + 로그인 상태 유지). 검색 = 네이버페이 탭(`productSet=checkout`) 등록일순, 상품 데이터는 페이지의 `__NEXT_DATA__` 에서 읽음. 검색 화면이 거의 매번 418 '접속 제한'으로 먼저 오지만 **같은 주소를 다시 열면(주소창 엔터) 1회에 풀림** — F5 는 잘 안 풀림. 3회 다시 열어도 안 풀리면 차단으로 보고 `output\blocked_*.png/.txt` 남김 |
+| 스마트스토어 | 동작 확인 (키워드 2×2페이지 139건, 누락 0). 네이버 로그인 필요(`run_patrol.bat --login`, 자동 수집 크롬에서 사람이 직접 로그인 + 로그인 상태 유지). 검색 = 네이버페이 탭(`productSet=checkout`) 등록일순, 상품 데이터는 페이지의 `__NEXT_DATA__` 에서 읽음. 검색 화면이 거의 매번 418 '접속 제한'으로 먼저 오지만 **같은 주소를 다시 열면(주소창 엔터) 1회에 풀림** — F5 는 잘 안 풀림. 3회 다시 열어도 안 풀리면 차단으로 보고 `output\blocked_*.png/.txt` 남김 |

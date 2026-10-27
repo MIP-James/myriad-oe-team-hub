@@ -1,4 +1,4 @@
-"""BPM 연동 — 순찰 전에 BPM 의 브랜드 데이터를 받아 로컬 캐시(bpm_cache.local.json)로 둔다.
+"""BPM 연동 — 자동 수집 전에 BPM 의 브랜드 데이터를 받아 로컬 캐시(bpm_cache.local.json)로 둔다.
 
 1. 등록 중복: BPM 에 이미 있는 게시물(상태 무관) → URL·상품번호로 X
 2. 공식 판매처: client/list 의 officialSellers → X
@@ -6,7 +6,7 @@
 4. 기준 이미지 자동 갱신: 새 위반 확정 건의 대표 이미지 → 이미지 기준 DB 에 추가
 
 첫 실행은 전체(연도별로 나눠 받음), 이후엔 updatedSince 로 바뀐 것만 받는다.
-  py -3.13 bpm.py            # 수동 동기화 (순찰도 실행 시 자동으로 부름)
+  py -3.13 bpm.py            # 수동 동기화 (자동 수집도 실행 시 자동으로 부름)
 """
 import json
 import re
@@ -21,11 +21,11 @@ HERE = Path(__file__).resolve().parent
 CACHE = HERE / "bpm_cache.local.json"
 FIRST_YEAR = 2025  # 기준이 해마다 바뀌어 최근 것만 (사용자 결정 2026-10-27)
 REFRESH_HOURS = 12
-REF_ADD_LIMIT = 600  # 한 번에 기준 DB 에 더할 최대 이미지 수 (나머지는 다음 순찰 때)
+REF_ADD_LIMIT = 600  # 한 번에 기준 DB 에 더할 최대 이미지 수 (나머지는 다음 자동 수집 때)
 REF_THREADS = 12     # 기준 이미지 동시 받기 수 (6 → 12, 2026-10-27 백로그 단축)
 REPEAT_MIN = 3       # BPM 위반 확정이 이 건수 이상인 판매자 = 재침해자 (A 근거). 그 미만은 가점만
 
-# URL 도메인 → 순찰 플랫폼명 / 상품번호 (BPM 중복 규칙 2번과 같은 추출 기준)
+# URL 도메인 → 자동 수집 플랫폼명 / 상품번호 (BPM 중복 규칙 2번과 같은 추출 기준)
 _PLATFORM_ID = [
     ("gmarket.co.kr", "지마켓", re.compile(r"goodscode=(\w+)", re.I)),
     ("auction.co.kr", "옥션", re.compile(r"itemno=(\w+)", re.I)),
@@ -144,7 +144,7 @@ def _slim(it):
 
 
 def sync(cfg, log=print, force=False):
-    """캐시를 최신으로 만들고 돌려준다. 실패하면 있던 캐시 그대로(순찰은 계속)."""
+    """캐시를 최신으로 만들고 돌려준다. 실패하면 있던 캐시 그대로(자동 수집은 계속)."""
     cache = json.loads(CACHE.read_text(encoding="utf-8")) if CACHE.exists() else {"items": {}, "last_sync": None}
     last = cache.get("last_sync")
     if last and not force and datetime.now() - datetime.fromisoformat(last) < timedelta(hours=REFRESH_HOURS):
@@ -175,7 +175,7 @@ def sync(cfg, log=print, force=False):
 
 
 class Index:
-    """캐시 → 순찰 판정용 색인."""
+    """캐시 → 자동 수집 판정용 색인."""
 
     def __init__(self, cache):
         self.urls, self.ids = set(), set()

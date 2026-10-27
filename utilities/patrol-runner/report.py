@@ -1,4 +1,4 @@
-"""순찰 결과 엑셀 (신규 / 제외 / 실행 요약)."""
+"""자동 수집 결과 엑셀 (신규 / 제외 / 실행 요약)."""
 from pathlib import Path
 
 from openpyxl import Workbook
@@ -76,7 +76,7 @@ def write(path, new_rows, excluded_rows, summary, started, finished):
         _triage_sheets(wb, new_rows)
         _sheet(wb.create_sheet(f"필터 제외 {len(excluded_rows)}건"), ITEM_COLS + [("제외 사유", "reason", 30)], excluded_rows)
         _sheet(wb.create_sheet("실행 요약"), SUMMARY_COLS, summary)
-        wb["실행 요약"].cell(row=len(summary) + 3, column=1, value=f"순찰 {started:%Y-%m-%d %H:%M} ~ {finished:%H:%M}")
+        wb["실행 요약"].cell(row=len(summary) + 3, column=1, value=f"자동 수집 {started:%Y-%m-%d %H:%M} ~ {finished:%H:%M}")
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         wb.save(path)
         return
@@ -87,6 +87,6 @@ def write(path, new_rows, excluded_rows, summary, started, finished):
     _sheet(wb.create_sheet(f"제외 {len(excluded_rows)}건"), ITEM_COLS + [("제외 사유", "reason", 30)], excluded_rows)
     ws3 = wb.create_sheet("실행 요약")
     _sheet(ws3, SUMMARY_COLS, summary)
-    ws3.cell(row=ws3.max_row + 2, column=1, value=f"순찰 {started:%Y-%m-%d %H:%M} ~ {finished:%H:%M}")
+    ws3.cell(row=ws3.max_row + 2, column=1, value=f"자동 수집 {started:%Y-%m-%d %H:%M} ~ {finished:%H:%M}")
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     wb.save(path)

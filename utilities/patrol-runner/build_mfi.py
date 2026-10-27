@@ -1,4 +1,4 @@
-r"""MFi Report 엑셀 → mfi_brands.local.json (순찰 제외 브랜드 목록).
+r"""MFi Report 엑셀 → mfi_brands.local.json (자동 수집 제외 브랜드 목록).
 
   py -3.13 build_mfi.py "…\MFi Report 10_19_26.xlsx"
 
