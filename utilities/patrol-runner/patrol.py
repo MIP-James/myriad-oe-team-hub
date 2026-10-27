@@ -71,11 +71,15 @@ def open_browser(p, attach):
     try:
         yield browser.contexts[0]
     finally:
+        # 강제 종료하면 로그인 쿠키가 디스크에 안 남음 → 크롬에 정상 종료 요청
         try:
-            browser.close()
+            browser.new_browser_cdp_session().send("Browser.close")
         except Exception:
             pass
-        proc.terminate()
+        try:
+            proc.wait(timeout=15)
+        except subprocess.TimeoutExpired:
+            proc.terminate()
 
 
 def log(msg):
@@ -129,7 +133,7 @@ def open_search(platform, page, keyword, pageno, bot_wait):
     """검색 결과 페이지를 연다. 반환: ok / empty / bot_timeout / blocked / error"""
     url = platform.search_url(keyword, pageno)
     try:
-        resp = page.goto(url, wait_until="domcontentloaded", timeout=45000)
+        resp = page.goto(url, wait_until="domcontentloaded", timeout=45000, referer=platform.referer)
     except PWTimeout:
         return "error"
     try:
@@ -137,18 +141,20 @@ def open_search(platform, page, keyword, pageno, bot_wait):
     except PWTimeout:
         pass
     status = resp.status if resp is not None else 200
-    if status in (418, 429):
-        return "blocked"
     st = platform.state(page)
-    if status == 403 and st != "bot_check":
-        # Cloudflare 봇 확인도 403 으로 오고, 평소 크롬이면 몇 초 뒤 저절로 통과함 → 화면 상태로 판정
-        for _ in range(6):
+    if (status >= 400 and st == "ok") or st == "blocked":
+        # 상태코드·첫 화면만으론 판단 불가: 지마켓 봇 확인은 403, 네이버는 418 + '접속 제한' 화면을
+        # 먼저 보였다가 저절로(또는 새로고침하면) 정상 화면이 됨 → 상품이 뜰 때까지 지켜보고 한 번 새로고침
+        for i in range(8):
             time.sleep(2.5)
+            if i == 3 and not platform.ready(page):
+                page.reload(wait_until="domcontentloaded")
             st = platform.state(page)
-            if st == "bot_check" or page.locator(platform.link_sel).count():
+            if st == "bot_check" or platform.ready(page):
+                st = "ok" if st != "bot_check" else st
                 break
         else:
-            return "blocked" if st != "empty" else st
+            return "blocked"
     if st == "bot_check":
         if not wait_bot_check(platform, page, bot_wait):
             return "bot_timeout"
@@ -174,6 +180,23 @@ def judge(item, kw, common_exclude):
     return ""
 
 
+def login(args):
+    """순찰 크롬을 네이버 로그인 화면으로 띄우고, 사람이 로그인하면 닫는다 (비밀번호는 다루지 않음)."""
+    from platforms import naver_logged_in
+    with sync_playwright() as p, open_browser(p, True) as ctx:
+        page = ctx.pages[0] if ctx.pages else ctx.new_page()
+        page.goto("https://nid.naver.com/nidlogin.login?url=https%3A%2F%2Fshopping.naver.com%2F")
+        log("순찰 크롬에서 네이버에 로그인해 주세요 ('로그인 상태 유지' 체크). 최대 10분 대기")
+        deadline = time.time() + 600
+        while time.time() < deadline:
+            if naver_logged_in(ctx):
+                log("로그인 확인 → 이 프로필에 저장됨. 창을 닫습니다")
+                time.sleep(3)
+                return
+            time.sleep(3)
+        log("로그인이 확인되지 않아 종료합니다")
+
+
 def run(args):
     cfg = load_json(args.config, None)
     if cfg is None:
@@ -197,6 +220,11 @@ def run(args):
             had_history = bool(pf_seen)
             pf_status = "완료"
             log(f"=== {pf.name} 시작 (키워드 {len(keywords)}개 × 최대 {pages}페이지)")
+            skip = pf.prepare(page)
+            if skip:
+                log(f"⚠ {pf.name}: {skip} → 건너뜀")
+                summary.append({"platform": pf.name, "keyword": "-", "found": 0, "new": 0, "note": skip})
+                continue
             for kw in keywords:
                 found = fresh = 0
                 note = ""
@@ -261,7 +289,9 @@ def main():
     ap.add_argument("--out", default=str(HERE / "output"))
     ap.add_argument("--dry", action="store_true", help="본 상품 기록을 남기지 않음 (시험용)")
     ap.add_argument("--launch", action="store_true", help="Playwright 가 크롬을 직접 띄움 (기본: 평소처럼 실행 후 연결)")
-    run(ap.parse_args())
+    ap.add_argument("--login", action="store_true", help="순찰 크롬에 네이버 로그인 (스마트스토어용, 1회)")
+    args = ap.parse_args()
+    login(args) if args.login else run(args)
 
 
 if __name__ == "__main__":

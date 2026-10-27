@@ -10,7 +10,9 @@
 - 스마트스토어(네이버 쇼핑): 자동화 크롬 첫 요청부터 HTTP 418 "접속이 일시적으로 제한" (2026-10-27)
   → 기본 순찰 대상에서 제외. 대안 = 네이버 쇼핑 검색 공식 Open API (sort=date)
 """
+import random
 import re
+import time
 from urllib.parse import quote_plus
 
 # 카드 하나 = 같은 상품 ID 링크만 담은 가장 큰 조상 요소. 그 innerText 를 줄 단위로 돌려줌.
@@ -70,6 +72,15 @@ class Platform:
     link_sel = ""
     id_re = ""
     scope = None
+    referer = None
+
+    def prepare(self, page):
+        """순찰 전 준비. 건너뛸 이유가 있으면 문자열 반환."""
+        return ""
+
+    def ready(self, page):
+        """검색 결과(상품)가 화면에 떴는지."""
+        return page.locator(self.link_sel).count() > 0
 
     def search_url(self, keyword, page):
         raise NotImplementedError
@@ -153,28 +164,67 @@ class Elevenst(Platform):
         return [it for it in items if it["title"] and it["price"]]
 
 
+def naver_logged_in(ctx):
+    return any(c["name"] == "NID_AUT" for c in ctx.cookies("https://www.naver.com"))
+
+
 class Smartstore(Platform):
-    """네이버 쇼핑 검색 (최신순). 스마트스토어 상품만 남김. 브라우저 접속은 418 차단됨 — 기본 제외."""
+    """네이버 쇼핑 검색 (최신순). 스마트스토어 상품만 남김.
+    로그인 없이 검색 주소로 바로 들어가면 418 → 로그인한 프로필로 네이버 → 쇼핑 → 검색 순서로 진입."""
     key, name = "smartstore", "스마트스토어"
     link_sel = "a[href*='smartstore.naver.com'], a[href*='brand.naver.com'], a[href*='/catalog/']"
     id_re = r"/products/(\d+)"
+    referer = "https://shopping.naver.com/"
+
+    def prepare(self, page):
+        if not naver_logged_in(page.context):
+            return "네이버 로그인 필요 (run_patrol.bat --login)"
+        for url in ("https://www.naver.com/", "https://shopping.naver.com/"):
+            page.goto(url, wait_until="domcontentloaded", timeout=45000)
+            time.sleep(random.uniform(3, 6))
+            if self.state(page) == "blocked":
+                return "네이버 쇼핑 접속 제한 화면"
+        return ""
 
     def search_url(self, keyword, page):
+        # productSet=checkout = '네이버페이' 탭 (스마트스토어 상품만)
         return (f"https://search.shopping.naver.com/search/all?query={quote_plus(keyword)}"
-                f"&sort=date&pagingIndex={page}&pagingSize=40")
+                f"&sort=date&pagingIndex={page}&pagingSize=40&productSet=checkout")
 
     def item_url(self, item_id):
         return ""
 
-    def parse_card(self, card):
-        item = super().parse_card(card)
-        m = re.search(r"https?://smartstore\.naver\.com/[^/?#]+/products/\d+", card["href"])
-        item["url"] = m.group(0) if m else card["href"]
-        return item
+    def _list(self, page):
+        return page.evaluate("""() => {
+          try { return JSON.parse(document.querySelector('#__NEXT_DATA__').textContent)
+                  .props.pageProps.compositeList.list.map(x => x.item || {}); } catch (e) { return []; } }""")
+
+    def ready(self, page):
+        return bool(self._list(page))
 
     def extract(self, page):
-        items = super().extract(page)
-        return [it for it in items if "smartstore.naver.com" in it["url"]]
+        # 카드 링크는 cr.shopping 중계 주소라, 페이지에 실린 상품 데이터(__NEXT_DATA__)에서 읽음
+        raw = self._list(page)
+        if not raw:  # 첫 페이지가 빈 목록으로 오는 경우가 있음 → 한 번 다시 불러옴
+            time.sleep(random.uniform(3, 5))
+            page.reload(wait_until="domcontentloaded")
+            time.sleep(4)
+            raw = self._list(page)
+        items = []
+        for it in raw:
+            url, store = it.get("mallProductUrl") or "", it.get("mallPcUrl") or ""
+            if not any(s in url for s in ("smartstore.naver.com", "brand.naver.com")):
+                continue
+            pid = it.get("mallProductId") or ""
+            if pid and re.match(r"https://(smartstore|brand)\.naver\.com/[^/]+$", store) and not store.endswith("/main"):
+                url = f"{store}/products/{pid}"
+            try:
+                price = int(str(it.get("price") or it.get("lowPrice") or "").replace(",", "")) or None
+            except ValueError:
+                price = None
+            items.append({"id": pid or it.get("id"), "url": url, "title": it.get("productTitle", ""),
+                          "price": price, "seller": it.get("mallName", ""), "ad": bool(it.get("adId"))})
+        return items
 
 
 PLATFORMS = {p.key: p for p in (Gmarket(), Auction(), Smartstore(), Elevenst())}
