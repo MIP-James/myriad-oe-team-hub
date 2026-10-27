@@ -22,6 +22,7 @@ CACHE = HERE / "bpm_cache.local.json"
 FIRST_YEAR = 2025  # 기준이 해마다 바뀌어 최근 것만 (사용자 결정 2026-10-27)
 REFRESH_HOURS = 12
 REF_ADD_LIMIT = 600  # 한 번에 기준 DB 에 더할 최대 이미지 수 (나머지는 다음 순찰 때)
+REF_THREADS = 12     # 기준 이미지 동시 받기 수 (6 → 12, 2026-10-27 백로그 단축)
 REPEAT_MIN = 3       # BPM 위반 확정이 이 건수 이상인 판매자 = 재침해자 (A 근거). 그 미만은 가점만
 
 # URL 도메인 → 순찰 플랫폼명 / 상품번호 (BPM 중복 규칙 2번과 같은 추출 기준)
@@ -238,7 +239,7 @@ def update_ref_images(cfg, cache, log=print, limit=REF_ADD_LIMIT, skip=None):
         return []
     rows = [{"image": urls.get(it["itemId"]), "_it": it} for it in todo if urls.get(it["itemId"])]
     from concurrent.futures import ThreadPoolExecutor
-    with ThreadPoolExecutor(6) as ex:
+    with ThreadPoolExecutor(REF_THREADS) as ex:
         hashes = list(ex.map(lambda r: imgsim.fetch_hash(r["image"], timeout=30), rows))
     add_h, add_m = [], []
     for r, hv in zip(rows, hashes):

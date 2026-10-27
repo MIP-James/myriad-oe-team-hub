@@ -49,7 +49,8 @@
   "exclude_brand_terms": [],
   "exclude_brand_aliases": {},
   "image_first_terms": [],
-  "channel_sellers": []
+  "channel_sellers": [],
+  "other_device_terms": []
  },
  "bpm": {
   "host": "https://bpm-admin.myriadip.com",

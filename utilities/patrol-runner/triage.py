@@ -33,7 +33,8 @@ DEFAULTS = {
     "img_similar": 8,           # 이 거리 이하 = 유사 디자인 (10 은 갤럭시 플립↔아이폰처럼 링 모양만 닮음)
     "exclude_brand_terms": [],  # 수집 제외 브랜드 직접 지정 (MFi 목록 외 정식 액세서리 브랜드)
     "exclude_brand_aliases": {},  # {"한글 표기": "mfi 영문 브랜드"} — 제목이 한글이라 필요
-    "image_first_terms": [],    # 이 말만 있고 브랜드 직접 언급이 없으면 썸네일 1차 확인 대상 (예: 갤럭시용)
+    "image_first_terms": [],
+    "other_device_terms": [],   # 화웨이·픽셀 등 다른 기기 액세서리 표기 → 브랜드 직접 언급 없으면 감점(C)    # 이 말만 있고 브랜드 직접 언급이 없으면 썸네일 1차 확인 대상 (예: 갤럭시용)
     "channel_sellers": [],      # 신세계몰·현대Hmall 등 몰 채널명 — BPM 위반 이력은 가점만, 재침해자(A 근거) 아님
     "official_sellers": {},     # {"플랫폼명": ["스토어명", ...]} — 2단계에서 BPM client/list 로 대체
     "known_sellers": {},        # {"플랫폼명": ["스토어명", ...]} — 재침해자(타겟 보드) 2단계에서 DB 로 대체
@@ -182,6 +183,11 @@ def triage(rows, keywords_by_text, rules, seller_counts=None):
                 else:
                     score -= 15
                     reasons.append(f"one-off 의심 (리스팅 {n}건)")
+            # --- 다른 기기용(화웨이·구글 픽셀 워치 밴드 등) — 브랜드 직접 언급 없으면 대상 아님
+            other_dev = _has(title, rules["other_device_terms"])
+            if other_dev and not _has(title, rules["brand_strong_terms"]):
+                score -= 30
+                reasons.append(f"다른 기기용: {other_dev[0]}")
             # --- 잡음
             noise = _has(title, rules["noise_terms"])
             if noise:
@@ -231,7 +237,10 @@ def triage(rows, keywords_by_text, rules, seller_counts=None):
             if clear_out == "X":
                 tier = "X"
             # A = 확신 근거(정품 표방 / 위반 확정과 같은 사진 / 재침해자)가 있을 때만. 유사 디자인만으론 B 맨 위
-            if tier == "A" and not (claim or same_photo or any(x.startswith("재침해자") for x in reasons)):
+            # 재침해자만으론 A 아님(2026-10-27 표본 24건 중 절반이 비대상) → 위반 확정과 유사한 이미지가 함께 있을 때만
+            repeat = any(x.startswith("재침해자") for x in reasons)
+            similar = dist is not None and dist <= rules["img_similar"]
+            if tier == "A" and not (claim or same_photo or (repeat and similar)):
                 tier = "B"
             # 판매자 규모는 오늘 결과만 보고 센 값이라 one-off 판단이 약함 → A 까지는 못 가게만 (같은 사진이면 예외)
             if tier == "A" and not same_photo and any(x.startswith("one-off") for x in reasons):
