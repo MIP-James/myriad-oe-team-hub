@@ -19,6 +19,7 @@ from PIL import Image
 
 HERE = Path(__file__).resolve().parent
 CLF = HERE / "camera_clf.local.npz"
+ONNX = HERE / "dinov2_s448.local.onnx"  # torch 대신 onnxruntime 으로 실행 (노트북 '애플리케이션 제어 정책'이 torch DLL 차단, 2026-10-27)
 SIZE = 448  # 카메라 홀이 썸네일에서 작아 224 보다 448 이 2단계 +3%p
 CONFIDENT = 0.7
 _MODEL = None
@@ -46,8 +47,25 @@ def _prep(img):
     return a.transpose(2, 0, 1)
 
 
+_SESSION = None
+
+
+def _onnx():
+    global _SESSION
+    if _SESSION is None and ONNX.exists():
+        import onnxruntime as ort
+        _SESSION = ort.InferenceSession(str(ONNX), providers=["CPUExecutionProvider"])
+    return _SESSION
+
+
 def embed(images, batch=16):
-    """PIL 이미지 목록 → (N, 768) 특징 = CLS + 패치 평균 (L2 정규화)."""
+    """PIL 이미지 목록 → (N, 768) 특징 = CLS + 패치 평균 (L2 정규화). ONNX 파일이 있으면 onnxruntime, 없으면 torch."""
+    sess = _onnx()
+    if sess is not None:
+        out = [sess.run(None, {"x": np.stack([_prep(im) for im in images[i:i + batch]]).astype(np.float32)})[0]
+               for i in range(0, len(images), batch)]
+        f = np.concatenate(out) if out else np.zeros((0, 768), np.float32)
+        return f / np.linalg.norm(f, axis=1, keepdims=True).clip(1e-6)
     import torch
     out = []
     m = _model()
