@@ -59,6 +59,14 @@ def _near(text, anchors, terms, window):
     return found
 
 
+def _excluded_photo(img_hash, excluded, max_dist):
+    """허브에서 '제외'한 사진(pHash, dHash)과 같은 사진인지 (거리 ≤ max_dist)."""
+    if not img_hash or not excluded:
+        return False
+    p, d = int(img_hash[:16], 16), int(img_hash[16:32], 16)
+    return any(max(bin(p ^ ep).count("1"), bin(d ^ ed).count("1")) <= max_dist for ep, ed in excluded)
+
+
 def _norm_url(url):
     u = re.sub(r"^https?://(www\.)?", "", (url or "").strip().lower())
     return u.split("?")[0].rstrip("/")
@@ -111,6 +119,8 @@ def load_rules(cfg, bpm_cache=None):
     if bpm_cache:
         import bpm
         rules["_bpm"] = bpm.Index(bpm_cache)
+    import hub
+    rules["_excluded"] = hub.load_excluded()
     return rules
 
 
@@ -134,6 +144,8 @@ def triage(rows, keywords_by_text, rules, seller_counts=None):
             tier, reasons = "X", ["공식 판매처"]
         elif _norm_url(r.get("url")) in registered or (bpm_idx and bpm_idx.registered(r.get("url"))):
             tier, reasons = "X", ["BPM 등록됨"]
+        elif _excluded_photo(r.get("img_hash"), rules.get("_excluded"), rules["img_same"]):
+            tier, reasons = "X", ["실무자 제외 사진과 같은 사진"]
         elif rules["_brands"].find(title, seller):
             tier, reasons = "X", [f"MFi·정식 브랜드: {rules['_brands'].find(title, seller)}"]
 
@@ -295,6 +307,7 @@ def main():
     ap = argparse.ArgumentParser(description="자동 수집 결과 등급 분류")
     ap.add_argument("xlsx")
     ap.add_argument("--config", default=str(HERE / "keywords.local.json"))
+    ap.add_argument("--upload", action="store_true", help="재분류 결과를 팀 허브 '자동 수집 결과'로 올림")
     args = ap.parse_args()
     cfg = json.loads(Path(args.config).read_text(encoding="utf-8"))
     rows = _read_new_rows(args.xlsx)
@@ -311,6 +324,14 @@ def main():
     report.write_triage(out, rows)
     c = Counter(r["tier"] for r in rows)
     print(f"A {c['A']} / B {c['B']} / C {c['C']} / X {c['X']}  → {out}")
+    if args.upload:
+        import bpm, hub
+        from datetime import datetime
+        for r in rows:  # 엑셀엔 상품번호 칸이 없어 URL 에서 뽑음
+            r["id"] = bpm.platform_key(r.get("url"))[1] or r.get("url")
+        now = datetime.now()
+        hub.upload(cfg.get("hub", {}), rows, [], now, now, [],
+                   db.product_type_of if db else (lambda m: None))
 
 
 if __name__ == "__main__":

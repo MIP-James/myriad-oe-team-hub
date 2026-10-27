@@ -64,6 +64,22 @@ class RefDB:
         i = int(d.argmin())
         return int(d[i]), self.meta[i]
 
+    def product_type_of(self, model_type):
+        """모델 유형 → 가장 흔한 BPM 상품 유형 (위반 확정 엑셀의 Product Type 컬럼 기준)."""
+        if not hasattr(self, "_pt"):
+            from collections import Counter, defaultdict
+            c = defaultdict(Counter)
+            for m in self.meta:
+                if m.get("product_type"):
+                    c[m["model_type"]][m["product_type"]] += 1
+            self._pt = {k: v.most_common(1)[0][0] for k, v in c.items()}
+        if model_type in self._pt:
+            return self._pt[model_type]
+        for m in sorted(family(model_type) or []):  # 키워드용 합성 이름(예: MacBook/Mac Unspecified) → 같은 묶음의 BPM 이름
+            if m in self._pt:
+                return self._pt[m]
+        return None
+
     def save(self, folder=HERE):
         np.save(Path(folder) / "ref_hashes.local.npy", self.h)
         meta_path = Path(folder) / "ref_meta.local.json"
@@ -108,8 +124,9 @@ def annotate(rows, db, workers=8):
         hashes = list(ex.map(lambda r: fetch_hash(r.get("image")), rows))
     for r, hv in zip(rows, hashes):
         if hv is None:
-            r["img_dist"], r["img_model"] = None, ""
+            r["img_dist"], r["img_model"], r["img_hash"] = None, "", None
         else:
             r["img_dist"], m = db.nearest(hv, family(r.get("model_type", "")))
             r["img_model"] = m["model_type"]
+            r["img_hash"] = f"{hv[0]:016x}{hv[1]:016x}"  # 허브 업로드 → '제외' 사진 재등장 판정용
     return rows

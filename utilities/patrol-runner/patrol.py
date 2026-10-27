@@ -28,6 +28,7 @@ from collections import Counter
 from platforms import PLATFORMS, ORDER
 import bpm
 import camera
+import hub
 import imgsim
 import report
 import triage
@@ -346,8 +347,14 @@ def run(args):
         tiers = Counter(r["tier"] for r in new_rows)
         log(f"등급: A {tiers['A']} / B {tiers['B']} / C {tiers['C']} / X {tiers['X']}")
     out = Path(args.out) / f"patrol_{started:%Y-%m-%d_%H%M}.xlsx"
-    report.write(out, new_rows, excluded_rows, summary, started, datetime.now())
+    finished = datetime.now()
+    report.write(out, new_rows, excluded_rows, summary, started, finished)
     log(f"저장: {out}  (신규 {len(new_rows)}건 / 제외 {len(excluded_rows)}건)")
+    # 팀 허브 '자동 수집 결과'로 업로드 (--dry 면 안 올림). 실패해도 엑셀은 위에서 이미 저장됨
+    if not args.dry and not args.no_upload and cfg.get("hub", {}).get("enabled", True):
+        registered = hub.recently_registered(seen, PLATFORMS, rules.get("_bpm"))
+        hub.upload(cfg.get("hub", {}), new_rows, summary, started, finished, registered,
+                   db.product_type_of if db else (lambda m: None), log)
 
 
 def main():
@@ -358,7 +365,8 @@ def main():
     ap.add_argument("--limit", type=int, help="앞에서부터 키워드 N개만 (시험용)")
     ap.add_argument("--bot-wait", type=float, default=30, help="봇 확인 대기 시간(분)")
     ap.add_argument("--out", default=str(HERE / "output"))
-    ap.add_argument("--dry", action="store_true", help="본 상품 기록을 남기지 않음 (시험용)")
+    ap.add_argument("--dry", action="store_true", help="본 상품 기록을 남기지 않음 (시험용, 허브 업로드도 안 함)")
+    ap.add_argument("--no-upload", action="store_true", help="팀 허브로 올리지 않음")
     ap.add_argument("--launch", action="store_true", help="Playwright 가 크롬을 직접 띄움 (기본: 평소처럼 실행 후 연결)")
     ap.add_argument("--driver", choices=["uc", "playwright"], default="uc",
                     help="브라우저 방식 (기본 uc = undetected-chromedriver)")
