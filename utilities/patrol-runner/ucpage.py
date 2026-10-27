@@ -115,6 +115,10 @@ def open_uc(profile_dir):
     opts.add_argument("--window-size=1366,900")
     opts.add_argument("--no-first-run")
     opts.add_argument("--no-default-browser-check")
+    # 원격 창을 닫아(연결 끊김) 화면을 아무도 안 봐도 크롬이 스스로 느려지지 않게 (예약 실행용)
+    opts.add_argument("--disable-backgrounding-occluded-windows")
+    opts.add_argument("--disable-renderer-backgrounding")
+    opts.add_argument("--disable-background-timer-throttling")
     opts.page_load_strategy = "eager"  # DOM 준비까지만 (광고 스크립트로 load 가 늦는 사이트 대비)
     driver = uc.Chrome(options=opts, user_data_dir=str(profile_dir), headless=False,
                        use_subprocess=True, version_main=detect_chrome_major())
