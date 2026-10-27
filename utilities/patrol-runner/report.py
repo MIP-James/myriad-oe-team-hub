@@ -52,7 +52,7 @@ def _sheet(ws, cols, rows):
 
 TRIAGE_COLS = [("등급", "tier", 6), ("점수", "score", 6), ("근거", "reasons", 40),
                ("이미지 거리", "img_dist", 9)] + ITEM_COLS
-TIER_SHEETS = [("A", "A 바로 BPM"), ("B", "B 검토"), ("C", "C 참고"), ("X", "X 제외")]
+TIER_SHEETS = [("A", "대표 이미지 일치"), ("B", "검토"), ("C", "참고"), ("X", "제외")]
 
 
 def _triage_sheets(wb, rows):

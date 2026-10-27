@@ -237,11 +237,9 @@ def triage(rows, keywords_by_text, rules, seller_counts=None):
                 tier = "C"
             if clear_out == "X":
                 tier = "X"
-            # A = 확신 근거(정품 표방 / 위반 확정과 같은 사진 / 재침해자)가 있을 때만. 유사 디자인만으론 B 맨 위
-            # 재침해자만으론 A 아님(2026-10-27 표본 24건 중 절반이 비대상) → 위반 확정과 유사한 이미지가 함께 있을 때만
-            repeat = any(x.startswith("재침해자") for x in reasons)
-            similar = dist is not None and dist <= rules["img_similar"]
-            if tier == "A" and not (claim or same_photo or (repeat and similar)):
+            # A = '대표 이미지 일치'(위반 확정과 같은 사진)만 (사용자 확정 2026-10-27).
+            # 정품 표방·재침해자+유사는 별도 탭 없이 B(검토) — 점수가 높아 검토 목록 위쪽에 옴
+            if tier == "A" and not same_photo:
                 tier = "B"
             # 판매자 규모는 오늘 결과만 보고 센 값이라 one-off 판단이 약함 → A 까지는 못 가게만 (같은 사진이면 예외)
             if tier == "A" and not same_photo and any(x.startswith("one-off") for x in reasons):
@@ -283,7 +281,8 @@ def _read_new_rows(xlsx):
     keys = {"플랫폼": "platform", "키워드": "keyword", "예상 Model Type": "model_type", "상품명": "title",
             "가격(원)": "price", "판매자": "seller", "상품 URL": "url", "광고": "ad", "썸네일": "image"}
     # 등급 분류 전 엑셀 = 첫 시트(신규), 이미 분류된 엑셀 = A/B/C/X 시트 전부
-    sheets = [ws for ws in wb.worksheets if ws.title[:2] in ("A ", "B ", "C ", "X ")] or wb.worksheets[:1]
+    tier_prefix = ("A ", "B ", "C ", "X ", "대표 이미지 일치", "검토", "참고", "제외 ")  # 옛·새 시트 이름 ('필터 제외'는 아님)
+    sheets = [ws for ws in wb.worksheets if ws.title.startswith(tier_prefix)] or wb.worksheets[:1]
     rows = []
     for ws in sheets:
         it = ws.iter_rows(values_only=True)
