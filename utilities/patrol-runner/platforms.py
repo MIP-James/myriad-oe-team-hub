@@ -7,8 +7,8 @@
   몇 초 뒤 저절로 통과, Playwright 가 띄운 크롬은 클릭해도 안 풀림 (2026-10-27)
 - 옥션  s=3 신규순 (지마켓과 같은 정렬 코드), 봇 확인 없음
 - 11번가 sortCd=N 최신순 (NP 는 무시됨), 상단 광고·추천 약 9개는 정렬 무관
-- 스마트스토어(네이버 쇼핑): 자동화 크롬 첫 요청부터 HTTP 418 "접속이 일시적으로 제한" (2026-10-27)
-  → 기본 순찰 대상에서 제외. 대안 = 네이버 쇼핑 검색 공식 Open API (sort=date)
+- 스마트스토어(네이버 쇼핑): 로그인한 프로필 + 네이버 → 쇼핑 진입 + 네이버페이 탭(productSet=checkout).
+  검색 첫 화면이 418 '접속 제한' 으로 와도 같은 주소를 다시 열면(주소창 엔터) 풀림. F5(reload)는 잘 안 풀림
 """
 import random
 import re
@@ -205,9 +205,9 @@ class Smartstore(Platform):
     def extract(self, page):
         # 카드 링크는 cr.shopping 중계 주소라, 페이지에 실린 상품 데이터(__NEXT_DATA__)에서 읽음
         raw = self._list(page)
-        if not raw:  # 첫 페이지가 빈 목록으로 오는 경우가 있음 → 한 번 다시 불러옴
+        if not raw:  # 첫 페이지가 빈 목록으로 오는 경우가 있음 → 같은 주소로 다시 방문 (F5 말고)
             time.sleep(random.uniform(3, 5))
-            page.reload(wait_until="domcontentloaded")
+            page.goto(page.url, wait_until="domcontentloaded")
             time.sleep(4)
             raw = self._list(page)
         items = []
@@ -228,4 +228,4 @@ class Smartstore(Platform):
 
 
 PLATFORMS = {p.key: p for p in (Gmarket(), Auction(), Smartstore(), Elevenst())}
-ORDER = ["gmarket", "auction", "11st"]
+ORDER = ["gmarket", "auction", "smartstore", "11st"]

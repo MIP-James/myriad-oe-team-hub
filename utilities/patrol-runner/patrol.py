@@ -145,16 +145,28 @@ def open_search(platform, page, keyword, pageno, bot_wait):
     if (status >= 400 and st == "ok") or st == "blocked":
         # 상태코드·첫 화면만으론 판단 불가: 지마켓 봇 확인은 403, 네이버는 418 + '접속 제한' 화면을
         # 먼저 보였다가 저절로(또는 새로고침하면) 정상 화면이 됨 → 상품이 뜰 때까지 지켜보고 한 번 새로고침
-        for i in range(8):
-            time.sleep(2.5)
-            if i == 3 and not platform.ready(page):
-                page.reload(wait_until="domcontentloaded")
-            st = platform.state(page)
-            if st == "bot_check" or platform.ready(page):
-                st = "ok" if st != "bot_check" else st
+        recovered = False
+        for attempt in range(4):  # 0 = 기다리기만, 1~3 = 같은 주소로 다시 접속
+            if attempt:
+                # F5(reload) 는 안 풀리고, 주소창 엔터(새 방문·referer 없음)는 풀림 (사용자 확인 2026-10-27)
+                log(f"{platform.name}: 제한 화면 → 주소 다시 열기 {attempt}/3")
+                time.sleep(random.uniform(2, 4))
+                try:
+                    page.goto(url, wait_until="domcontentloaded", timeout=45000)
+                except PWTimeout:
+                    continue
+            for _ in range(5):
+                time.sleep(2)
+                st = platform.state(page)
+                if st == "bot_check" or platform.ready(page):
+                    recovered = True
+                    break
+            if recovered:
                 break
-        else:
+        if not recovered:
             return "blocked"
+        if st != "bot_check":
+            st = "ok"
     if st == "bot_check":
         if not wait_bot_check(platform, page, bot_wait):
             return "bot_timeout"
