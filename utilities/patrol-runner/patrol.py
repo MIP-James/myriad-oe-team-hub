@@ -39,6 +39,18 @@ SEEN_PATH = DATA_DIR / "seen.json"
 CDP_PORT = 9333
 
 
+@contextmanager
+def browser(args, attach=True):
+    """기본 = UC(undetected-chromedriver). --driver playwright 면 이전 방식(평소 크롬 실행 후 CDP 연결)."""
+    if getattr(args, "driver", "uc") == "uc":
+        import ucpage
+        with ucpage.open_uc(PROFILE_DIR) as ctx:
+            yield ctx
+    else:
+        with sync_playwright() as p, open_browser(p, attach and not getattr(args, "launch", False)) as ctx:
+            yield ctx
+
+
 def find_chrome():
     for base in (os.environ.get("PROGRAMFILES"), os.environ.get("PROGRAMFILES(X86)"), os.environ.get("LOCALAPPDATA")):
         if base:
@@ -146,7 +158,7 @@ def open_search(platform, page, keyword, pageno, bot_wait):
         page.wait_for_load_state("networkidle", timeout=15000)
     except PWTimeout:
         pass
-    status = resp.status if resp is not None else 200
+    status = (resp.status if resp is not None else None) or 200  # UC 는 상태코드 없음(None) → 화면 상태로만 판정
     st = platform.state(page)
     if (status >= 400 and st == "ok") or st == "blocked":
         # 상태코드·첫 화면만으론 판단 불가: 지마켓 봇 확인은 403, 네이버는 418 + '접속 제한' 화면을
@@ -218,7 +230,7 @@ def judge(item, kw, common_exclude, brands=None):
 def login(args):
     """순찰 크롬을 네이버 로그인 화면으로 띄우고, 사람이 로그인하면 닫는다 (비밀번호는 다루지 않음)."""
     from platforms import naver_logged_in
-    with sync_playwright() as p, open_browser(p, True) as ctx:
+    with browser(args) as ctx:
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         page.goto("https://nid.naver.com/nidlogin.login?url=https%3A%2F%2Fshopping.naver.com%2F")
         log("순찰 크롬에서 네이버에 로그인해 주세요 ('로그인 상태 유지' 체크). 최대 10분 대기")
@@ -253,7 +265,7 @@ def run(args):
     started = datetime.now()
     new_rows, excluded_rows, summary = [], [], []
 
-    with sync_playwright() as p, open_browser(p, not args.launch) as ctx:
+    with browser(args) as ctx:
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         for pf in platforms:
             pf_seen = seen.setdefault(pf.key, {})
@@ -348,6 +360,8 @@ def main():
     ap.add_argument("--out", default=str(HERE / "output"))
     ap.add_argument("--dry", action="store_true", help="본 상품 기록을 남기지 않음 (시험용)")
     ap.add_argument("--launch", action="store_true", help="Playwright 가 크롬을 직접 띄움 (기본: 평소처럼 실행 후 연결)")
+    ap.add_argument("--driver", choices=["uc", "playwright"], default="uc",
+                    help="브라우저 방식 (기본 uc = undetected-chromedriver)")
     ap.add_argument("--login", action="store_true", help="순찰 크롬에 네이버 로그인 (스마트스토어용, 1회)")
     args = ap.parse_args()
     login(args) if args.login else run(args)

@@ -2,8 +2,10 @@
 
 썸네일 → DINOv2(small, 448px, CPU) 특징(CLS+패치 평균) → 로지스틱 회귀 2단계:
   1단계 판단 가능?(아이폰 케이스 뒷면이 보이나) / 2단계 정사각 홀?
-학습 = 수동 정답 400장(2026-10-27, S 201 / O 56 / X 143). 교차검증: 1단계 85%, 2단계 84%,
-확신 70% 이상만 자동 판정 시 44% 를 95.6% 정확도로 판정. 결과 파일 camera_clf.local.npz.
+  3단계 수집 대상?(사용자 기준: 아무것도 안 묻은 깔끔한 투명 케이스 + 링 "O -" + 정사각 홀)
+학습 = 수동 정답 400장(2026-10-27, S 199 / O 56 / X 145, 그중 수집 대상 21). 교차검증: 1단계 89%, 2단계 85%,
+확신 70% 이상만 판정 시 45% 를 97.4%. 3단계는 순위용 — 대상 20/21 이 상위 15% 안, 점수 10% 미만 제외 시 25% 를 대상 손실 0 으로 거름.
+결과 파일 camera_clf.local.npz.
 판정 기준(사용자 확정 2026-10-27): 맥세이프 케이스만 정사각 홀이 대상. 실리콘 등 다른 케이스엔 적용 안 함.
 """
 import io
@@ -57,21 +59,23 @@ def embed(images, batch=16):
 
 
 class Classifier:
-    def __init__(self, w1, b1, w2, b2):
-        self.w1, self.b1, self.w2, self.b2 = w1, b1, w2, b2
+    def __init__(self, w1, b1, w2, b2, w3=None, b3=0.0):
+        self.w1, self.b1, self.w2, self.b2, self.w3, self.b3 = w1, b1, w2, b2, w3, b3
 
     @classmethod
     def load(cls, path=CLF):
         try:
             d = np.load(path)
-            return cls(d["w1"], float(d["b1"]), d["w2"], float(d["b2"]))
+            return cls(d["w1"], float(d["b1"]), d["w2"], float(d["b2"]),
+                       d["w3"] if "w3" in d else None, float(d["b3"]) if "b3" in d else 0.0)
         except FileNotFoundError:
             return None
 
     def predict(self, feats):
-        """(판단 가능 확률, 정사각 확률)"""
+        """(판단 가능 확률, 정사각 확률, 수집 대상 확률=깔끔한 투명 케이스+링+정사각 홀)"""
         sig = lambda z: 1 / (1 + np.exp(-z))
-        return sig(feats @ self.w1 + self.b1), sig(feats @ self.w2 + self.b2)
+        p3 = sig(feats @ self.w3 + self.b3) if self.w3 is not None else np.full(len(feats), np.nan)
+        return sig(feats @ self.w1 + self.b1), sig(feats @ self.w2 + self.b2), p3
 
 
 def annotate(rows, fetch_bytes, clf=None):
@@ -90,28 +94,36 @@ def annotate(rows, fetch_bytes, clf=None):
                 continue
             except Exception:
                 pass
-        r["cam_judge"] = r["cam_square"] = None
+        r["cam_judge"] = r["cam_square"] = r["cam_clear"] = None
     if imgs:
-        pj, ps = clf.predict(embed(imgs))
-        for r, a, b in zip(keep, pj, ps):
+        pj, ps, pc = clf.predict(embed(imgs))
+        for r, a, b, c in zip(keep, pj, ps, pc):
             r["cam_judge"], r["cam_square"] = float(a), float(b)
+            r["cam_clear"] = None if np.isnan(c) else float(c)
     return rows
 
 
-def train_from_labels(items):
-    """items = [{"file": 경로, "label": "S"|"O"|"X"}] → 2단계 분류기 저장."""
+def train_from_labels(items, clear=None):
+    """items = [{"file": 경로, "label": "S"|"O"|"X"}], clear = {"순번": "T"|"N"} (정사각 중 깔끔한 투명 케이스) → 분류기 저장."""
     from sklearn.linear_model import LogisticRegression
     feats = embed([Image.open(it["file"]).convert("RGB") for it in items])
     lab = np.array([it["label"] for it in items])
     j = lab != "X"
     m1 = LogisticRegression(max_iter=4000, class_weight="balanced").fit(feats, j)
     m2 = LogisticRegression(max_iter=4000, class_weight="balanced").fit(feats[j], lab[j] == "S")
-    np.savez(CLF, w1=m1.coef_[0].astype(np.float32), b1=np.float32(m1.intercept_[0]),
-             w2=m2.coef_[0].astype(np.float32), b2=np.float32(m2.intercept_[0]))
+    out = dict(w1=m1.coef_[0].astype(np.float32), b1=np.float32(m1.intercept_[0]),
+               w2=m2.coef_[0].astype(np.float32), b2=np.float32(m2.intercept_[0]))
+    if clear:
+        t = np.array([clear.get(str(k)) == "T" for k in range(len(items))])
+        m3 = LogisticRegression(max_iter=5000, class_weight="balanced").fit(feats, t)
+        out.update(w3=m3.coef_[0].astype(np.float32), b3=np.float32(m3.intercept_[0]))
+    np.savez(CLF, **out)
     return int(j.sum()), int((lab == "S").sum())
 
 
 if __name__ == "__main__" and len(sys.argv) == 3 and sys.argv[1] == "train":
     import json
     items = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
-    print("학습 완료 (판단 가능 %d / 정사각 %d)" % train_from_labels(items))
+    cp = Path(sys.argv[2]).with_name("clear_labels.json")
+    clear = json.loads(cp.read_text(encoding="utf-8")) if cp.exists() else None
+    print("학습 완료 (판단 가능 %d / 정사각 %d)" % train_from_labels(items, clear))

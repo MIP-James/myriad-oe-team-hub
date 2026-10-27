@@ -26,6 +26,8 @@ DEFAULTS = {
     "low_price_ratio": 0.4,     # 가격 상한 대비 이 비율 이하면 저가 신호
     "tier_a": 70,               # 정품 표방 또는 재침해자여야 도달
     "tier_b": 35,               # 관련어 + 판매자 규모 정상이면 B (사람이 디자인 확인)
+    "clear_drop": 0.10,         # 수집 대상 점수 이 미만 = 인쇄·색상 케이스 → X (2026-10-27: 25% 제외, 대상 손실 0)
+    "clear_low": 0.30,          # 이 미만 = C
     "cam_confident": 0.7,       # 카메라 홀 확신 기준 (2026-10-27 측정: 70% 이상만 판정 시 44% 를 95.6% 정확도)
     "img_same": 4,              # 위반 확정 이미지와 이 거리 이하 = 같은 사진 (2026-10-27 보정: 무관 상품 최소 14)
     "img_similar": 8,           # 이 거리 이하 = 유사 디자인 (10 은 갤럭시 플립↔아이폰처럼 링 모양만 닮음)
@@ -208,9 +210,26 @@ def triage(rows, keywords_by_text, rules, seller_counts=None):
                     reasons.append(f"카메라 홀 정사각 ({ps:.0%})")
                 else:
                     reasons.append(f"카메라 홀 판단 보류 ({ps:.0%})")
+            # --- 맥세이프 케이스 수집 기준(사용자 확정): 깔끔한 투명 케이스 + 링 "O -" + 정사각 홀. 인쇄·색상 케이스는 수집 안 함
+            clear_out = None
+            pc = r.get("cam_clear")
+            if r.get("model_type") == "MagSafe iPhone case" and pc is not None and not same_photo:
+                if pc < rules["clear_drop"]:
+                    clear_out = "X"
+                    reasons.append(f"인쇄·색상 케이스 추정 — 맥세이프 수집 기준 밖 ({pc:.0%})")
+                elif pc < rules["clear_low"]:
+                    clear_out = "C"
+                    reasons.append(f"투명 케이스 가능성 낮음 ({pc:.0%})")
+                elif pc >= 0.5:
+                    score += 15
+                    reasons.append(f"깔끔한 투명 케이스 추정 ({pc:.0%})")
             tier = "A" if score >= rules["tier_a"] else "B" if score >= rules["tier_b"] else "C"
             if cam_out:
                 tier = "C"
+            if clear_out == "C" and tier in "AB":
+                tier = "C"
+            if clear_out == "X":
+                tier = "X"
             # A = 확신 근거(정품 표방 / 위반 확정과 같은 사진 / 재침해자)가 있을 때만. 유사 디자인만으론 B 맨 위
             if tier == "A" and not (claim or same_photo or any(x.startswith("재침해자") for x in reasons)):
                 tier = "B"
@@ -228,6 +247,11 @@ def triage(rows, keywords_by_text, rules, seller_counts=None):
                 else:
                     tier = "C"
                     reasons.append("이미지 1차: 위반 확정과 유사 없음")
+            # 수집 기준 밖(인쇄·색상 케이스)은 어떤 규칙보다 우선 — 맨 마지막에 확정
+            if clear_out == "X":
+                tier = "X"
+            elif clear_out == "C" and tier in "AB":
+                tier = "C"
 
         r.update(tier=tier, score=score if tier != "X" else 0, reasons=" · ".join(reasons))
     rows.sort(key=lambda r: ("ABCX".index(r["tier"]), -r["score"]))
