@@ -168,6 +168,20 @@ def open_search(platform, page, keyword, pageno, bot_wait):
     return st
 
 
+def dump_evidence(page, platform, out_dir):
+    """차단 판정 순간의 화면·주소·본문을 남겨, 진단하려고 사이트에 다시 접속하지 않게 한다."""
+    stem = Path(out_dir) / f"blocked_{platform.key}_{datetime.now():%Y-%m-%d_%H%M%S}"
+    stem.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        page.screenshot(path=str(stem) + ".png", full_page=False)
+        body = page.inner_text("body", timeout=5000)[:2000]
+        stem.with_suffix(".txt").write_text(
+            f"url: {page.url}\ntitle: {page.title()}\nready: {platform.ready(page)}\n\n{body}", encoding="utf-8")
+        log(f"차단 화면 기록: {stem}.png / .txt")
+    except Exception as e:
+        log(f"차단 화면 기록 실패: {e}")
+
+
 def judge(item, kw, common_exclude):
     """제외 사유(없으면 '')."""
     title = item["title"] or ""
@@ -230,6 +244,8 @@ def run(args):
                 note = ""
                 for n in range(1, pages + 1):
                     st = open_search(pf, page, kw["keyword"], n, args.bot_wait)
+                    if st == "blocked":
+                        dump_evidence(page, pf, args.out)
                     if st in ("bot_timeout", "blocked"):
                         pf_status = "봇 확인 무응답 → 오늘 건너뜀" if st == "bot_timeout" else "차단 감지 → 중단"
                         note = pf_status
