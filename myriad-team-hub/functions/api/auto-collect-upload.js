@@ -14,6 +14,9 @@
  *   excluded_hashes = 실무자가 '제외'한 상품의 사진 지문 → 실행기가 다음 자동 수집에서 같은 사진을 자동 제외.
  *   review_hashes   = '상세 확인 필요'로 넘긴 사진 지문 → 다음 자동 수집에서 같은 사진은 빼지 않고 review_match 표시 (mig 041).
  *
+ * 보관 기간: 처음 본 날로부터 KEEP_DAYS(7일) 지난 미처리('new') 상품과 실행 기록은 업로드 때마다 삭제
+ *   (Supabase 무료 용량 보호). '제외'·'상세 확인' 행은 사진 지문이 필요하므로 남김.
+ *
  * 노트북(자동 수집 실행기)은 런처 기기 토큰만 가짐 — 관리자 키는 이 함수(service role)에만.
  */
 import { createClient } from '@supabase/supabase-js'
@@ -21,6 +24,7 @@ import { createClient } from '@supabase/supabase-js'
 const TIERS = new Set(['A', 'B', 'C', 'X'])
 const MAX_ITEMS = 20000
 const CHUNK = 500
+const KEEP_DAYS = 7
 
 export async function onRequestPost(context) {
   const { request, env } = context
@@ -87,6 +91,8 @@ export async function onRequestPost(context) {
       }
     }
 
+    const purged = await purgeOld(adminSb)
+
     const { data: marked } = await adminSb
       .from('patrol_items')
       .select('img_hash, status')
@@ -99,12 +105,30 @@ export async function onRequestPost(context) {
       run_id: runRow.id,
       upserted: rows.length,
       registered,
+      purged,
       excluded_hashes: hashesOf('excluded'),
       review_hashes: hashesOf('review')
     })
   } catch (e) {
     return json({ error: '서버 오류: ' + (e?.message || String(e)) }, 500)
   }
+}
+
+/** 보관 기간 지난 미처리 상품·실행 기록 삭제 → { items, runs } (실패해도 업로드는 성공 처리) */
+async function purgeOld(adminSb) {
+  const cutoff = new Date(Date.now() - KEEP_DAYS * 86400000)
+  // first_seen 은 한국 날짜 → 한국 시각 기준으로 자른 날짜와 비교
+  const cutoffDay = new Date(cutoff.getTime() + 9 * 3600000).toISOString().slice(0, 10)
+  const { count: items } = await adminSb
+    .from('patrol_items')
+    .delete({ count: 'exact' })
+    .eq('status', 'new')
+    .lt('first_seen', cutoffDay)
+  const { count: runs } = await adminSb
+    .from('patrol_runs')
+    .delete({ count: 'exact' })
+    .lt('created_at', cutoff.toISOString())
+  return { items: items ?? 0, runs: runs ?? 0 }
 }
 
 function clean(it, runId) {

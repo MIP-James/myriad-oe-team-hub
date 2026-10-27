@@ -161,6 +161,9 @@ export default function AutoCollect() {
         <li>
           <b className="text-slate-700">제외</b> — 아예 필요 없는 건. 같은 사진은 다음 자동 수집부터 자동으로 빠집니다.
         </li>
+        <li>
+          결과는 <b className="text-slate-700">최근 7일치만 보관</b>됩니다. 7일 지나도록 처리하지 않은 상품은 자동으로 지워집니다.
+        </li>
       </ul>
 
       {error && (
