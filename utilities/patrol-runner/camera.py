@@ -5,6 +5,8 @@
   3단계 수집 대상?(사용자 기준: 아무것도 안 묻은 깔끔한 투명 케이스 + 링 "O -" + 정사각 홀)
 학습 = 수동 정답 400장(2026-10-27, S 199 / O 56 / X 145, 그중 수집 대상 21). 교차검증: 1단계 89%, 2단계 85%,
 확신 70% 이상만 판정 시 45% 를 97.4%. 3단계는 순위용 — 대상 20/21 이 상위 15% 안, 점수 10% 미만 제외 시 25% 를 대상 손실 0 으로 거름.
+워치 밴드(Model Type 'Apple Watch Band') = 수동 정답 240장(표준 타입 51 / 무관 189) 로지스틱. 교차검증 AUC 0.86,
+  점수 0.38 미만 C → 무관 57% 제외·대상 5% 손실, 점수 상위 50% 안에 대상 94%.
 결과 파일 camera_clf.local.npz.
 판정 기준(사용자 확정 2026-10-27): 맥세이프 케이스만 정사각 홀이 대상. 실리콘 등 다른 케이스엔 적용 안 함.
 """
@@ -59,15 +61,17 @@ def embed(images, batch=16):
 
 
 class Classifier:
-    def __init__(self, w1, b1, w2, b2, w3=None, b3=0.0):
+    def __init__(self, w1, b1, w2, b2, w3=None, b3=0.0, w4=None, b4=0.0):
         self.w1, self.b1, self.w2, self.b2, self.w3, self.b3 = w1, b1, w2, b2, w3, b3
+        self.w4, self.b4 = w4, b4  # 워치 밴드 표준 타입
 
     @classmethod
     def load(cls, path=CLF):
         try:
             d = np.load(path)
             return cls(d["w1"], float(d["b1"]), d["w2"], float(d["b2"]),
-                       d["w3"] if "w3" in d else None, float(d["b3"]) if "b3" in d else 0.0)
+                       d["w3"] if "w3" in d else None, float(d["b3"]) if "b3" in d else 0.0,
+                       d["w4"] if "w4" in d else None, float(d["b4"]) if "b4" in d else 0.0)
         except FileNotFoundError:
             return None
 
@@ -77,11 +81,17 @@ class Classifier:
         p3 = sig(feats @ self.w3 + self.b3) if self.w3 is not None else np.full(len(feats), np.nan)
         return sig(feats @ self.w1 + self.b1), sig(feats @ self.w2 + self.b2), p3
 
+    def p_band(self, feats):
+        """워치 밴드가 위반 확정 표준 타입(오션·스포츠 루프·스포츠 밴드·알파인/트레일·밀레니즈)일 확률."""
+        if self.w4 is None:
+            return np.full(len(feats), np.nan)
+        return 1 / (1 + np.exp(-(feats @ self.w4 + self.b4)))
+
 
 def annotate(rows, fetch_bytes, clf=None):
     """맥세이프 케이스 행에 cam_judge(판단 가능 확률)·cam_square(정사각 확률)를 채운다. 이미지 못 받으면 None."""
     clf = clf or Classifier.load()
-    targets = [r for r in rows if r.get("model_type") == "MagSafe iPhone case" and r.get("image")]
+    targets = [r for r in rows if r.get("model_type") in ("MagSafe iPhone case", "Apple Watch Band") and r.get("image")]
     if not clf or not targets:
         return rows
     imgs, keep = [], []
@@ -94,13 +104,30 @@ def annotate(rows, fetch_bytes, clf=None):
                 continue
             except Exception:
                 pass
-        r["cam_judge"] = r["cam_square"] = r["cam_clear"] = None
+        r["cam_judge"] = r["cam_square"] = r["cam_clear"] = r["band_std"] = None
     if imgs:
-        pj, ps, pc = clf.predict(embed(imgs))
-        for r, a, b, c in zip(keep, pj, ps, pc):
+        feats = embed(imgs)
+        pj, ps, pc = clf.predict(feats)
+        pb = clf.p_band(feats)
+        for r, a, b, c, d in zip(keep, pj, ps, pc, pb):
+            if r.get("model_type") == "Apple Watch Band":
+                r["band_std"] = None if np.isnan(d) else float(d)
+                continue
             r["cam_judge"], r["cam_square"] = float(a), float(b)
             r["cam_clear"] = None if np.isnan(c) else float(c)
     return rows
+
+
+def train_band(items):
+    """items = [{"file", "label": "Y"|"N"}] (워치 밴드 표준 타입 수동 정답) → camera_clf.local.npz 에 w4/b4 추가."""
+    from sklearn.linear_model import LogisticRegression
+    feats = embed([Image.open(it["file"]).convert("RGB") for it in items])
+    y = np.array([it["label"] == "Y" for it in items])
+    m = LogisticRegression(max_iter=5000, class_weight="balanced").fit(feats, y)
+    d = dict(np.load(CLF))
+    d.update(w4=m.coef_[0].astype(np.float32), b4=np.float32(m.intercept_[0]))
+    np.savez(CLF, **d)
+    return int(y.sum()), len(y)
 
 
 def train_from_labels(items, clear=None):
@@ -117,9 +144,16 @@ def train_from_labels(items, clear=None):
         t = np.array([clear.get(str(k)) == "T" for k in range(len(items))])
         m3 = LogisticRegression(max_iter=5000, class_weight="balanced").fit(feats, t)
         out.update(w3=m3.coef_[0].astype(np.float32), b3=np.float32(m3.intercept_[0]))
+    if CLF.exists():  # 워치 밴드(w4/b4) 등 다른 판정은 보존
+        old = dict(np.load(CLF))
+        out.update({k: v for k, v in old.items() if k in ("w4", "b4")})
     np.savez(CLF, **out)
     return int(j.sum()), int((lab == "S").sum())
 
+
+if __name__ == "__main__" and len(sys.argv) == 3 and sys.argv[1] == "train-band":
+    import json
+    print("워치 밴드 학습 완료 (표준 타입 %d / 전체 %d)" % train_band(json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))))
 
 if __name__ == "__main__" and len(sys.argv) == 3 and sys.argv[1] == "train":
     import json

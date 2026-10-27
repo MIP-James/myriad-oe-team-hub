@@ -26,6 +26,7 @@ DEFAULTS = {
     "low_price_ratio": 0.4,     # 가격 상한 대비 이 비율 이하면 저가 신호
     "tier_a": 70,               # 정품 표방 또는 재침해자여야 도달
     "tier_b": 35,               # 관련어 + 판매자 규모 정상이면 B (사람이 디자인 확인)
+    "band_low": 0.38,           # 워치 밴드 표준 타입 점수 이 미만 = C (2026-10-27: 무관 57% 제외, 대상 5% 손실)
     "clear_drop": 0.10,         # 수집 대상 점수 이 미만 = 인쇄·색상 케이스 → X (2026-10-27: 25% 제외, 대상 손실 0)
     "clear_low": 0.30,          # 이 미만 = C
     "cam_confident": 0.7,       # 카메라 홀 확신 기준 (2026-10-27 측정: 70% 이상만 판정 시 44% 를 95.6% 정확도)
@@ -256,6 +257,15 @@ def triage(rows, keywords_by_text, rules, seller_counts=None):
                 else:
                     tier = "C"
                     reasons.append("이미지 1차: 위반 확정과 유사 없음")
+            # 워치 밴드: 위반 확정 표준 타입(오션·스포츠 루프·스포츠 밴드·알파인/트레일·밀레니즈)이 아니면 검토 가치 없음(사용자 확정)
+            pb = r.get("band_std")
+            if r.get("model_type") == "Apple Watch Band" and pb is not None and not same_photo:
+                if pb < rules["band_low"]:
+                    reasons.append(f"워치 밴드 표준 타입 아님 ({pb:.0%})")
+                    if tier in "AB":
+                        tier = "C"
+                elif pb >= 0.6:
+                    reasons.append(f"워치 밴드 표준 타입 ({pb:.0%})")
             # 수집 기준 밖(인쇄·색상 케이스)은 어떤 규칙보다 우선 — 맨 마지막에 확정
             if clear_out == "X":
                 tier = "X"
