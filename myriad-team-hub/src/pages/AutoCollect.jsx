@@ -6,11 +6,11 @@
  * BPM 판매정보 등록은 그 재수집이 담당 (스크린샷·상세 정보가 필요하므로 자동 수집에서 하지 않음).
  * '제외' = 같은 사진은 다음 자동 수집부터 자동으로 빠짐 (아예 필요 없는 것만).
  * '상세 확인' = 지금 목록에선 빠지지만, 같은 사진이 다음에 다시 수집되면 빨간 테두리로 표시 (mig 041).
- * BPM 에 등록된 건은 BPM 동기화로 자동 표시.
+ * 'BPM 전송 완료' = 복사한 카드들을 목록에서 뺌 (mig 042). BPM 에 등록된 건은 BPM 동기화로 자동 표시.
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ScanSearch, Copy, Check, Loader2, AlertTriangle, ImageOff, CheckSquare, Square, X, Eye, Undo2 } from 'lucide-react'
-import { TIERS, listDates, listFacets, countByTier, listItems, markItem, restoreItem } from '../lib/autoCollect'
+import { ScanSearch, Copy, Check, Loader2, AlertTriangle, ImageOff, CheckSquare, Square, X, Eye, Undo2, Send } from 'lucide-react'
+import { TIERS, listDates, listFacets, countByTier, listItems, markItems, restoreItems } from '../lib/autoCollect'
 import { useAuth } from '../contexts/AuthContext'
 
 const PAGE = 120
@@ -32,7 +32,8 @@ export default function AutoCollect() {
   const [loading, setLoading] = useState(true)
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState(null)
-  const [undo, setUndo] = useState(null) // { it, status, index, tier } — 방금 처리한 1건 되돌리기
+  const [copiedIds, setCopiedIds] = useState(() => new Set()) // 마지막으로 URL 복사한 카드 → 'BPM 전송 완료' 대상
+  const [undo, setUndo] = useState(null) // { entries: [{ it, index }], status, tier } — 방금 처리한 것 되돌리기
   const undoTimer = useRef(null)
 
   const filters = useMemo(
@@ -56,7 +57,7 @@ export default function AutoCollect() {
   useEffect(() => {
     if (!date) return
     let alive = true
-    setLoading(true); setError(null); setSelected(new Set()); setUndo(null)
+    setLoading(true); setError(null); setSelected(new Set()); setCopiedIds(new Set()); setUndo(null)
     Promise.all([countByTier(filters), listItems(filters, { offset: 0, limit: PAGE })])
       .then(([c, rows]) => {
         if (!alive) return
@@ -91,22 +92,27 @@ export default function AutoCollect() {
   }
 
   async function copyUrls() {
-    const urls = items.filter((it) => selected.has(it.id)).map((it) => it.url)
-    if (!urls.length) return
-    await navigator.clipboard.writeText(urls.join('\n'))
+    const picked = items.filter((it) => selected.has(it.id))
+    if (!picked.length) return
+    await navigator.clipboard.writeText(picked.map((it) => it.url).join('\n'))
+    setCopiedIds(new Set(picked.map((it) => it.id)))
     setCopied(true)
     setTimeout(() => setCopied(false), 1500)
   }
 
-  async function mark(it, status) {
+  async function mark(targets, status) {
+    if (!targets.length) return
     try {
-      await markItem(it.id, status, user?.id)
-      const index = items.findIndex((x) => x.id === it.id)
-      setItems((prev) => prev.filter((x) => x.id !== it.id))
-      setSelected((prev) => { const n = new Set(prev); n.delete(it.id); return n })
-      setCounts((c) => ({ ...c, [tier]: Math.max(0, (c[tier] || 1) - 1) }))
+      await markItems(targets.map((it) => it.id), status, user?.id)
+      const ids = new Set(targets.map((it) => it.id))
+      const entries = items.map((it, index) => ({ it, index })).filter((e) => ids.has(e.it.id))
+      const drop = (prev) => { const n = new Set(prev); ids.forEach((id) => n.delete(id)); return n }
+      setItems((prev) => prev.filter((x) => !ids.has(x.id)))
+      setSelected(drop)
+      setCopiedIds(drop)
+      setCounts((c) => ({ ...c, [tier]: Math.max(0, (c[tier] || 0) - entries.length) }))
       clearTimeout(undoTimer.current)
-      setUndo({ it, status, index, tier })
+      setUndo({ entries, status, tier })
       undoTimer.current = setTimeout(() => setUndo(null), 8000)
     } catch (e) {
       setError(e.message)
@@ -119,14 +125,14 @@ export default function AutoCollect() {
     clearTimeout(undoTimer.current)
     setUndo(null)
     try {
-      await restoreItem(u.it.id)
+      await restoreItems(u.entries.map((e) => e.it.id))
       if (u.tier !== tier) return
       setItems((prev) => {
         const next = [...prev]
-        next.splice(Math.min(u.index, next.length), 0, u.it)
+        for (const e of u.entries) next.splice(Math.min(e.index, next.length), 0, e.it) // index 오름차순
         return next
       })
-      setCounts((c) => ({ ...c, [u.tier]: (c[u.tier] || 0) + 1 }))
+      setCounts((c) => ({ ...c, [u.tier]: (c[u.tier] || 0) + u.entries.length }))
     } catch (e) {
       setError(e.message)
     }
@@ -160,6 +166,9 @@ export default function AutoCollect() {
         </li>
         <li>
           <b className="text-slate-700">제외</b> — 아예 필요 없는 건. 같은 사진은 다음 자동 수집부터 자동으로 빠집니다.
+        </li>
+        <li>
+          <b className="text-slate-700">BPM 전송 완료</b> — URL 복사 후 BPM 으로 보냈으면 눌러 주세요. 복사한 카드들이 목록에서 빠집니다.
         </li>
         <li>
           결과는 <b className="text-slate-700">최근 7일치만 보관</b>됩니다. 7일 지나도록 처리하지 않은 상품은 자동으로 지워집니다.
@@ -221,6 +230,14 @@ export default function AutoCollect() {
               {copied ? <Check size={15} /> : <Copy size={15} />}
               {copied ? '복사됨' : `선택 URL 복사 (${selected.size})`}
             </button>
+            <button
+              onClick={() => mark(items.filter((it) => copiedIds.has(it.id)), 'sent')}
+              disabled={!copiedIds.size}
+              title="URL 복사한 카드들을 BPM 으로 보냈으면 눌러 목록에서 빼세요"
+              className="text-sm px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-900 text-white font-semibold flex items-center gap-1.5 disabled:opacity-30"
+            >
+              <Send size={15} /> BPM 전송 완료{copiedIds.size ? ` (${copiedIds.size})` : ''}
+            </button>
           </div>
 
           {loading ? (
@@ -238,8 +255,8 @@ export default function AutoCollect() {
                     it={it}
                     selected={selected.has(it.id)}
                     onToggle={() => toggle(it)}
-                    onReview={() => mark(it, 'review')}
-                    onExclude={() => mark(it, 'excluded')}
+                    onReview={() => mark([it], 'review')}
+                    onExclude={() => mark([it], 'excluded')}
                   />
                 ))}
               </div>
@@ -257,7 +274,10 @@ export default function AutoCollect() {
 
       {undo && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-slate-900 text-white text-sm rounded-xl shadow-lg pl-4 pr-2 py-2 flex items-center gap-3">
-          <span>{undo.status === 'review' ? '상세 확인으로 넘겼습니다' : '제외했습니다'}</span>
+          <span>
+            {undo.status === 'sent' ? `BPM 전송 완료 ${undo.entries.length}건을 목록에서 뺐습니다`
+              : undo.status === 'review' ? '상세 확인으로 넘겼습니다' : '제외했습니다'}
+          </span>
           <button onClick={revert} className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 flex items-center gap-1.5">
             <Undo2 size={14} /> 되돌리기
           </button>

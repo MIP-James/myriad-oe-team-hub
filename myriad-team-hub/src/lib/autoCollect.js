@@ -6,6 +6,7 @@
  * '제외' = status 'excluded' — 같은 사진은 다음 자동 수집부터 실행기가 자동으로 뺌.
  * '상세 확인 필요' = status 'review' (mig 041) — 지금 목록에선 빠지고, 같은 사진이 다시 수집되면
  *   빼지 않고 review_match(빨간 테두리)로 표시 → 상세 페이지가 달라 쓸 수 있는 건을 놓치지 않게.
+ * 'BPM 전송 완료' = status 'sent' (mig 042) — 복사해 BPM 으로 보낸 건을 목록에서 뺌 (같은 상품은 실행기가 다시 안 올림).
  */
 import { supabase } from './supabase'
 
@@ -96,24 +97,30 @@ export async function listItems(f, { offset = 0, limit = 120 } = {}) {
 
 /**
  * 처리 — status 'excluded'(제외: 같은 사진은 다음부터 자동으로 빠짐)
- *        / 'review'(상세 확인 필요: 같은 사진은 다음에 빨간 테두리로 다시 나옴).
- * excluded_by / excluded_at 은 두 상태 공통 '처리한 사람·시각'.
+ *        / 'review'(상세 확인 필요: 같은 사진은 다음에 빨간 테두리로 다시 나옴)
+ *        / 'sent'(BPM 전송 완료: 목록에서 빠지고 7일 뒤 삭제, mig 042).
+ * excluded_by / excluded_at 은 세 상태 공통 '처리한 사람·시각'.
  */
-export async function markItem(id, status, userId) {
-  const { error } = await supabase
-    .from('patrol_items')
-    .update({ status, excluded_by: userId, excluded_at: new Date().toISOString() })
-    .eq('id', id)
-  if (error) throw error
+export async function markItems(ids, status, userId) {
+  const at = new Date().toISOString()
+  for (let i = 0; i < ids.length; i += 200) {
+    const { error } = await supabase
+      .from('patrol_items')
+      .update({ status, excluded_by: userId, excluded_at: at })
+      .in('id', ids.slice(i, i + 200))
+    if (error) throw error
+  }
 }
 
 /** 처리 되돌리기 */
-export async function restoreItem(id) {
-  const { error } = await supabase
-    .from('patrol_items')
-    .update({ status: 'new', excluded_by: null, excluded_at: null })
-    .eq('id', id)
-  if (error) throw error
+export async function restoreItems(ids) {
+  for (let i = 0; i < ids.length; i += 200) {
+    const { error } = await supabase
+      .from('patrol_items')
+      .update({ status: 'new', excluded_by: null, excluded_at: null })
+      .in('id', ids.slice(i, i + 200))
+    if (error) throw error
+  }
 }
 
 function toLocalDate(iso) {
