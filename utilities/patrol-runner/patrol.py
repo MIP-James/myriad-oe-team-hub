@@ -13,8 +13,11 @@ import argparse
 import json
 import os
 import random
+import subprocess
 import sys
 import time
+import urllib.request
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
@@ -27,6 +30,52 @@ HERE = Path(__file__).resolve().parent
 DATA_DIR = Path(os.environ.get("LOCALAPPDATA", HERE)) / "MyriadPatrol"
 PROFILE_DIR = DATA_DIR / "chrome-profile"
 SEEN_PATH = DATA_DIR / "seen.json"
+CDP_PORT = 9333
+
+
+def find_chrome():
+    for base in (os.environ.get("PROGRAMFILES"), os.environ.get("PROGRAMFILES(X86)"), os.environ.get("LOCALAPPDATA")):
+        if base:
+            exe = Path(base) / "Google" / "Chrome" / "Application" / "chrome.exe"
+            if exe.exists():
+                return str(exe)
+    sys.exit("설치된 Chrome 을 찾지 못했습니다.")
+
+
+@contextmanager
+def open_browser(p, attach):
+    """attach=True: 크롬을 평소처럼 실행해 두고 연결만 함 (Playwright 가 띄우면 지마켓 봇 확인이 안 풀림).
+    attach=False: Playwright 가 직접 띄움."""
+    if not attach:
+        ctx = p.chromium.launch_persistent_context(
+            str(PROFILE_DIR), channel="chrome", headless=False,
+            viewport={"width": 1366, "height": 900}, locale="ko-KR")
+        try:
+            yield ctx
+        finally:
+            ctx.close()
+        return
+    PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+    proc = subprocess.Popen([
+        find_chrome(), f"--user-data-dir={PROFILE_DIR}", f"--remote-debugging-port={CDP_PORT}",
+        "--no-first-run", "--no-default-browser-check", "--window-size=1366,900", "about:blank",
+    ])
+    endpoint = f"http://127.0.0.1:{CDP_PORT}"
+    for _ in range(40):
+        try:
+            urllib.request.urlopen(endpoint + "/json/version", timeout=1)
+            break
+        except OSError:
+            time.sleep(0.5)
+    browser = p.chromium.connect_over_cdp(endpoint)
+    try:
+        yield browser.contexts[0]
+    finally:
+        try:
+            browser.close()
+        except Exception:
+            pass
+        proc.terminate()
 
 
 def log(msg):
@@ -87,9 +136,19 @@ def open_search(platform, page, keyword, pageno, bot_wait):
         page.wait_for_load_state("networkidle", timeout=15000)
     except PWTimeout:
         pass
-    if resp is not None and resp.status in (403, 418, 429) and platform.state(page) != "bot_check":
+    status = resp.status if resp is not None else 200
+    if status in (418, 429):
         return "blocked"
     st = platform.state(page)
+    if status == 403 and st != "bot_check":
+        # Cloudflare 봇 확인도 403 으로 오고, 평소 크롬이면 몇 초 뒤 저절로 통과함 → 화면 상태로 판정
+        for _ in range(6):
+            time.sleep(2.5)
+            st = platform.state(page)
+            if st == "bot_check" or page.locator(platform.link_sel).count():
+                break
+        else:
+            return "blocked" if st != "empty" else st
     if st == "bot_check":
         if not wait_bot_check(platform, page, bot_wait):
             return "bot_timeout"
@@ -131,67 +190,59 @@ def run(args):
     started = datetime.now()
     new_rows, excluded_rows, summary = [], [], []
 
-    with sync_playwright() as p:
-        ctx = p.chromium.launch_persistent_context(
-            str(PROFILE_DIR), channel="chrome", headless=False,
-            viewport={"width": 1366, "height": 900}, locale="ko-KR",
-            args=["--disable-blink-features=AutomationControlled"],
-        )
+    with sync_playwright() as p, open_browser(p, not args.launch) as ctx:
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
-        try:
-            for pf in platforms:
-                pf_seen = seen.setdefault(pf.key, {})
-                had_history = bool(pf_seen)
-                pf_status = "완료"
-                log(f"=== {pf.name} 시작 (키워드 {len(keywords)}개 × 최대 {pages}페이지)")
-                for kw in keywords:
-                    found = fresh = 0
-                    note = ""
-                    for n in range(1, pages + 1):
-                        st = open_search(pf, page, kw["keyword"], n, args.bot_wait)
-                        if st in ("bot_timeout", "blocked"):
-                            pf_status = "봇 확인 무응답 → 오늘 건너뜀" if st == "bot_timeout" else "차단 감지 → 중단"
-                            note = pf_status
-                            break
-                        if st == "error":
-                            note = f"{n}페이지 로딩 실패"
-                            break
-                        if st == "empty":
-                            break
-                        scroll_through(page)
-                        items = pf.extract(page)
-                        if not items:
-                            note = f"{n}페이지 0건 — 사이트 구조 변경 의심"
-                            log(f"⚠ {pf.name} '{kw['keyword']}' {note}")
-                            break
-                        page_new = 0
-                        for it in items:
-                            found += 1
-                            if it["id"] in pf_seen:
-                                continue
-                            pf_seen[it["id"]] = today
-                            page_new += 1
-                            row = {"platform": pf.name, "keyword": kw["keyword"], "model_type": kw.get("model_type", ""), **it}
-                            reason = judge(it, kw, common_exclude)
-                            if reason:
-                                excluded_rows.append({**row, "reason": reason})
-                            else:
-                                new_rows.append(row)
-                                fresh += 1
-                        log(f"{pf.name} '{kw['keyword']}' p{n}: {len(items)}건 중 처음 본 것 {page_new}")
-                        # 신규순이라 한 페이지가 통째로 이미 본 것이면 뒤 페이지는 더 오래된 것
-                        if had_history and page_new == 0:
-                            break
-                        human_pause()
-                    summary.append({"platform": pf.name, "keyword": kw["keyword"], "found": found, "new": fresh, "note": note})
-                    if pf_status != "완료":
-                        log(f"{pf.name}: {pf_status}")
+        for pf in platforms:
+            pf_seen = seen.setdefault(pf.key, {})
+            had_history = bool(pf_seen)
+            pf_status = "완료"
+            log(f"=== {pf.name} 시작 (키워드 {len(keywords)}개 × 최대 {pages}페이지)")
+            for kw in keywords:
+                found = fresh = 0
+                note = ""
+                for n in range(1, pages + 1):
+                    st = open_search(pf, page, kw["keyword"], n, args.bot_wait)
+                    if st in ("bot_timeout", "blocked"):
+                        pf_status = "봇 확인 무응답 → 오늘 건너뜀" if st == "bot_timeout" else "차단 감지 → 중단"
+                        note = pf_status
                         break
-                    human_pause(2, 5)
-                if not args.dry:
-                    save_json(SEEN_PATH, seen)
-        finally:
-            ctx.close()
+                    if st == "error":
+                        note = f"{n}페이지 로딩 실패"
+                        break
+                    if st == "empty":
+                        break
+                    scroll_through(page)
+                    items = pf.extract(page)
+                    if not items:
+                        note = f"{n}페이지 0건 — 사이트 구조 변경 의심"
+                        log(f"⚠ {pf.name} '{kw['keyword']}' {note}")
+                        break
+                    page_new = 0
+                    for it in items:
+                        found += 1
+                        if it["id"] in pf_seen:
+                            continue
+                        pf_seen[it["id"]] = today
+                        page_new += 1
+                        row = {"platform": pf.name, "keyword": kw["keyword"], "model_type": kw.get("model_type", ""), **it}
+                        reason = judge(it, kw, common_exclude)
+                        if reason:
+                            excluded_rows.append({**row, "reason": reason})
+                        else:
+                            new_rows.append(row)
+                            fresh += 1
+                    log(f"{pf.name} '{kw['keyword']}' p{n}: {len(items)}건 중 처음 본 것 {page_new}")
+                    # 신규순이라 한 페이지가 통째로 이미 본 것이면 뒤 페이지는 더 오래된 것
+                    if had_history and page_new == 0:
+                        break
+                    human_pause()
+                summary.append({"platform": pf.name, "keyword": kw["keyword"], "found": found, "new": fresh, "note": note})
+                if pf_status != "완료":
+                    log(f"{pf.name}: {pf_status}")
+                    break
+                human_pause(2, 5)
+            if not args.dry:
+                save_json(SEEN_PATH, seen)
 
     if args.dry:
         log("--dry: 본 상품 기록(seen.json)은 갱신하지 않음")
@@ -209,6 +260,7 @@ def main():
     ap.add_argument("--bot-wait", type=float, default=30, help="봇 확인 대기 시간(분)")
     ap.add_argument("--out", default=str(HERE / "output"))
     ap.add_argument("--dry", action="store_true", help="본 상품 기록을 남기지 않음 (시험용)")
+    ap.add_argument("--launch", action="store_true", help="Playwright 가 크롬을 직접 띄움 (기본: 평소처럼 실행 후 연결)")
     run(ap.parse_args())
 
 

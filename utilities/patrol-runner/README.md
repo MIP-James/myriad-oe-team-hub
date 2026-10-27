@@ -27,7 +27,7 @@ run_patrol.bat --platforms auction --limit 2 --pages 1 --dry   시험
 결과: `output\patrol_YYYY-MM-DD_HHMM.xlsx` — 시트 `신규` / `제외`(사유 포함) / `실행 요약`.
 
 ## 동작 규칙
-- 순찰 전용 크롬 프로필: `%LOCALAPPDATA%\MyriadPatrol\chrome-profile` (봇 확인 통과 쿠키 유지)
+- 크롬은 순찰 전용 프로필(`%LOCALAPPDATA%\MyriadPatrol\chrome-profile`)로 **평소처럼 실행한 뒤 디버그 포트(9333)로 연결**합니다. 순찰이 끝나면 창을 닫습니다.
 - 본 상품 기록: `%LOCALAPPDATA%\MyriadPatrol\seen.json` — 한 번 본 상품번호는 다음부터 제외
 - 신규순이라 **한 페이지가 통째로 이미 본 상품이면 그 키워드는 뒤 페이지를 건너뜀**
 - 페이지 사이 3~7초, 스크롤은 사람 속도
@@ -38,7 +38,7 @@ run_patrol.bat --platforms auction --limit 2 --pages 1 --dry   시험
 ## 플랫폼 상태 (2026-10-27)
 | 플랫폼 | 상태 |
 |---|---|
-| 지마켓 | 봇 확인 매일 1회 → 통과 후 해석 검증 필요 |
+| 지마켓 | 동작 확인 (60건/페이지). Cloudflare 확인이 뜨지만 **크롬을 평소처럼 실행 후 연결(기본 방식)이면 몇 초 뒤 저절로 통과**. Playwright 가 직접 띄우면(`--launch`) 체크박스를 눌러도 안 풀림 |
 | 옥션 | 동작 확인 (100건/페이지, 상품명·가격·판매자) |
 | 11번가 | 동작 확인 (84건/페이지, 상단 광고·추천 자동 제외) |
 | 스마트스토어 | 네이버 쇼핑이 자동화 크롬을 첫 요청부터 418 차단 → 기본 제외. 대안 검토 중 |
