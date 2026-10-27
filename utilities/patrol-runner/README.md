@@ -44,7 +44,14 @@ run_patrol.bat --platforms auction --limit 2 --pages 1 --dry   시험
 | C 참고 | 우선순위 낮음 | 관련어 없음 / one-off 의심 판매자 / 부속·잡음(카드지갑·그립톡 등) |
 | X 제외 | 안 봄 | 공식 판매처, BPM 에 이미 등록된 URL |
 
-- one-off 판단은 **그날 순찰 결과 안의 판매자 리스팅 수**로 셈 (전체 재고 아님 → A 승격만 막음)
+- **A 는 확신 근거가 있을 때만**: 정품 표방 / 위반 확정과 같은 사진 / 재침해자. 유사 디자인만으론 B 맨 위
+- one-off 판단은 **그날 순찰 결과 안의 판매자 리스팅 수**로 셈 (전체 재고 아님 → A 승격만 막음, 같은 사진이면 예외)
+- **썸네일 ↔ 위반 확정 이미지 비교** (`imgsim.py`, 기준 DB = `build_ref.py` 로 BPM sell_info_list 썸네일 삽입본에서 생성)
+  - pHash + dHash 두 지문 중 큰 거리 사용, **같은 Model Type 묶음 안에서만** 비교 (흰 배경 단순 사진의 우연한 닮음 배제)
+  - 거리 ≤4 = 같은 사진(+40), ≤8 = 유사(+15). 2026-10-27 보정: 무관 상품 200건 최소 거리 14, 거리 10 은 링 모양만 닮은 다른 기기
+  - 갤럭시용 등 `image_first_terms` 상품: 유사 ≤8 이면 B(통과), 아니면 C
+- **MFi·정식 브랜드 제외**: `build_mfi.py` 로 Apple MFi Report 엑셀 → `mfi_brands.local.json`. 영문은 단어 단위, 한글 별칭(`exclude_brand_aliases`)은 단독 단어일 때만 ('링케' ≠ '링케이스'). 수집 단계에서 '제외' 시트로
+- 로컬 데이터(gitignore `*.local.*`): `keywords.local.json` / `mfi_brands.local.json` / `ref_hashes.local.npy` / `ref_meta.local.json` — 브랜드사 자료, 공개 레포 금지
 - 공식 판매처·재침해자·BPM 등록 여부는 지금은 설정 파일 목록, 2단계에서 BPM client/list·타겟 보드·sell-info 조회로 자동화
 - 브랜드 단어·기준값은 `keywords.local.json` 에만 (공개 레포 금지)
 

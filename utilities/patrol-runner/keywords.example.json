@@ -45,6 +45,9 @@
   "known_sellers": {},
   "bpm_registered_urls": [],
   "official_line_terms": [],
-  "claim_window": 4
+  "claim_window": 4,
+  "exclude_brand_terms": [],
+  "exclude_brand_aliases": {},
+  "image_first_terms": []
  }
 }

@@ -1,3 +1,4 @@
 keywords.local.json
+*.local.*
 output/
 __pycache__/

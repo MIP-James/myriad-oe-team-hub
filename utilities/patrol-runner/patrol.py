@@ -26,6 +26,7 @@ from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
 from collections import Counter
 
 from platforms import PLATFORMS, ORDER
+import imgsim
 import report
 import triage
 
@@ -197,9 +198,12 @@ def dump_evidence(page, platform, out_dir):
         log(f"차단 화면 기록 실패: {e}")
 
 
-def judge(item, kw, common_exclude):
+def judge(item, kw, common_exclude, brands=None):
     """제외 사유(없으면 '')."""
     title = item["title"] or ""
+    hit = brands.find(title, item.get("seller")) if brands else ""
+    if hit:
+        return f"MFi·정식 브랜드: {hit}"
     for w in list(common_exclude) + list(kw.get("exclude", [])):
         if w and w.lower() in title.lower():
             return f"제외어: {w}"
@@ -235,6 +239,7 @@ def run(args):
         keywords = keywords[: args.limit]
     pages = args.pages or cfg.get("pages", 3)
     common_exclude = cfg.get("common_exclude", [])
+    rules = triage.load_rules(cfg)
     platforms = [PLATFORMS[k] for k in (args.platforms.split(",") if args.platforms else cfg.get("platforms", ORDER))]
 
     seen = load_json(SEEN_PATH, {})
@@ -284,7 +289,7 @@ def run(args):
                         pf_seen[it["id"]] = today
                         page_new += 1
                         row = {"platform": pf.name, "keyword": kw["keyword"], "model_type": kw.get("model_type", ""), **it}
-                        reason = judge(it, kw, common_exclude)
+                        reason = judge(it, kw, common_exclude, rules["_brands"])
                         if reason:
                             excluded_rows.append({**row, "reason": reason})
                         else:
@@ -305,10 +310,14 @@ def run(args):
 
     if args.dry:
         log("--dry: 본 상품 기록(seen.json)은 갱신하지 않음")
+    db = imgsim.RefDB.load() if new_rows else None
+    if db:
+        log(f"썸네일 {len(new_rows)}건 ↔ 위반 확정 이미지 {len(db.meta):,}건 비교 중…")
+        imgsim.annotate(new_rows, db)
     if cfg.get("triage") and new_rows:
         # 판매자 규모는 오늘 본 전체(필터 제외 포함) 기준
         counts = Counter((r["platform"], r.get("seller") or "") for r in new_rows + excluded_rows)
-        triage.triage(new_rows, {k["keyword"]: k for k in cfg["keywords"]}, triage.load_rules(cfg), counts)
+        triage.triage(new_rows, {k["keyword"]: k for k in cfg["keywords"]}, rules, counts)
         tiers = Counter(r["tier"] for r in new_rows)
         log(f"등급: A {tiers['A']} / B {tiers['B']} / C {tiers['C']} / X {tiers['X']}")
     out = Path(args.out) / f"patrol_{started:%Y-%m-%d_%H%M}.xlsx"

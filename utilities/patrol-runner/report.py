@@ -13,7 +13,7 @@ BORDER = Border(top=LINE, bottom=LINE, left=LINE, right=LINE)
 ITEM_COLS = [
     ("플랫폼", "platform", 10), ("키워드", "keyword", 22), ("예상 Model Type", "model_type", 22),
     ("상품명", "title", 60), ("가격(원)", "price", 11), ("판매자", "seller", 18),
-    ("상품 URL", "url", 55), ("광고", "ad", 6),
+    ("상품 URL", "url", 55), ("광고", "ad", 6), ("썸네일", "image", 40),
 ]
 SUMMARY_COLS = [
     ("플랫폼", "platform", 10), ("키워드", "keyword", 26), ("본 상품", "found", 9),
@@ -41,7 +41,7 @@ def _sheet(ws, cols, rows):
             c.alignment = Alignment(vertical="center")
             if key == "price" and isinstance(c.value, int):
                 c.number_format = "#,##0"
-            if key == "url" and c.value:
+            if key in ("url", "image") and c.value:
                 c.hyperlink, c.font = c.value, LINK_FONT
     for i, (_, _k, w) in enumerate(cols, start=1):
         ws.column_dimensions[ws.cell(row=1, column=i).column_letter].width = w
@@ -50,7 +50,8 @@ def _sheet(ws, cols, rows):
         ws.auto_filter.ref = ws.dimensions
 
 
-TRIAGE_COLS = [("등급", "tier", 6), ("점수", "score", 6), ("근거", "reasons", 40)] + ITEM_COLS
+TRIAGE_COLS = [("등급", "tier", 6), ("점수", "score", 6), ("근거", "reasons", 40),
+               ("이미지 거리", "img_dist", 9)] + ITEM_COLS
 TIER_SHEETS = [("A", "A 바로 BPM"), ("B", "B 검토"), ("C", "C 참고"), ("X", "X 제외")]
 
 

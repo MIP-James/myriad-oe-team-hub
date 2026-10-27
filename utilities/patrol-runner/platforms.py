@@ -32,7 +32,9 @@ _CARD_JS = r"""
       if (ids.size > 1) break;
       el = el.parentElement;
     }
-    out.push({id, href: a.href, text: el.innerText || '', top: el.getBoundingClientRect().top + window.scrollY});
+    const img = el.querySelector('img');
+    const src = img ? (img.currentSrc || img.src || img.getAttribute('data-src') || img.getAttribute('data-original') || '') : '';
+    out.push({id, href: a.href, text: el.innerText || '', img: src.startsWith('data:') ? '' : src});
   }
   return out;
 }
@@ -100,6 +102,7 @@ class Platform:
             "title": title,
             "price": _price(lines),
             "seller": seller,
+            "image": card.get("img", ""),
             "ad": any(s in ("광고", "AD") for s in lines[:4]),
         }
 
@@ -225,7 +228,8 @@ class Smartstore(Platform):
             except ValueError:
                 price = None
             items.append({"id": pid or it.get("id"), "url": url, "title": it.get("productTitle", ""),
-                          "price": price, "seller": it.get("mallName", ""), "ad": bool(it.get("adId"))})
+                          "price": price, "seller": it.get("mallName", ""), "image": it.get("imageUrl", ""),
+                          "ad": bool(it.get("adId"))})
         return items
 
 
