@@ -34,6 +34,20 @@ run_patrol.bat --platforms auction --limit 2 --pages 1 --dry   시험
 
 결과: `output\patrol_YYYY-MM-DD_HHMM.xlsx` — 시트 `신규` / `제외`(사유 포함) / `실행 요약`.
 
+## 후처리 — 등급 분류 (`triage.py`)
+설정 파일에 `"triage"` 가 있으면 순찰 엑셀이 등급별 시트로 나옵니다. 이미 나온 엑셀은 `py -3.13 triage.py output\patrol_….xlsx` 로 재분류(`_triage.xlsx`).
+
+| 등급 | 뜻 | 기준 |
+|---|---|---|
+| A 바로 BPM | 그대로 BPM URL 작업에 넣어도 됨 | 브랜드 **바로 옆** 정품 표방어("애플 정품", "Apple 로고"), 공식 제품 라인명 사칭, 또는 재침해자 판매자 |
+| B 검토 | 사람이 디자인 확인 | 관련어 있음 + 판매자 규모 정상. 호환품은 디자인 모방 여부로 갈리므로 제목만으론 A 불가 |
+| C 참고 | 우선순위 낮음 | 관련어 없음 / one-off 의심 판매자 / 부속·잡음(카드지갑·그립톡 등) |
+| X 제외 | 안 봄 | 공식 판매처, BPM 에 이미 등록된 URL |
+
+- one-off 판단은 **그날 순찰 결과 안의 판매자 리스팅 수**로 셈 (전체 재고 아님 → A 승격만 막음)
+- 공식 판매처·재침해자·BPM 등록 여부는 지금은 설정 파일 목록, 2단계에서 BPM client/list·타겟 보드·sell-info 조회로 자동화
+- 브랜드 단어·기준값은 `keywords.local.json` 에만 (공개 레포 금지)
+
 ## 동작 규칙
 - 크롬은 순찰 전용 프로필(`%LOCALAPPDATA%\MyriadPatrol\chrome-profile`)로 **평소처럼 실행한 뒤 디버그 포트(9333)로 연결**합니다. 순찰이 끝나면 창을 닫습니다.
 - 본 상품 기록: `%LOCALAPPDATA%\MyriadPatrol\seen.json` — 한 번 본 상품번호는 다음부터 제외

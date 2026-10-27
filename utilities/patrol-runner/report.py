@@ -50,7 +50,35 @@ def _sheet(ws, cols, rows):
         ws.auto_filter.ref = ws.dimensions
 
 
+TRIAGE_COLS = [("등급", "tier", 6), ("점수", "score", 6), ("근거", "reasons", 40)] + ITEM_COLS
+TIER_SHEETS = [("A", "A 바로 BPM"), ("B", "B 검토"), ("C", "C 참고"), ("X", "X 제외")]
+
+
+def _triage_sheets(wb, rows):
+    for tier, title in TIER_SHEETS:
+        part = [r for r in rows if r.get("tier") == tier]
+        _sheet(wb.create_sheet(f"{title} {len(part)}건"), TRIAGE_COLS, part)
+
+
+def write_triage(path, rows):
+    wb = Workbook()
+    wb.remove(wb.active)
+    _triage_sheets(wb, rows)
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    wb.save(path)
+
+
 def write(path, new_rows, excluded_rows, summary, started, finished):
+    if new_rows and "tier" in new_rows[0]:
+        wb = Workbook()
+        wb.remove(wb.active)
+        _triage_sheets(wb, new_rows)
+        _sheet(wb.create_sheet(f"필터 제외 {len(excluded_rows)}건"), ITEM_COLS + [("제외 사유", "reason", 30)], excluded_rows)
+        _sheet(wb.create_sheet("실행 요약"), SUMMARY_COLS, summary)
+        wb["실행 요약"].cell(row=len(summary) + 3, column=1, value=f"순찰 {started:%Y-%m-%d %H:%M} ~ {finished:%H:%M}")
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        wb.save(path)
+        return
     wb = Workbook()
     ws = wb.active
     ws.title = f"신규 {len(new_rows)}건"

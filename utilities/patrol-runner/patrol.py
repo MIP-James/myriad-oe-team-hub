@@ -23,8 +23,11 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
 
+from collections import Counter
+
 from platforms import PLATFORMS, ORDER
 import report
+import triage
 
 HERE = Path(__file__).resolve().parent
 DATA_DIR = Path(os.environ.get("LOCALAPPDATA", HERE)) / "MyriadPatrol"
@@ -302,6 +305,12 @@ def run(args):
 
     if args.dry:
         log("--dry: 본 상품 기록(seen.json)은 갱신하지 않음")
+    if cfg.get("triage") and new_rows:
+        # 판매자 규모는 오늘 본 전체(필터 제외 포함) 기준
+        counts = Counter((r["platform"], r.get("seller") or "") for r in new_rows + excluded_rows)
+        triage.triage(new_rows, {k["keyword"]: k for k in cfg["keywords"]}, triage.load_rules(cfg), counts)
+        tiers = Counter(r["tier"] for r in new_rows)
+        log(f"등급: A {tiers['A']} / B {tiers['B']} / C {tiers['C']} / X {tiers['X']}")
     out = Path(args.out) / f"patrol_{started:%Y-%m-%d_%H%M}.xlsx"
     report.write(out, new_rows, excluded_rows, summary, started, datetime.now())
     log(f"저장: {out}  (신규 {len(new_rows)}건 / 제외 {len(excluded_rows)}건)")

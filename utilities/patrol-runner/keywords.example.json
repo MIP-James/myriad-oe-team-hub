@@ -22,5 +22,29 @@
    ],
    "enabled": true
   }
- ]
+ ],
+ "triage": {
+  "brand_terms": [
+   "브랜드명 예시"
+  ],
+  "brand_strong_terms": [
+   "브랜드명 예시"
+  ],
+  "genuine_claim_terms": [
+   "정품"
+  ],
+  "compat_terms": [
+   "호환"
+  ],
+  "noise_terms": [],
+  "seller_min_listings": 0,
+  "low_price_ratio": 0.4,
+  "tier_a": 70,
+  "tier_b": 35,
+  "official_sellers": {},
+  "known_sellers": {},
+  "bpm_registered_urls": [],
+  "official_line_terms": [],
+  "claim_window": 4
+ }
 }

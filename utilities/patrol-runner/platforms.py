@@ -92,6 +92,8 @@ class Platform:
         lines = _lines(card["text"])
         title = _after(lines, "상품명") or (lines[0] if lines else "")
         seller = _after(lines, "판매자") or _after(lines, "스토어명")
+        if seller.startswith("판매자"):  # 판매자명 없이 '판매자평가정보' 라벨이 바로 오는 카드
+            seller = ""
         return {
             "id": card["id"],
             "url": self.item_url(card["id"]),
