@@ -3,6 +3,14 @@
 키워드를 오픈마켓에서 **신규순**으로 검색해, **처음 보는 상품 URL만** 엑셀로 뽑습니다.
 상세 수집·스크린샷·중복 체크는 BPM `작업 추가 (URL)` 가 그대로 맡습니다.
 
+## 채집용 노트북으로 옮기기
+1. 개발 PC 의 `Downloads\patrol-runner.zip`(keywords.local.json 포함 — 외부 공유 금지)을 노트북에 복사 후 압축 해제
+2. Python 3.13 설치 (python.org, "Add python.exe to PATH" 체크) + Chrome 설치 확인
+3. `setup_patrol.bat` 실행 (playwright·openpyxl 설치)
+4. `run_patrol.bat --login` → 뜬 크롬에서 네이버 로그인 (**로그인 상태 유지** 체크)
+5. 시험: `run_patrol.bat --limit 2 --pages 1 --dry` → 스마트스토어: `run_patrol.bat --platforms smartstore --limit 2 --pages 2 --dry`
+- 순찰 프로필·본 상품 기록은 PC 마다 따로 → 노트북 첫 순찰은 전부 "처음 본 상품"
+
 ## 준비 (1회)
 ```
 py -3.13 -m pip install playwright openpyxl
