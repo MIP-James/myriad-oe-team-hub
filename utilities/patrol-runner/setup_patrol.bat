@@ -7,7 +7,7 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
-py -3.13 -m pip install --upgrade playwright openpyxl imagehash pillow numpy timm scikit-learn
+py -3.13 -m pip install --upgrade playwright openpyxl imagehash pillow numpy timm scikit-learn undetected-chromedriver selenium setuptools
 py -3.13 -m pip install --upgrade torch --index-url https://download.pytorch.org/whl/cpu
 if not exist keywords.local.json (
   echo [WARN] keywords.local.json missing. Copy it next to patrol.py before running.
