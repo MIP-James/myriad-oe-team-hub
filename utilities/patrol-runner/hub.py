@@ -77,7 +77,9 @@ def upload(cfg, rows, summary, started, finished, registered, product_type_of, l
     }
     req = urllib.request.Request(url.rstrip("/") + "/api/auto-collect-upload",
                                  data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
-                                 headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"},
+                                 headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}",
+                                          # Cloudflare 가 기본 Python-urllib 표시를 1010 으로 차단
+                                          "User-Agent": "MyriadAutoCollect/1.0"},
                                  method="POST")
     try:
         with urllib.request.urlopen(req, timeout=180) as resp:
