@@ -60,7 +60,7 @@ def _near(text, anchors, terms, window):
 
 
 def _excluded_photo(img_hash, excluded, max_dist):
-    """허브에서 '제외'한 사진(pHash, dHash)과 같은 사진인지 (거리 ≤ max_dist)."""
+    """허브에서 '제외'(또는 '상세 확인 필요')한 사진(pHash, dHash)과 같은 사진인지 (거리 ≤ max_dist)."""
     if not img_hash or not excluded:
         return False
     p, d = int(img_hash[:16], 16), int(img_hash[16:32], 16)
@@ -121,6 +121,7 @@ def load_rules(cfg, bpm_cache=None):
         rules["_bpm"] = bpm.Index(bpm_cache)
     import hub
     rules["_excluded"] = hub.load_excluded()
+    rules["_review"] = hub.load_review()
     return rules
 
 
@@ -282,7 +283,11 @@ def triage(rows, keywords_by_text, rules, seller_counts=None):
             elif clear_out == "C" and tier in "AB":
                 tier = "C"
 
-        r.update(tier=tier, score=score if tier != "X" else 0, reasons=" · ".join(reasons))
+        # '상세 확인 필요'로 넘긴 사진이 다시 나옴 → 빼지 않고 허브에서 빨간 테두리 (상세 페이지가 다를 수 있음, mig 041)
+        review = tier != "X" and _excluded_photo(r.get("img_hash"), rules.get("_review"), rules["img_same"])
+        if review:
+            reasons.append("상세 확인 필요 사진과 같은 사진")
+        r.update(tier=tier, score=score if tier != "X" else 0, reasons=" · ".join(reasons), review_match=review)
     rows.sort(key=lambda r: ("ABCX".index(r["tier"]), -r["score"]))
     return rows
 

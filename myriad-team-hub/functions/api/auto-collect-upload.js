@@ -6,12 +6,13 @@
  *   Body: {
  *     run: { started_at, finished_at, counts: {A,B,C,X,...}, summary: [...] },
  *     items: [{ platform, product_id, url, title, price, seller, image, img_hash,
- *               keyword, model_type, product_type, tier, score, reasons, img_dist }],
+ *               keyword, model_type, product_type, tier, score, reasons, img_dist, review_match }],
  *     registered: [{ platform, product_id }]   // 예전에 올린 것 중 BPM 에 등록된 것
  *   }
  *
- * 응답: { run_id, upserted, registered, excluded_hashes: [img_hash...] }
+ * 응답: { run_id, upserted, registered, excluded_hashes: [img_hash...], review_hashes: [img_hash...] }
  *   excluded_hashes = 실무자가 '제외'한 상품의 사진 지문 → 실행기가 다음 자동 수집에서 같은 사진을 자동 제외.
+ *   review_hashes   = '상세 확인 필요'로 넘긴 사진 지문 → 다음 자동 수집에서 같은 사진은 빼지 않고 review_match 표시 (mig 041).
  *
  * 노트북(자동 수집 실행기)은 런처 기기 토큰만 가짐 — 관리자 키는 이 함수(service role)에만.
  */
@@ -86,18 +87,20 @@ export async function onRequestPost(context) {
       }
     }
 
-    const { data: ex } = await adminSb
+    const { data: marked } = await adminSb
       .from('patrol_items')
-      .select('img_hash')
-      .eq('status', 'excluded')
+      .select('img_hash, status')
+      .in('status', ['excluded', 'review'])
       .not('img_hash', 'is', null)
-      .limit(20000)
+      .limit(40000)
+    const hashesOf = (st) => [...new Set((marked ?? []).filter((r) => r.status === st).map((r) => r.img_hash))]
 
     return json({
       run_id: runRow.id,
       upserted: rows.length,
       registered,
-      excluded_hashes: [...new Set((ex ?? []).map((r) => r.img_hash))]
+      excluded_hashes: hashesOf('excluded'),
+      review_hashes: hashesOf('review')
     })
   } catch (e) {
     return json({ error: '서버 오류: ' + (e?.message || String(e)) }, 500)
@@ -126,6 +129,7 @@ function clean(it, runId) {
     score: Number.isFinite(+it?.score) ? Math.round(+it.score) : null,
     reasons: str(it?.reasons, 1000),
     img_dist: Number.isFinite(+it?.img_dist) && it?.img_dist !== null ? Math.round(+it.img_dist) : null,
+    review_match: it?.review_match === true,
     last_run_id: runId
   }
 }

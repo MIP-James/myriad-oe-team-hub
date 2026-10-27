@@ -4,6 +4,8 @@
  * 등급(tier): A = 대표 이미지 일치(위반 확정과 같은 사진) / B = 검토 / C = 참고 / X = 제외(화면 미노출).
  * 실무자는 썸네일·상품명·가격만 보고 골라 URL 을 복사 → BPM Collector 대량 캡처 / BPM 작업 추가(URL)로 재수집.
  * '제외' = status 'excluded' — 같은 사진은 다음 자동 수집부터 실행기가 자동으로 뺌.
+ * '상세 확인 필요' = status 'review' (mig 041) — 지금 목록에선 빠지고, 같은 사진이 다시 수집되면
+ *   빼지 않고 review_match(빨간 테두리)로 표시 → 상세 페이지가 달라 쓸 수 있는 건을 놓치지 않게.
  */
 import { supabase } from './supabase'
 
@@ -15,10 +17,10 @@ export const TIERS = [
 
 export const PLATFORMS = ['지마켓', '옥션', '스마트스토어', '11번가']
 
-const COLS = 'id, platform, product_id, url, title, price, image, model_type, product_type, tier, score, status, bpm_registered, first_seen'
+const COLS = 'id, platform, product_id, url, title, price, image, model_type, product_type, tier, score, status, review_match, bpm_registered, first_seen'
 
 function applyFilters(q, f) {
-  q = q.eq('first_seen', f.date).neq('status', 'excluded')
+  q = q.eq('first_seen', f.date).eq('status', 'new')
   if (f.platform) q = q.eq('platform', f.platform)
   if (f.productType) q = q.eq('product_type', f.productType)
   if (f.modelType) q = q.eq('model_type', f.modelType)
@@ -47,7 +49,7 @@ export async function listFacets(date) {
       .from('patrol_items')
       .select('platform, product_type, model_type')
       .eq('first_seen', date)
-      .neq('status', 'excluded')
+      .eq('status', 'new')
       .neq('tier', 'X')
       .range(from, from + PAGE - 1)
     if (error) throw error
@@ -78,12 +80,13 @@ export async function countByTier(f) {
   return res
 }
 
-/** 상품 목록 (점수 높은 순) */
+/** 상품 목록 (상세 확인 필요 사진 재등장 → 맨 앞, 그다음 점수 높은 순) */
 export async function listItems(f, { offset = 0, limit = 120 } = {}) {
   const { data, error } = await applyFilters(
     supabase.from('patrol_items').select(COLS), f
   )
     .eq('tier', f.tier)
+    .order('review_match', { ascending: false })
     .order('score', { ascending: false, nullsFirst: false })
     .order('id', { ascending: true })
     .range(offset, offset + limit - 1)
@@ -91,16 +94,20 @@ export async function listItems(f, { offset = 0, limit = 120 } = {}) {
   return data ?? []
 }
 
-/** '제외' — 같은 사진은 다음 자동 수집부터 자동으로 빠짐 */
-export async function excludeItem(id, userId) {
+/**
+ * 처리 — status 'excluded'(제외: 같은 사진은 다음부터 자동으로 빠짐)
+ *        / 'review'(상세 확인 필요: 같은 사진은 다음에 빨간 테두리로 다시 나옴).
+ * excluded_by / excluded_at 은 두 상태 공통 '처리한 사람·시각'.
+ */
+export async function markItem(id, status, userId) {
   const { error } = await supabase
     .from('patrol_items')
-    .update({ status: 'excluded', excluded_by: userId, excluded_at: new Date().toISOString() })
+    .update({ status, excluded_by: userId, excluded_at: new Date().toISOString() })
     .eq('id', id)
   if (error) throw error
 }
 
-/** '제외' 되돌리기 */
+/** 처리 되돌리기 */
 export async function restoreItem(id) {
   const { error } = await supabase
     .from('patrol_items')

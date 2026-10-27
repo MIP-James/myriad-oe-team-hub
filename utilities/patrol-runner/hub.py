@@ -3,6 +3,7 @@
 인증 = 이 PC 런처의 기기 토큰(myrlnch_…) 재사용 — 런처 config.json 에서 읽거나 설정의 "hub.token".
 업로드 실패해도 엑셀 저장은 이미 끝난 뒤라 결과는 남는다.
 응답의 excluded_hashes(실무자가 '제외'한 사진 지문)는 로컬에 저장 → 다음 자동 수집에서 같은 사진 자동 제외.
+review_hashes('상세 확인 필요' 사진 지문, mig 041)도 저장 → 같은 사진은 빼지 않고 review_match 로 표시(허브 빨간 테두리).
 """
 import json
 import os
@@ -12,6 +13,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 EXCLUDED = HERE / "excluded_hashes.local.json"
+REVIEW = HERE / "review_hashes.local.json"
 DEFAULT_URL = "https://myriad-oe-team-hub.pages.dev"
 _LAUNCHER_CONFIGS = [
     Path(os.environ.get("USERPROFILE", "")) / "Downloads" / "MyriadLauncher" / "config.json",
@@ -41,7 +43,7 @@ def _row(r, product_type_of):
         "image": r.get("image"), "img_hash": r.get("img_hash"), "keyword": r.get("keyword"),
         "model_type": r.get("model_type"), "product_type": product_type_of(r.get("model_type")),
         "tier": r.get("tier"), "score": r.get("score"), "reasons": r.get("reasons"),
-        "img_dist": r.get("img_dist"),
+        "img_dist": r.get("img_dist"), "review_match": bool(r.get("review_match")),
     }
 
 
@@ -91,14 +93,24 @@ def upload(cfg, rows, summary, started, finished, registered, product_type_of, l
         log(f"⚠ 허브 업로드 실패: {e}")
         return None
     EXCLUDED.write_text(json.dumps(res.get("excluded_hashes") or []), encoding="utf-8")
+    REVIEW.write_text(json.dumps(res.get("review_hashes") or []), encoding="utf-8")
     log(f"허브 업로드: {res.get('upserted', 0)}건 (BPM 등록 표시 {res.get('registered', 0)}건, "
-        f"제외 사진 {len(res.get('excluded_hashes') or [])}개 받음)")
+        f"제외 사진 {len(res.get('excluded_hashes') or [])}개 / 상세 확인 사진 {len(res.get('review_hashes') or [])}개 받음)")
     return res
+
+
+def _load_hashes(path):
+    try:
+        return [(int(h[:16], 16), int(h[16:32], 16)) for h in json.loads(path.read_text(encoding="utf-8")) if len(h) >= 32]
+    except (OSError, ValueError):
+        return []
 
 
 def load_excluded():
     """실무자 '제외' 사진 지문 → [(pHash, dHash)]"""
-    try:
-        return [(int(h[:16], 16), int(h[16:32], 16)) for h in json.loads(EXCLUDED.read_text(encoding="utf-8")) if len(h) >= 32]
-    except (OSError, ValueError):
-        return []
+    return _load_hashes(EXCLUDED)
+
+
+def load_review():
+    """실무자 '상세 확인 필요' 사진 지문 → [(pHash, dHash)]"""
+    return _load_hashes(REVIEW)

@@ -4,11 +4,13 @@
  * 실무자에겐 썸네일·상품명·가격만 (판단 근거·점수는 화면에 안 보임 — 사용자 결정 2026-10-27).
  * 카드 클릭 = 선택 → '선택 URL 복사' → BPM Collector 대량 캡처(URL 목록) / BPM 작업 추가(URL)에 붙여넣기.
  * BPM 판매정보 등록은 그 재수집이 담당 (스크린샷·상세 정보가 필요하므로 자동 수집에서 하지 않음).
- * '제외' = 같은 사진은 다음 자동 수집부터 자동으로 빠짐. BPM 에 등록된 건은 BPM 동기화로 자동 표시.
+ * '제외' = 같은 사진은 다음 자동 수집부터 자동으로 빠짐 (아예 필요 없는 것만).
+ * '상세 확인' = 지금 목록에선 빠지지만, 같은 사진이 다음에 다시 수집되면 빨간 테두리로 표시 (mig 041).
+ * BPM 에 등록된 건은 BPM 동기화로 자동 표시.
  */
-import { useEffect, useMemo, useState } from 'react'
-import { ScanSearch, Copy, Check, Loader2, AlertTriangle, ImageOff, CheckSquare, Square, X } from 'lucide-react'
-import { TIERS, listDates, listFacets, countByTier, listItems, excludeItem } from '../lib/autoCollect'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { ScanSearch, Copy, Check, Loader2, AlertTriangle, ImageOff, CheckSquare, Square, X, Eye, Undo2 } from 'lucide-react'
+import { TIERS, listDates, listFacets, countByTier, listItems, markItem, restoreItem } from '../lib/autoCollect'
 import { useAuth } from '../contexts/AuthContext'
 
 const PAGE = 120
@@ -30,6 +32,8 @@ export default function AutoCollect() {
   const [loading, setLoading] = useState(true)
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState(null)
+  const [undo, setUndo] = useState(null) // { it, status, index, tier } — 방금 처리한 1건 되돌리기
+  const undoTimer = useRef(null)
 
   const filters = useMemo(
     () => ({ date, tier, platform, productType, modelType, hideRegistered }),
@@ -52,7 +56,7 @@ export default function AutoCollect() {
   useEffect(() => {
     if (!date) return
     let alive = true
-    setLoading(true); setError(null); setSelected(new Set())
+    setLoading(true); setError(null); setSelected(new Set()); setUndo(null)
     Promise.all([countByTier(filters), listItems(filters, { offset: 0, limit: PAGE })])
       .then(([c, rows]) => {
         if (!alive) return
@@ -94,12 +98,35 @@ export default function AutoCollect() {
     setTimeout(() => setCopied(false), 1500)
   }
 
-  async function exclude(it) {
+  async function mark(it, status) {
     try {
-      await excludeItem(it.id, user?.id)
+      await markItem(it.id, status, user?.id)
+      const index = items.findIndex((x) => x.id === it.id)
       setItems((prev) => prev.filter((x) => x.id !== it.id))
       setSelected((prev) => { const n = new Set(prev); n.delete(it.id); return n })
       setCounts((c) => ({ ...c, [tier]: Math.max(0, (c[tier] || 1) - 1) }))
+      clearTimeout(undoTimer.current)
+      setUndo({ it, status, index, tier })
+      undoTimer.current = setTimeout(() => setUndo(null), 8000)
+    } catch (e) {
+      setError(e.message)
+    }
+  }
+
+  async function revert() {
+    const u = undo
+    if (!u) return
+    clearTimeout(undoTimer.current)
+    setUndo(null)
+    try {
+      await restoreItem(u.it.id)
+      if (u.tier !== tier) return
+      setItems((prev) => {
+        const next = [...prev]
+        next.splice(Math.min(u.index, next.length), 0, u.it)
+        return next
+      })
+      setCounts((c) => ({ ...c, [u.tier]: (c[u.tier] || 0) + 1 }))
     } catch (e) {
       setError(e.message)
     }
@@ -124,8 +151,17 @@ export default function AutoCollect() {
       </header>
       <p className="text-sm text-slate-500 mb-5">
         카드를 눌러 고른 뒤 <b>선택 URL 복사</b> → BPM Collector 대량 캡처 또는 BPM 작업 추가(URL)에 붙여넣으세요.
-        상품명을 누르면 판매 페이지가 새 창으로 열립니다. <b>제외</b>한 상품의 사진은 다음 자동 수집부터 자동으로 빠집니다.
+        상품명을 누르면 판매 페이지가 새 창으로 열립니다.
       </p>
+      <ul className="text-sm text-slate-500 mb-5 -mt-3 space-y-0.5">
+        <li>
+          <b className="text-slate-700">상세 확인</b> — 이번엔 못 쓰지만 같은 썸네일이라도 상세 페이지가 다를 수 있는 건.
+          목록에서 빠지고, 같은 사진이 다음에 다시 수집되면 <b className="text-rose-600">빨간 테두리</b>로 맨 앞에 표시됩니다.
+        </li>
+        <li>
+          <b className="text-slate-700">제외</b> — 아예 필요 없는 건. 같은 사진은 다음 자동 수집부터 자동으로 빠집니다.
+        </li>
+      </ul>
 
       {error && (
         <div className="mb-4 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-lg p-3 flex items-start gap-2">
@@ -199,7 +235,8 @@ export default function AutoCollect() {
                     it={it}
                     selected={selected.has(it.id)}
                     onToggle={() => toggle(it)}
-                    onExclude={() => exclude(it)}
+                    onReview={() => mark(it, 'review')}
+                    onExclude={() => mark(it, 'excluded')}
                   />
                 ))}
               </div>
@@ -213,6 +250,15 @@ export default function AutoCollect() {
             </>
           )}
         </>
+      )}
+
+      {undo && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-slate-900 text-white text-sm rounded-xl shadow-lg pl-4 pr-2 py-2 flex items-center gap-3">
+          <span>{undo.status === 'review' ? '상세 확인으로 넘겼습니다' : '제외했습니다'}</span>
+          <button onClick={revert} className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 flex items-center gap-1.5">
+            <Undo2 size={14} /> 되돌리기
+          </button>
+        </div>
       )}
     </div>
   )
@@ -231,17 +277,25 @@ function Filter({ value, onChange, all, options }) {
   )
 }
 
-function Card({ it, selected, onToggle, onExclude }) {
+function Card({ it, selected, onToggle, onReview, onExclude }) {
   const [broken, setBroken] = useState(false)
   const done = it.bpm_registered
+  const again = it.review_match
   return (
     <div
       onClick={onToggle}
       className={`relative bg-white rounded-xl overflow-hidden cursor-pointer border transition ${
-        selected ? 'border-2 border-myriad-primary shadow-sm' : 'border-slate-200 hover:border-slate-300'
+        again
+          ? `border-2 border-rose-500 ${selected ? 'ring-2 ring-myriad-primary ring-offset-1' : ''}`
+          : selected ? 'border-2 border-myriad-primary shadow-sm' : 'border-slate-200 hover:border-slate-300'
       } ${done ? 'opacity-45 cursor-default' : ''}`}
     >
-      <div className="aspect-square bg-slate-50 flex items-center justify-center">
+      <div className="relative aspect-square bg-slate-50 flex items-center justify-center">
+        {again && (
+          <span className="absolute bottom-1.5 left-1.5 text-[11px] font-semibold px-1.5 py-0.5 rounded-md bg-rose-600 text-white">
+            다시 나온 사진 · 상세 확인
+          </span>
+        )}
         {it.image && !broken ? (
           <img
             src={it.image}
@@ -280,17 +334,26 @@ function Card({ it, selected, onToggle, onExclude }) {
           <span className="text-[15px] font-bold text-slate-900">
             {it.price != null ? `${it.price.toLocaleString()}원` : '-'}
           </span>
-          {done ? (
-            <span className="text-[11px] text-emerald-600">BPM 등록됨</span>
-          ) : (
+          {done && <span className="text-[11px] text-emerald-600">BPM 등록됨</span>}
+        </div>
+        {!done && (
+          <div className="grid grid-cols-2 gap-1.5 mt-2">
+            <button
+              onClick={(e) => { e.stopPropagation(); onReview() }}
+              title="목록에서 빼되, 같은 사진이 다음에 다시 수집되면 빨간 테두리로 표시"
+              className="text-[12px] py-1 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50 flex items-center justify-center gap-1"
+            >
+              <Eye size={12} /> 상세 확인
+            </button>
             <button
               onClick={(e) => { e.stopPropagation(); onExclude() }}
-              className="text-[12px] px-2 py-0.5 rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50 flex items-center gap-1"
+              title="아예 필요 없는 건 — 같은 사진은 다음 자동 수집부터 자동으로 빠짐"
+              className="text-[12px] py-1 rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50 flex items-center justify-center gap-1"
             >
               <X size={12} /> 제외
             </button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   )
