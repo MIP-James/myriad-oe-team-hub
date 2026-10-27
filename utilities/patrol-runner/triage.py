@@ -26,6 +26,7 @@ DEFAULTS = {
     "low_price_ratio": 0.4,     # 가격 상한 대비 이 비율 이하면 저가 신호
     "tier_a": 70,               # 정품 표방 또는 재침해자여야 도달
     "tier_b": 35,               # 관련어 + 판매자 규모 정상이면 B (사람이 디자인 확인)
+    "cam_confident": 0.7,       # 카메라 홀 확신 기준 (2026-10-27 측정: 70% 이상만 판정 시 44% 를 95.6% 정확도)
     "img_same": 4,              # 위반 확정 이미지와 이 거리 이하 = 같은 사진 (2026-10-27 보정: 무관 상품 최소 14)
     "img_similar": 8,           # 이 거리 이하 = 유사 디자인 (10 은 갤럭시 플립↔아이폰처럼 링 모양만 닮음)
     "exclude_brand_terms": [],  # 수집 제외 브랜드 직접 지정 (MFi 목록 외 정식 액세서리 브랜드)
@@ -193,7 +194,23 @@ def triage(rows, keywords_by_text, rules, seller_counts=None):
             elif dist is not None and dist <= rules["img_similar"]:
                 score += 15
                 reasons.append(f"위반 확정과 유사 (거리 {dist})")
+            # --- 맥세이프 케이스 카메라 홀 (사용자 확정: 정사각 홀만 대상, 실리콘 등 다른 케이스엔 적용 안 함)
+            cam_out = False
+            if r.get("model_type") == "MagSafe iPhone case" and r.get("cam_square") is not None and not same_photo:
+                pj, ps = r.get("cam_judge") or 0, r["cam_square"]
+                if pj < 0.5:
+                    reasons.append("카메라 홀 안 보임")
+                elif ps <= 1 - rules["cam_confident"]:
+                    cam_out = True
+                    reasons.append(f"카메라 홀 비정사각 — 맥세이프 기준 밖 ({ps:.0%})")
+                elif ps >= rules["cam_confident"]:
+                    score += 10
+                    reasons.append(f"카메라 홀 정사각 ({ps:.0%})")
+                else:
+                    reasons.append(f"카메라 홀 판단 보류 ({ps:.0%})")
             tier = "A" if score >= rules["tier_a"] else "B" if score >= rules["tier_b"] else "C"
+            if cam_out:
+                tier = "C"
             # A = 확신 근거(정품 표방 / 위반 확정과 같은 사진 / 재침해자)가 있을 때만. 유사 디자인만으론 B 맨 위
             if tier == "A" and not (claim or same_photo or any(x.startswith("재침해자") for x in reasons)):
                 tier = "B"
@@ -243,6 +260,9 @@ def main():
     db = imgsim.RefDB.load()
     if db:
         imgsim.annotate(rows, db)
+    import camera
+    if camera.CLF.exists():
+        camera.annotate(rows, imgsim.fetch_bytes)
     rows = triage(rows, {k["keyword"]: k for k in cfg["keywords"]}, load_rules(cfg))
     import report
     out = Path(args.xlsx).with_name(Path(args.xlsx).stem + "_triage.xlsx")

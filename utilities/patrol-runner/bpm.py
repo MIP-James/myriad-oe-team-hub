@@ -214,27 +214,28 @@ class Index:
         return self.violations.get((platform, n), 0) if len(n) >= 2 else 0
 
 
-def update_ref_images(cfg, cache, log=print):
-    """기준 이미지 DB 에 없는 위반 확정 건의 대표 이미지를 받아 추가."""
+def update_ref_images(cfg, cache, log=print, limit=REF_ADD_LIMIT, skip=None):
+    """기준 이미지 DB 에 없는 위반 확정 건의 대표 이미지를 받아 추가. 시도한 itemId 목록을 돌려준다."""
     import numpy as np
     import imgsim
     db = imgsim.RefDB.load()
     if db is None:
-        return
+        return []
+    skip = skip or set()
     have_ids = {m.get("item_id") for m in db.meta if m.get("item_id")}
     have_keys = {listing_key(m.get("url")) for m in db.meta if m.get("url")}
     todo = [it for it in cache.get("items", {}).values()
-            if it.get("confStatusCd") == "INF" and it["itemId"] not in have_ids
+            if it.get("confStatusCd") == "INF" and it["itemId"] not in have_ids and it["itemId"] not in skip
             and listing_key(it.get("productUrl")) not in have_keys]
     todo.sort(key=lambda it: it.get("collectDt") or 0, reverse=True)
-    todo = todo[:REF_ADD_LIMIT]
+    todo = todo[:limit]
     if not todo:
-        return
+        return []
     try:
         urls = Client(cfg).repr_thumbs([it["itemId"] for it in todo])
     except Exception as e:
         log(f"⚠ 기준 이미지 갱신 실패: {e}")
-        return
+        return []
     rows = [{"image": urls.get(it["itemId"]), "_it": it} for it in todo if urls.get(it["itemId"])]
     from concurrent.futures import ThreadPoolExecutor
     with ThreadPoolExecutor(6) as ex:
@@ -251,12 +252,23 @@ def update_ref_images(cfg, cache, log=print):
     if add_h:
         imgsim.RefDB(np.vstack([db.h, np.array(add_h, dtype=np.uint64)]), db.meta + add_m).save()
     log(f"기준 이미지 +{len(add_h)}건 (위반 확정 신규, 총 {len(db.meta) + len(add_m):,}건)")
+    return [it["itemId"] for it in todo]
 
 
 def main():
     cfg = json.loads((HERE / "keywords.local.json").read_text(encoding="utf-8"))["bpm"]
     cache = sync(cfg, force="--force" in sys.argv)
-    update_ref_images(cfg, cache)
+    if "--backfill" in sys.argv:  # 밀린 기준 이미지 전부 (1,000건씩 저장하며 반복, 중간에 끊겨도 이어서 가능)
+        tried, t0 = set(), time.time()
+        while True:
+            got = update_ref_images(cfg, cache, limit=1000, skip=tried)
+            if not got:
+                break
+            tried.update(got)
+            print(f"  누적 시도 {len(tried):,}건, {(time.time() - t0) / 60:.0f}분", flush=True)
+        print("백로그 완료", flush=True)
+    else:
+        update_ref_images(cfg, cache)
 
 
 if __name__ == "__main__":

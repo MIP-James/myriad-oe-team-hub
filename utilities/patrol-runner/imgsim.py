@@ -77,6 +77,18 @@ class RefDB:
         return self._masks[key]
 
 
+def fetch_bytes(url, timeout=10):
+    if not url:
+        return None
+    ref = next((v for k, v in REFERER.items() if k in url), None)
+    req = urllib.request.Request(url, headers={"User-Agent": UA, **({"Referer": ref} if ref else {})})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.read()
+    except Exception:
+        return None
+
+
 def fetch_hash(url, timeout=10):
     if not url:
         return None

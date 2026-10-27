@@ -27,6 +27,7 @@ from collections import Counter
 
 from platforms import PLATFORMS, ORDER
 import bpm
+import camera
 import imgsim
 import report
 import triage
@@ -319,6 +320,13 @@ def run(args):
     if db:
         log(f"썸네일 {len(new_rows)}건 ↔ 위반 확정 이미지 {len(db.meta):,}건 비교 중…")
         imgsim.annotate(new_rows, db)
+    if new_rows and camera.CLF.exists():
+        try:
+            n = sum(1 for r in new_rows if r.get("model_type") == "MagSafe iPhone case")
+            log(f"맥세이프 케이스 {n}건 카메라 홀 판정 중…")
+            camera.annotate(new_rows, imgsim.fetch_bytes)
+        except Exception as e:  # 모델·torch 문제여도 순찰 결과는 저장
+            log(f"⚠ 카메라 홀 판정 건너뜀: {e}")
     if cfg.get("triage") and new_rows:
         # 판매자 규모는 오늘 본 전체(필터 제외 포함) 기준
         counts = Counter((r["platform"], r.get("seller") or "") for r in new_rows + excluded_rows)
