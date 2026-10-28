@@ -375,6 +375,8 @@ def run(args):
     if cfg.get("bpm", {}).get("secret_key"):
         bpm_cache = bpm.sync(cfg["bpm"], log)          # 등록 중복·공식 판매처·위반 이력 판매자
         bpm.update_ref_images(cfg["bpm"], bpm_cache, log)  # 새 위반 확정 이미지 → 기준 DB
+    if cfg.get("hub", {}).get("enabled", True):
+        hub.fetch_judged(cfg.get("hub", {}), log)  # 어제 판정을 오늘 등급·재수집에 바로 반영 (load_rules·load_handled 전에)
     rules = triage.load_rules(cfg, bpm_cache)
     pf_keys = args.platforms.split(",") if args.platforms else cfg.get("platforms", ORDER)
     platforms = [PLATFORMS[k] for k in pf_keys]

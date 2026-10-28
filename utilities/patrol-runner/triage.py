@@ -145,7 +145,9 @@ def triage(rows, keywords_by_text, rules, seller_counts=None):
             tier, reasons = "X", ["공식 판매처"]
         elif _norm_url(r.get("url")) in registered or (bpm_idx and bpm_idx.registered(r.get("url"))):
             tier, reasons = "X", ["BPM 등록됨"]
-        elif _excluded_photo(r.get("img_hash"), rules.get("_excluded"), rules["img_same"]):
+        # 같은 사진을 다른 URL 에선 '상세 확인 필요'로 넘겼으면 자동 제외하지 않음 → 아래 review_match(빨간 테두리)로
+        elif (_excluded_photo(r.get("img_hash"), rules.get("_excluded"), rules["img_same"])
+              and not _excluded_photo(r.get("img_hash"), rules.get("_review"), rules["img_same"])):
             tier, reasons = "X", ["실무자 제외 사진과 같은 사진"]
         elif rules["_brands"].find(title, seller):
             tier, reasons = "X", [f"MFi·정식 브랜드: {rules['_brands'].find(title, seller)}"]

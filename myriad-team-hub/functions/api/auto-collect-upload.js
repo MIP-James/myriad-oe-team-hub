@@ -17,6 +17,10 @@
  *   handled         = 실무자가 판정한(제외·상세 확인·BPM 전송 완료) 상품번호 → 실행기가 로컬에 누적.
  *                     판정 없이 보관 기간이 지나 지워진 상품은 실행기가 다시 올려 허브에 다시 보이게 함 (2026-10-28).
  *
+ *   GET /api/auto-collect-upload  (같은 토큰) → { excluded_hashes, review_hashes, handled } 만 돌려줌.
+ *     실행기가 수집 '시작 전'에 최신 판정을 받아 감 — 업로드 응답만 쓰면 어제 판정이 오늘 등급에 안 들어가고
+ *     하루 늦게 반영됨 (2026-10-28).
+ *
  * 보관 기간: 처음 본 날로부터 KEEP_DAYS(7일) 지난 미처리('new')·BPM 전송 완료('sent') 상품과 실행 기록은 업로드 때마다 삭제
  *   (Supabase 무료 용량 보호). '제외'·'상세 확인' 행은 사진 지문이 필요하므로 남김.
  *   삭제를 저장보다 먼저 함 → 다시 올라온 미처리 상품이 지워질 옛 행에 덮이지 않고 새 행(처음 본 날 = 오늘)으로 들어감.
@@ -29,6 +33,16 @@ const TIERS = new Set(['A', 'B', 'C', 'X'])
 const MAX_ITEMS = 20000
 const CHUNK = 500
 const KEEP_DAYS = 7
+
+export async function onRequestGet(context) {
+  try {
+    const auth = await validateLauncherToken(context.request, context.env)
+    if (!auth.ok) return json({ error: auth.error }, auth.status)
+    return json(await judgedPayload(auth.adminSb))
+  } catch (e) {
+    return json({ error: '서버 오류: ' + (e?.message || String(e)) }, 500)
+  }
+}
 
 export async function onRequestPost(context) {
   const { request, env } = context
@@ -97,20 +111,26 @@ export async function onRequestPost(context) {
       }
     }
 
-    const marked = await fetchHandled(adminSb)
-    const hashesOf = (st) => [...new Set(marked.filter((r) => r.status === st && r.img_hash).map((r) => r.img_hash))]
-
     return json({
       run_id: runRow.id,
       upserted: rows.length,
       registered,
       purged,
-      excluded_hashes: hashesOf('excluded'),
-      review_hashes: hashesOf('review'),
-      handled: marked.map((r) => ({ platform: r.platform, product_id: r.product_id }))
+      ...(await judgedPayload(adminSb))
     })
   } catch (e) {
     return json({ error: '서버 오류: ' + (e?.message || String(e)) }, 500)
+  }
+}
+
+/** 실무자 판정 → { excluded_hashes, review_hashes, handled } (GET·POST 공통) */
+async function judgedPayload(adminSb) {
+  const marked = await fetchHandled(adminSb)
+  const hashesOf = (st) => [...new Set(marked.filter((r) => r.status === st && r.img_hash).map((r) => r.img_hash))]
+  return {
+    excluded_hashes: hashesOf('excluded'),
+    review_hashes: hashesOf('review'),
+    handled: marked.map((r) => ({ platform: r.platform, product_id: r.product_id }))
   }
 }
 

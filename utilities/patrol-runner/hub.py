@@ -6,6 +6,7 @@
 review_hashes('상세 확인 필요' 사진 지문, mig 041)도 저장 → 같은 사진은 빼지 않고 review_match 로 표시(허브 빨간 테두리).
 handled(판정한 상품번호: 제외·상세 확인·BPM 전송 완료)는 누적 저장 → 판정 없이 KEEP_DAYS 가 지나 허브에서 지워진
 상품만 다시 올림 (patrol.scan). 'BPM 전송 완료' 행은 허브에서 7일 뒤 지워지므로 노트북이 계속 기억해야 함.
+세 목록은 수집 시작 전에 fetch_judged(GET)로 먼저 받음 → 어제 판정이 오늘 등급에 바로 반영 (업로드 응답만 쓰면 하루 늦음).
 """
 import json
 import os
@@ -81,21 +82,52 @@ def upload(cfg, rows, summary, started, finished, registered, product_type_of, l
         "items": [_row(r, product_type_of) for r in rows if r.get("tier")],
         "registered": registered,
     }
+    res = _call(token, url, "업로드", log, body)
+    if res is None:
+        return None
+    handled = _save_judged(res)
+    log(f"허브 업로드: {res.get('upserted', 0)}건 (BPM 등록 표시 {res.get('registered', 0)}건, "
+        f"제외 사진 {len(res.get('excluded_hashes') or [])}개 / 상세 확인 사진 {len(res.get('review_hashes') or [])}개 / "
+        f"판정한 상품 누적 {handled:,}건)")
+    return res
+
+
+def fetch_judged(cfg, log=print):
+    """수집 시작 전 최신 판정(제외·상세 확인 사진 지문, 판정한 상품번호)을 받아 로컬에 저장.
+    실패하면 지난번 저장한 목록 그대로 씀 (수집은 계속)."""
+    token, url = _token(cfg or {})
+    if not token:
+        return None
+    res = _call(token, url, "판정 목록 받기", log)
+    if res is None:
+        log("  → 지난번 받은 판정 목록으로 진행")
+        return None
+    handled = _save_judged(res)
+    log(f"허브 최신 판정 받음: 제외 사진 {len(res.get('excluded_hashes') or [])}개 / "
+        f"상세 확인 사진 {len(res.get('review_hashes') or [])}개 / 판정한 상품 누적 {handled:,}건")
+    return res
+
+
+def _call(token, url, what, log, body=None):
+    """body 있으면 POST(업로드), 없으면 GET(판정 목록). 실패 시 None."""
     req = urllib.request.Request(url.rstrip("/") + "/api/auto-collect-upload",
-                                 data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
+                                 data=json.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None,
                                  headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}",
                                           # Cloudflare 가 기본 Python-urllib 표시를 1010 으로 차단
                                           "User-Agent": "MyriadAutoCollect/1.0"},
-                                 method="POST")
+                                 method="POST" if body is not None else "GET")
     try:
         with urllib.request.urlopen(req, timeout=180) as resp:
-            res = json.loads(resp.read())
+            return json.loads(resp.read())
     except urllib.error.HTTPError as e:
-        log(f"⚠ 허브 업로드 실패 ({e.code}): {e.read()[:300].decode('utf-8', 'replace')}")
-        return None
+        log(f"⚠ 허브 {what} 실패 ({e.code}): {e.read()[:300].decode('utf-8', 'replace')}")
     except Exception as e:
-        log(f"⚠ 허브 업로드 실패: {e}")
-        return None
+        log(f"⚠ 허브 {what} 실패: {e}")
+    return None
+
+
+def _save_judged(res):
+    """응답의 사진 지문 2종은 덮어쓰고, 판정한 상품번호는 누적 → 누적 건수"""
     EXCLUDED.write_text(json.dumps(res.get("excluded_hashes") or []), encoding="utf-8")
     REVIEW.write_text(json.dumps(res.get("review_hashes") or []), encoding="utf-8")
     handled = load_handled()
@@ -104,10 +136,7 @@ def upload(cfg, rows, summary, started, finished, registered, product_type_of, l
             handled.setdefault(h["platform"], set()).add(str(h["product_id"]))
     HANDLED.parent.mkdir(parents=True, exist_ok=True)
     HANDLED.write_text(json.dumps({k: sorted(v) for k, v in handled.items()}, ensure_ascii=False), encoding="utf-8")
-    log(f"허브 업로드: {res.get('upserted', 0)}건 (BPM 등록 표시 {res.get('registered', 0)}건, "
-        f"제외 사진 {len(res.get('excluded_hashes') or [])}개 / 상세 확인 사진 {len(res.get('review_hashes') or [])}개 / "
-        f"판정한 상품 누적 {sum(len(v) for v in handled.values()):,}건)")
-    return res
+    return sum(len(v) for v in handled.values())
 
 
 def _load_hashes(path):
