@@ -4,6 +4,8 @@
 업로드 실패해도 엑셀 저장은 이미 끝난 뒤라 결과는 남는다.
 응답의 excluded_hashes(실무자가 '제외'한 사진 지문)는 로컬에 저장 → 다음 자동 수집에서 같은 사진 자동 제외.
 review_hashes('상세 확인 필요' 사진 지문, mig 041)도 저장 → 같은 사진은 빼지 않고 review_match 로 표시(허브 빨간 테두리).
+handled(판정한 상품번호: 제외·상세 확인·BPM 전송 완료)는 누적 저장 → 판정 없이 KEEP_DAYS 가 지나 허브에서 지워진
+상품만 다시 올림 (patrol.scan). 'BPM 전송 완료' 행은 허브에서 7일 뒤 지워지므로 노트북이 계속 기억해야 함.
 """
 import json
 import os
@@ -14,6 +16,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 EXCLUDED = HERE / "excluded_hashes.local.json"
 REVIEW = HERE / "review_hashes.local.json"
+HANDLED = Path(os.environ.get("LOCALAPPDATA", HERE)) / "MyriadPatrol" / "handled.json"  # {플랫폼명: [상품번호]}
+KEEP_DAYS = 7  # 허브 보관 기간 (functions/api/auto-collect-upload.js 의 KEEP_DAYS 와 같게)
 DEFAULT_URL = "https://myriad-oe-team-hub.pages.dev"
 _LAUNCHER_CONFIGS = [
     Path(os.environ.get("USERPROFILE", "")) / "Downloads" / "MyriadLauncher" / "config.json",
@@ -94,8 +98,15 @@ def upload(cfg, rows, summary, started, finished, registered, product_type_of, l
         return None
     EXCLUDED.write_text(json.dumps(res.get("excluded_hashes") or []), encoding="utf-8")
     REVIEW.write_text(json.dumps(res.get("review_hashes") or []), encoding="utf-8")
+    handled = load_handled()
+    for h in res.get("handled") or []:
+        if h.get("platform") and h.get("product_id"):
+            handled.setdefault(h["platform"], set()).add(str(h["product_id"]))
+    HANDLED.parent.mkdir(parents=True, exist_ok=True)
+    HANDLED.write_text(json.dumps({k: sorted(v) for k, v in handled.items()}, ensure_ascii=False), encoding="utf-8")
     log(f"허브 업로드: {res.get('upserted', 0)}건 (BPM 등록 표시 {res.get('registered', 0)}건, "
-        f"제외 사진 {len(res.get('excluded_hashes') or [])}개 / 상세 확인 사진 {len(res.get('review_hashes') or [])}개 받음)")
+        f"제외 사진 {len(res.get('excluded_hashes') or [])}개 / 상세 확인 사진 {len(res.get('review_hashes') or [])}개 / "
+        f"판정한 상품 누적 {sum(len(v) for v in handled.values()):,}건)")
     return res
 
 
@@ -104,6 +115,14 @@ def _load_hashes(path):
         return [(int(h[:16], 16), int(h[16:32], 16)) for h in json.loads(path.read_text(encoding="utf-8")) if len(h) >= 32]
     except (OSError, ValueError):
         return []
+
+
+def load_handled():
+    """판정한 상품번호 → {플랫폼명: {상품번호}}"""
+    try:
+        return {k: set(map(str, v)) for k, v in json.loads(HANDLED.read_text(encoding="utf-8")).items()}
+    except (OSError, ValueError):
+        return {}
 
 
 def load_excluded():

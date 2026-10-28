@@ -18,7 +18,7 @@ import sys
 import time
 import urllib.request
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
@@ -303,13 +303,18 @@ def scan(pf, page, kw, first, last, bot_wait, pf_seen, today, bag, early_stop=Fa
             note = f"{n}페이지 0건 — 사이트 구조 변경 의심"
             log(f"⚠ {pf.name} '{kw['keyword']}' {note}")
             return found, fresh, note, "", None
-        page_new = 0
+        page_new = again = 0
         for it in items:
             found += 1
             if it["id"] in pf_seen:
-                continue
+                # 판정 없이 허브 보관 기간이 지난 상품(허브에선 이미 지워짐)은 다시 올림 — 안 본 채 영영 사라지지 않게.
+                # 조기 종료 판단엔 안 셈 (세면 매일 키워드마다 끝 페이지까지 보게 됨)
+                if pf_seen[it["id"]] >= bag["recollect_before"] or str(it["id"]) in bag["handled"].get(pf.name, ()):
+                    continue
+                again += 1
+            else:
+                page_new += 1
             pf_seen[it["id"]] = today
-            page_new += 1
             row = {"platform": pf.name, "keyword": kw["keyword"], "model_type": kw.get("model_type", ""), **it}
             reason = judge(it, kw, bag["common_exclude"], bag["rules"]["_brands"])
             if reason:
@@ -317,7 +322,8 @@ def scan(pf, page, kw, first, last, bot_wait, pf_seen, today, bag, early_stop=Fa
             else:
                 bag["new"].append(row)
                 fresh += 1
-        log(f"{pf.name} '{kw['keyword']}' p{n}: {len(items)}건 중 처음 본 것 {page_new}")
+        log(f"{pf.name} '{kw['keyword']}' p{n}: {len(items)}건 중 처음 본 것 {page_new}"
+            + (f" / 판정 없이 지나 다시 올림 {again}" if again else ""))
         # 신규순이라 한 페이지가 통째로 이미 본 것이면 뒤 페이지는 더 오래된 것 (깊게 보기는 끝까지)
         if early_stop and page_new == 0:
             return found, fresh, "", "", None
@@ -379,8 +385,10 @@ def run(args):
     sweep_per_day = cfg.get("sweep_per_day", 8)
     deep = Deep(cfg.get("deep"), keywords, DEEP_PATH, today)
     deep.maybe_regroup(log)
+    handled = hub.load_handled()
+    recollect_before = (datetime.now() - timedelta(days=hub.KEEP_DAYS)).strftime("%Y-%m-%d")
     bag_of = lambda: {"new": [], "excluded": [], "common_exclude": cfg.get("common_exclude", []),
-                      "rules": rules, "out": args.out}
+                      "rules": rules, "out": args.out, "handled": handled, "recollect_before": recollect_before}
 
     with browser(args) as ctx:
         page = ctx.pages[0] if ctx.pages else ctx.new_page()

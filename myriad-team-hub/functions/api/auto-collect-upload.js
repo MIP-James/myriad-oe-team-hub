@@ -10,12 +10,16 @@
  *     registered: [{ platform, product_id }]   // 예전에 올린 것 중 BPM 에 등록된 것
  *   }
  *
- * 응답: { run_id, upserted, registered, excluded_hashes: [img_hash...], review_hashes: [img_hash...] }
+ * 응답: { run_id, upserted, registered, excluded_hashes: [img_hash...], review_hashes: [img_hash...],
+ *         handled: [{ platform, product_id }] }
  *   excluded_hashes = 실무자가 '제외'한 상품의 사진 지문 → 실행기가 다음 자동 수집에서 같은 사진을 자동 제외.
  *   review_hashes   = '상세 확인 필요'로 넘긴 사진 지문 → 다음 자동 수집에서 같은 사진은 빼지 않고 review_match 표시 (mig 041).
+ *   handled         = 실무자가 판정한(제외·상세 확인·BPM 전송 완료) 상품번호 → 실행기가 로컬에 누적.
+ *                     판정 없이 보관 기간이 지나 지워진 상품은 실행기가 다시 올려 허브에 다시 보이게 함 (2026-10-28).
  *
  * 보관 기간: 처음 본 날로부터 KEEP_DAYS(7일) 지난 미처리('new')·BPM 전송 완료('sent') 상품과 실행 기록은 업로드 때마다 삭제
  *   (Supabase 무료 용량 보호). '제외'·'상세 확인' 행은 사진 지문이 필요하므로 남김.
+ *   삭제를 저장보다 먼저 함 → 다시 올라온 미처리 상품이 지워질 옛 행에 덮이지 않고 새 행(처음 본 날 = 오늘)으로 들어감.
  *
  * 노트북(자동 수집 실행기)은 런처 기기 토큰만 가짐 — 관리자 키는 이 함수(service role)에만.
  */
@@ -55,6 +59,8 @@ export async function onRequestPost(context) {
       .single()
     if (runErr) return json({ error: 'patrol_runs 기록 실패: ' + runErr.message }, 500)
 
+    const purged = await purgeOld(adminSb)
+
     const items = (Array.isArray(body?.items) ? body.items : [])
       .slice(0, MAX_ITEMS)
       .map((it) => clean(it, runRow.id))
@@ -91,15 +97,8 @@ export async function onRequestPost(context) {
       }
     }
 
-    const purged = await purgeOld(adminSb)
-
-    const { data: marked } = await adminSb
-      .from('patrol_items')
-      .select('img_hash, status')
-      .in('status', ['excluded', 'review'])
-      .not('img_hash', 'is', null)
-      .limit(40000)
-    const hashesOf = (st) => [...new Set((marked ?? []).filter((r) => r.status === st).map((r) => r.img_hash))]
+    const marked = await fetchHandled(adminSb)
+    const hashesOf = (st) => [...new Set(marked.filter((r) => r.status === st && r.img_hash).map((r) => r.img_hash))]
 
     return json({
       run_id: runRow.id,
@@ -107,11 +106,29 @@ export async function onRequestPost(context) {
       registered,
       purged,
       excluded_hashes: hashesOf('excluded'),
-      review_hashes: hashesOf('review')
+      review_hashes: hashesOf('review'),
+      handled: marked.map((r) => ({ platform: r.platform, product_id: r.product_id }))
     })
   } catch (e) {
     return json({ error: '서버 오류: ' + (e?.message || String(e)) }, 500)
   }
+}
+
+/** 판정된(제외·상세 확인·BPM 전송 완료) 행 전부 — Supabase 는 한 번에 1,000행까지만 주므로 나눠 읽음 */
+async function fetchHandled(adminSb) {
+  const out = []
+  for (let from = 0; from < 200000; from += 1000) {
+    const { data, error } = await adminSb
+      .from('patrol_items')
+      .select('id, platform, product_id, img_hash, status')
+      .in('status', ['excluded', 'review', 'sent'])
+      .order('id')
+      .range(from, from + 999)
+    if (error || !data?.length) break
+    out.push(...data)
+    if (data.length < 1000) break
+  }
+  return out
 }
 
 /** 보관 기간 지난 미처리·전송 완료 상품·실행 기록 삭제 → { items, runs } (실패해도 업로드는 성공 처리) */
