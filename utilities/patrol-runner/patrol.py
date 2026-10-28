@@ -296,7 +296,7 @@ def scan(pf, page, kw, first, last, bot_wait, pf_seen, today, bag, early_stop=Fa
         scroll_through(page)
         items = pf.extract(page)
         if not items:
-            if deep:  # 마지막 페이지 다음 = 결과 끝
+            if deep or n > first:  # 마지막 페이지 다음 = 결과 끝 (첫 페이지부터 0건일 때만 구조 변경 의심)
                 return found, fresh, f"{n - 1}페이지에서 결과 끝", "", None
             note = f"{n}페이지 0건 — 사이트 구조 변경 의심"
             log(f"⚠ {pf.name} '{kw['keyword']}' {note}")
