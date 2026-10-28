@@ -52,6 +52,13 @@
   "channel_sellers": [],
   "other_device_terms": []
  },
+ "deep": {
+  "enabled": true,
+  "per_day": 5,
+  "max_page": 50,
+  "max_minutes": 150,
+  "pin": {}
+ },
  "bpm": {
   "host": "https://bpm-admin.myriadip.com",
   "secret_key": "",

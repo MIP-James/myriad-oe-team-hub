@@ -26,6 +26,7 @@ from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
 from collections import Counter
 
 from platforms import PLATFORMS, ORDER
+from deep import Deep
 import bpm
 import camera
 import hub
@@ -37,6 +38,7 @@ HERE = Path(__file__).resolve().parent
 DATA_DIR = Path(os.environ.get("LOCALAPPDATA", HERE)) / "MyriadPatrol"
 PROFILE_DIR = DATA_DIR / "chrome-profile"
 SEEN_PATH = DATA_DIR / "seen.json"
+DEEP_PATH = DATA_DIR / "deep.json"
 CDP_PORT = 9333
 
 
@@ -245,90 +247,57 @@ def login(args):
         log("로그인이 확인되지 않아 종료합니다")
 
 
-def run(args):
-    cfg = load_json(args.config, None)
-    if cfg is None:
-        sys.exit(f"설정 파일이 없습니다: {args.config}  (keywords.example.json 을 복사해 만드세요)")
-    keywords = [k for k in cfg["keywords"] if k.get("enabled", True)]
-    if args.limit:
-        keywords = keywords[: args.limit]
-    pages = args.pages or cfg.get("pages", 3)
-    common_exclude = cfg.get("common_exclude", [])
-    bpm_cache = None
-    if cfg.get("bpm", {}).get("secret_key"):
-        bpm_cache = bpm.sync(cfg["bpm"], log)          # 등록 중복·공식 판매처·위반 이력 판매자
-        bpm.update_ref_images(cfg["bpm"], bpm_cache, log)  # 새 위반 확정 이미지 → 기준 DB
-    rules = triage.load_rules(cfg, bpm_cache)
-    platforms = [PLATFORMS[k] for k in (args.platforms.split(",") if args.platforms else cfg.get("platforms", ORDER))]
-
-    seen = load_json(SEEN_PATH, {})
-    today = datetime.now().strftime("%Y-%m-%d")
-    started = datetime.now()
-    new_rows, excluded_rows, summary = [], [], []
-
-    with browser(args) as ctx:
-        page = ctx.pages[0] if ctx.pages else ctx.new_page()
-        for pf in platforms:
-            pf_seen = seen.setdefault(pf.key, {})
-            had_history = bool(pf_seen)
-            pf_status = "완료"
-            log(f"=== {pf.name} 시작 (키워드 {len(keywords)}개 × 최대 {pages}페이지)")
-            skip = pf.prepare(page)
-            if skip:
-                log(f"⚠ {pf.name}: {skip} → 건너뜀")
-                summary.append({"platform": pf.name, "keyword": "-", "found": 0, "new": 0, "note": skip})
+def scan(pf, page, kw, first, last, bot_wait, pf_seen, today, bag, early_stop=False, deep=False, deadline=None):
+    """한 키워드를 first~last 페이지까지 훑어 bag 의 new/excluded 에 담는다.
+    반환 (found, fresh, note, pf_stop, resume) — pf_stop = 이 플랫폼을 그만 볼 사유,
+    resume = 중간에 멈춘 페이지 (끝까지 봤거나 결과가 끝났으면 None)."""
+    found = fresh = 0
+    for n in range(first, last + 1):
+        if deadline and time.time() > deadline:
+            return found, fresh, f"시간 상한 → {n}페이지부터 다음에", "", n
+        st = open_search(pf, page, kw["keyword"], n, bot_wait)
+        if st == "blocked":
+            dump_evidence(page, pf, bag["out"])
+        if st in ("bot_timeout", "blocked"):
+            stop = "봇 확인 무응답 → 오늘 건너뜀" if st == "bot_timeout" else "차단 감지 → 중단"
+            return found, fresh, stop, stop, n
+        if st == "error":
+            return found, fresh, f"{n}페이지 로딩 실패", "", n
+        if st == "empty":
+            return found, fresh, "", "", None
+        scroll_through(page)
+        items = pf.extract(page)
+        if not items:
+            if deep:  # 마지막 페이지 다음 = 결과 끝
+                return found, fresh, f"{n - 1}페이지에서 결과 끝", "", None
+            note = f"{n}페이지 0건 — 사이트 구조 변경 의심"
+            log(f"⚠ {pf.name} '{kw['keyword']}' {note}")
+            return found, fresh, note, "", None
+        page_new = 0
+        for it in items:
+            found += 1
+            if it["id"] in pf_seen:
                 continue
-            for kw in keywords:
-                found = fresh = 0
-                note = ""
-                for n in range(1, pages + 1):
-                    st = open_search(pf, page, kw["keyword"], n, args.bot_wait)
-                    if st == "blocked":
-                        dump_evidence(page, pf, args.out)
-                    if st in ("bot_timeout", "blocked"):
-                        pf_status = "봇 확인 무응답 → 오늘 건너뜀" if st == "bot_timeout" else "차단 감지 → 중단"
-                        note = pf_status
-                        break
-                    if st == "error":
-                        note = f"{n}페이지 로딩 실패"
-                        break
-                    if st == "empty":
-                        break
-                    scroll_through(page)
-                    items = pf.extract(page)
-                    if not items:
-                        note = f"{n}페이지 0건 — 사이트 구조 변경 의심"
-                        log(f"⚠ {pf.name} '{kw['keyword']}' {note}")
-                        break
-                    page_new = 0
-                    for it in items:
-                        found += 1
-                        if it["id"] in pf_seen:
-                            continue
-                        pf_seen[it["id"]] = today
-                        page_new += 1
-                        row = {"platform": pf.name, "keyword": kw["keyword"], "model_type": kw.get("model_type", ""), **it}
-                        reason = judge(it, kw, common_exclude, rules["_brands"])
-                        if reason:
-                            excluded_rows.append({**row, "reason": reason})
-                        else:
-                            new_rows.append(row)
-                            fresh += 1
-                    log(f"{pf.name} '{kw['keyword']}' p{n}: {len(items)}건 중 처음 본 것 {page_new}")
-                    # 신규순이라 한 페이지가 통째로 이미 본 것이면 뒤 페이지는 더 오래된 것
-                    if had_history and page_new == 0:
-                        break
-                    human_pause()
-                summary.append({"platform": pf.name, "keyword": kw["keyword"], "found": found, "new": fresh, "note": note})
-                if pf_status != "완료":
-                    log(f"{pf.name}: {pf_status}")
-                    break
-                human_pause(2, 5)
-            if not args.dry:
-                save_json(SEEN_PATH, seen)
+            pf_seen[it["id"]] = today
+            page_new += 1
+            row = {"platform": pf.name, "keyword": kw["keyword"], "model_type": kw.get("model_type", ""), **it}
+            reason = judge(it, kw, bag["common_exclude"], bag["rules"]["_brands"])
+            if reason:
+                bag["excluded"].append({**row, "reason": reason})
+            else:
+                bag["new"].append(row)
+                fresh += 1
+        log(f"{pf.name} '{kw['keyword']}' p{n}: {len(items)}건 중 처음 본 것 {page_new}")
+        # 신규순이라 한 페이지가 통째로 이미 본 것이면 뒤 페이지는 더 오래된 것 (깊게 보기는 끝까지)
+        if early_stop and page_new == 0:
+            return found, fresh, "", "", None
+        human_pause()
+    return found, fresh, "", "", None
 
-    if args.dry:
-        log("--dry: 본 상품 기록(seen.json)은 갱신하지 않음")
+
+def finish(label, cfg, args, rules, bag, summary, started, seen, deep):
+    """썸네일 비교·카메라 판정·등급 → 엑셀 → 허브 업로드."""
+    new_rows, excluded_rows = bag["new"], bag["excluded"]
     db = imgsim.RefDB.load() if new_rows else None
     if db:
         log(f"썸네일 {len(new_rows)}건 ↔ 위반 확정 이미지 {len(db.meta):,}건 비교 중…")
@@ -341,12 +310,13 @@ def run(args):
         except Exception as e:  # 모델·torch 문제여도 자동 수집 결과는 저장
             log(f"⚠ 카메라 홀 판정 건너뜀: {e}")
     if cfg.get("triage") and new_rows:
-        # 판매자 규모는 오늘 본 전체(필터 제외 포함) 기준
+        # 판매자 규모는 이번 단계에서 본 전체(필터 제외 포함) 기준
         counts = Counter((r["platform"], r.get("seller") or "") for r in new_rows + excluded_rows)
         triage.triage(new_rows, {k["keyword"]: k for k in cfg["keywords"]}, rules, counts)
         tiers = Counter(r["tier"] for r in new_rows)
         log(f"등급: A {tiers['A']} / B {tiers['B']} / C {tiers['C']} / X {tiers['X']}")
-    out = Path(args.out) / f"patrol_{started:%Y-%m-%d_%H%M}.xlsx"
+        deep.record(new_rows, {PLATFORMS[k].name for k in deep.platforms})
+    out = Path(args.out) / f"patrol_{started:%Y-%m-%d_%H%M}{label}.xlsx"
     finished = datetime.now()
     report.write(out, new_rows, excluded_rows, summary, started, finished)
     log(f"저장: {out}  (신규 {len(new_rows)}건 / 제외 {len(excluded_rows)}건)")
@@ -355,6 +325,98 @@ def run(args):
         registered = hub.recently_registered(seen, PLATFORMS, rules.get("_bpm"))
         hub.upload(cfg.get("hub", {}), new_rows, summary, started, finished, registered,
                    db.product_type_of if db else (lambda m: None), log)
+
+
+def run(args):
+    cfg = load_json(args.config, None)
+    if cfg is None:
+        sys.exit(f"설정 파일이 없습니다: {args.config}  (keywords.example.json 을 복사해 만드세요)")
+    keywords = [k for k in cfg["keywords"] if k.get("enabled", True)]
+    if args.limit:
+        keywords = keywords[: args.limit]
+    pages = args.pages or cfg.get("pages", 3)
+    bpm_cache = None
+    if cfg.get("bpm", {}).get("secret_key"):
+        bpm_cache = bpm.sync(cfg["bpm"], log)          # 등록 중복·공식 판매처·위반 이력 판매자
+        bpm.update_ref_images(cfg["bpm"], bpm_cache, log)  # 새 위반 확정 이미지 → 기준 DB
+    rules = triage.load_rules(cfg, bpm_cache)
+    pf_keys = args.platforms.split(",") if args.platforms else cfg.get("platforms", ORDER)
+    platforms = [PLATFORMS[k] for k in pf_keys]
+
+    seen = load_json(SEEN_PATH, {})
+    today = datetime.now().strftime("%Y-%m-%d")
+    deep = Deep(cfg.get("deep"), keywords, DEEP_PATH, today)
+    deep.maybe_regroup(log)
+    bag_of = lambda: {"new": [], "excluded": [], "common_exclude": cfg.get("common_exclude", []),
+                      "rules": rules, "out": args.out}
+
+    with browser(args) as ctx:
+        page = ctx.pages[0] if ctx.pages else ctx.new_page()
+
+        # ① 매일 수집 — 전 플랫폼, 신규순 1~pages 페이지
+        if not args.deep_only:
+            started, bag, summary = datetime.now(), bag_of(), []
+            for pf in platforms:
+                pf_seen = seen.setdefault(pf.key, {})
+                had_history = bool(pf_seen)
+                log(f"=== {pf.name} 시작 (키워드 {len(keywords)}개 × 최대 {pages}페이지)")
+                skip = pf.prepare(page)
+                if skip:
+                    log(f"⚠ {pf.name}: {skip} → 건너뜀")
+                    summary.append({"platform": pf.name, "keyword": "-", "found": 0, "new": 0, "note": skip})
+                    continue
+                for kw in keywords:
+                    found, fresh, note, stop, _ = scan(pf, page, kw, 1, pages, args.bot_wait, pf_seen, today, bag,
+                                                       early_stop=had_history)
+                    summary.append({"platform": pf.name, "keyword": kw["keyword"], "found": found, "new": fresh, "note": note})
+                    if stop:
+                        log(f"{pf.name}: {stop}")
+                        break
+                    human_pause(2, 5)
+                if not args.dry:
+                    save_json(SEEN_PATH, seen)
+            finish("", cfg, args, rules, bag, summary, started, seen, deep)
+
+        # ② 깊게 보기 — 지마켓·옥션, 오늘 차례 키워드만 pages+1 ~ 마지막 페이지
+        picks = deep.todays() if deep.enabled and not args.no_deep else []
+        if picks:
+            started, bag, summary = datetime.now(), bag_of(), []
+            deadline = time.time() + deep.cfg["max_minutes"] * 60
+            log("=== 깊게 보기: " + ", ".join(f"{k['keyword']}({deep.group(k['keyword'])})" for k in picks))
+            for key in deep.platforms:
+                if key not in pf_keys or time.time() > deadline:
+                    continue
+                pf = PLATFORMS[key]
+                pf_seen = seen.setdefault(key, {})
+                skip = pf.prepare(page)
+                if skip:
+                    log(f"⚠ {pf.name}: {skip} → 깊게 보기 건너뜀")
+                    continue
+                for kw in picks:
+                    first = deep.start_page(kw["keyword"], key, pages + 1)
+                    if first is None:
+                        continue
+                    found, fresh, note, stop, resume = scan(
+                        pf, page, kw, first, deep.cfg["max_page"], deep.cfg["bot_wait"], pf_seen, today, bag,
+                        deep=True, deadline=deadline)
+                    deep.mark(kw["keyword"], key, resume)
+                    summary.append({"platform": pf.name, "keyword": kw["keyword"], "found": found, "new": fresh,
+                                    "note": f"깊게 보기 {first}p~" + (f" / {note}" if note else "")})
+                    if stop:
+                        log(f"{pf.name}: {stop} (깊게 보기는 다음 실행에서 {resume}페이지부터)")
+                        break
+                    if time.time() > deadline:
+                        log("깊게 보기 시간 상한 → 나머지는 다음 실행에서 이어감")
+                        break
+                    human_pause(2, 5)
+                if not args.dry:
+                    save_json(SEEN_PATH, seen)
+            finish("_deep", cfg, args, rules, bag, summary, started, seen, deep)
+
+    if args.dry:
+        log("--dry: 본 상품 기록(seen.json)·깊게 보기 진행은 갱신하지 않음")
+    else:
+        deep.save()
 
 
 def main():
@@ -370,6 +432,8 @@ def main():
     ap.add_argument("--launch", action="store_true", help="Playwright 가 크롬을 직접 띄움 (기본: 평소처럼 실행 후 연결)")
     ap.add_argument("--driver", choices=["uc", "playwright"], default="uc",
                     help="브라우저 방식 (기본 uc = undetected-chromedriver)")
+    ap.add_argument("--no-deep", action="store_true", help="깊게 보기(지마켓·옥션 끝 페이지까지) 생략")
+    ap.add_argument("--deep-only", action="store_true", help="매일 수집은 건너뛰고 깊게 보기만 (시험용)")
     ap.add_argument("--login", action="store_true", help="자동 수집 크롬에 네이버 로그인 (스마트스토어용, 1회)")
     args = ap.parse_args()
     login(args) if args.login else run(args)
