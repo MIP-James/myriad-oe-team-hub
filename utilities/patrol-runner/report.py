@@ -13,7 +13,7 @@ BORDER = Border(top=LINE, bottom=LINE, left=LINE, right=LINE)
 ITEM_COLS = [
     ("플랫폼", "platform", 10), ("키워드", "keyword", 22), ("예상 Model Type", "model_type", 22),
     ("상품명", "title", 60), ("가격(원)", "price", 11), ("판매자", "seller", 18),
-    ("상품 URL", "url", 55), ("광고", "ad", 6), ("썸네일", "image", 40),
+    ("상품 URL", "url", 55), ("광고", "ad", 6), ("배송 배지", "badge", 22), ("썸네일", "image", 40),
 ]
 SUMMARY_COLS = [
     ("플랫폼", "platform", 10), ("키워드", "keyword", 26), ("본 상품", "found", 9),

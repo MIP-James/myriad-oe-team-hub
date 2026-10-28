@@ -37,8 +37,11 @@ _CARD_JS = r"""
     }
     const img = el.querySelector('img');
     const src = img ? (img.currentSrc || img.src || img.getAttribute('data-src') || img.getAttribute('data-original') || '') : '';
-    const badges = [...el.querySelectorAll('img')].map(i => i.getAttribute('src') || '').filter(s => /logo|badge/i.test(s));
-    out.push({id, href: a.href, text: el.innerText || '', img: src.startsWith('data:') ? '' : src, badges});
+    // 지연 로딩이면 src 가 비어 있고 data-src 에 실제 주소 → 둘 다 봄
+    const badges = [...el.querySelectorAll('img')].map(i => (i.getAttribute('src') || '') + ' ' + (i.getAttribute('data-src') || ''))
+      .filter(s => /logo|badge/i.test(s));
+    out.push({id, href: a.href, text: el.innerText || '', img: src.startsWith('data:') ? '' : src, badges,
+              alt: img ? (img.getAttribute('alt') || '') : ''});
   }
   return out;
 }
@@ -289,7 +292,8 @@ class Coupang(Platform):
     def parse_card(self, card):
         it = super().parse_card(card)
         lines = [s for s in _lines(card["text"]) if s not in ("광고", "AD")]
-        it["title"] = lines[0] if lines else ""
+        # 상품명 = 썸네일 alt (카드 첫 줄이 '480원 캐시 적립' 같은 문구인 카드가 있음, 10-28 노트북)
+        it["title"] = card.get("alt") or (lines[0] if lines else "")
         # 같은 상품번호에 판매자가 여럿 → 검색에 뜬 판매자로 고정 (검색 추적 파라미터는 뺌)
         item = re.search(r"[?&]itemId=(\d+)", card["href"])
         vendor = re.search(r"[?&]vendorItemId=(\d+)", card["href"])
@@ -298,6 +302,8 @@ class Coupang(Platform):
         # 쿠팡 리테일 로켓(파란 로켓·로켓직구·로켓프레시 등)은 신고 의미 없음 → 제외, 주황 '판매자로켓'만 수집 (사용자 결정 2026-10-28)
         # 배지는 글자 없는 이미지: logo_rocket_filter = 파란 로켓, logo_rocket_merchant = 판매자로켓 (10-28 화면 확인)
         rockets = [b for b in card.get("badges", []) if "rocket" in b.lower() and "merchant" not in b.lower()]
+        names = [re.sub(r"\.(png|svg|webp).*$", "", b.strip().split("/")[-1]) for b in card.get("badges", []) if "rocket" in b.lower()]
+        it["badge"] = ", ".join(dict.fromkeys(names))  # 엑셀 '배송 배지' 열 — 로켓 판정 확인용
         if rockets or any("로켓" in s and "판매자로켓" not in s.replace(" ", "") for s in lines[1:]):  # [0] = 상품명
             it["skip"] = "쿠팡 로켓(리테일)"
         return it
