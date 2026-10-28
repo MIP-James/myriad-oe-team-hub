@@ -39,6 +39,8 @@ DATA_DIR = Path(os.environ.get("LOCALAPPDATA", HERE)) / "MyriadPatrol"
 PROFILE_DIR = DATA_DIR / "chrome-profile"
 SEEN_PATH = DATA_DIR / "seen.json"
 DEEP_PATH = DATA_DIR / "deep.json"
+SWEEP_PATH = DATA_DIR / "sweep.json"  # {플랫폼: {키워드: 1~pages 를 처음 끝까지 본 날}}
+UNSWEPT_PAGES = 3  # 아직 차례가 안 온(전체 훑기 전) 키워드는 예전처럼 3페이지만
 CDP_PORT = 9333
 
 
@@ -373,6 +375,8 @@ def run(args):
 
     seen = load_json(SEEN_PATH, {})
     today = datetime.now().strftime("%Y-%m-%d")
+    sweep = load_json(SWEEP_PATH, {})
+    sweep_per_day = cfg.get("sweep_per_day", 8)
     deep = Deep(cfg.get("deep"), keywords, DEEP_PATH, today)
     deep.maybe_regroup(log)
     bag_of = lambda: {"new": [], "excluded": [], "common_exclude": cfg.get("common_exclude", []),
@@ -382,6 +386,8 @@ def run(args):
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
 
         # ① 매일 수집 — 전 플랫폼, 신규순 1~pages 페이지
+        # 키워드마다 처음 한 번은 1~pages 를 끝까지(조기 종료 없이) = '전체 훑기', 플랫폼당 하루 sweep_per_day 개.
+        # 이미 본 상품만 있는 페이지에서 멈추는 규칙 때문에, 훑기 전엔 4페이지 이후를 영영 못 봄 (10-28)
         if not args.deep_only:
             started, bag, summary = datetime.now(), bag_of(), []
             for pf in platforms:
@@ -394,9 +400,18 @@ def run(args):
                     dump_evidence(page, pf, args.out, "skip")
                     summary.append({"platform": pf.name, "keyword": "-", "found": 0, "new": 0, "note": skip})
                     continue
+                pf_sweep = sweep.setdefault(pf.key, {})
+                budget = sweep_per_day
                 for kw in keywords:
-                    found, fresh, note, stop, _ = scan(pf, page, kw, 1, pages, args.bot_wait, pf_seen, today, bag,
-                                                       early_stop=had_history)
+                    full = kw["keyword"] not in pf_sweep and budget > 0
+                    if full:
+                        budget -= 1
+                    last = pages if (full or kw["keyword"] in pf_sweep) else min(pages, UNSWEPT_PAGES)
+                    found, fresh, note, stop, resume = scan(pf, page, kw, 1, last, args.bot_wait, pf_seen, today, bag,
+                                                            early_stop=had_history and not full)
+                    if full and resume is None and not stop:
+                        pf_sweep[kw["keyword"]] = today
+                        note = f"전체 훑기 완료 (1~{pages}p)" + (f" / {note}" if note else "")
                     summary.append({"platform": pf.name, "keyword": kw["keyword"], "found": found, "new": fresh, "note": note})
                     if stop:
                         log(f"{pf.name}: {stop}")
@@ -404,11 +419,14 @@ def run(args):
                     human_pause(2, 5)
                 if not args.dry:
                     save_json(SEEN_PATH, seen)
+                    save_json(SWEEP_PATH, sweep)
             finish("", cfg, args, rules, bag, summary, started, seen, deep)
 
         # ② 깊게 보기 — 지마켓·옥션, 오늘 차례 키워드만 pages+1 ~ 마지막 페이지
         # 깊게 보기 플랫폼(지마켓·옥션)이 이번 실행 대상에 없으면 생략 (예: --platforms coupang 시험)
-        picks = deep.todays() if deep.enabled and not args.no_deep and set(deep.platforms) & set(pf_keys) else []
+        # 1~pages 전체 훑기가 끝난 키워드만 (아니면 pages+1 부터 보는 깊게 보기가 그 사이를 건너뜀)
+        swept = lambda kw: all(kw["keyword"] in sweep.get(k, {}) for k in deep.platforms if k in pf_keys)
+        picks = deep.todays(swept) if deep.enabled and not args.no_deep and set(deep.platforms) & set(pf_keys) else []
         if picks:
             started, bag, summary = datetime.now(), bag_of(), []
             deadline = time.time() + deep.cfg["max_minutes"] * 60

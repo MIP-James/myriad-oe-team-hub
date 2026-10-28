@@ -1,6 +1,7 @@
 {
  "brand": "ExampleBrand",
  "pages": 20,
+ "sweep_per_day": 8,
  "platforms": [
   "gmarket",
   "auction",

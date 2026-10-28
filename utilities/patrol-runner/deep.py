@@ -72,9 +72,10 @@ class Deep:
             return 10_000
         return _days(last, self.today) - self.cfg["interval_days"][self.group(text)]
 
-    def todays(self):
-        """오늘 깊게 볼 키워드: 이어갈 것 → 많이 밀린 것 → 상·중·하 순."""
-        due = [kw for kw in self.keywords if kw["keyword"] in self.progress or self.overdue(kw["keyword"]) >= 0]
+    def todays(self, eligible=lambda kw: True):
+        """오늘 깊게 볼 키워드: 이어갈 것 → 많이 밀린 것 → 상·중·하 순. eligible = 앞 페이지 전체 훑기 끝난 것."""
+        due = [kw for kw in self.keywords if eligible(kw)
+               and (kw["keyword"] in self.progress or self.overdue(kw["keyword"]) >= 0)]
         due.sort(key=lambda kw: (kw["keyword"] not in self.progress, -self.overdue(kw["keyword"]),
                                  GROUPS.index(self.group(kw["keyword"]))))
         return due[: self.cfg["per_day"]]
