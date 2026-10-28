@@ -346,7 +346,8 @@ function Card({ it, selected, onToggle, onReview, onExclude }) {
         <a
           href={it.url}
           target="_blank"
-          rel="noreferrer"
+          // 쿠팡은 Referer 없는 외부 진입을 차단 화면(사용권한이 없습니다)으로 막음 → 일반 링크처럼 출처(origin)를 보냄
+          rel={it.platform === '쿠팡' ? 'noopener' : 'noreferrer'}
           onClick={(e) => e.stopPropagation()}
           className="text-[13px] leading-snug text-slate-800 hover:underline line-clamp-2 min-h-[2.4em]"
           title={it.title}
