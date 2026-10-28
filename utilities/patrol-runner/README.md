@@ -8,7 +8,7 @@
 2. Python 3.13 설치 (python.org, "Add python.exe to PATH" 체크) + Chrome 설치 확인
 3. `setup_patrol.bat` 실행 (playwright·openpyxl 설치)
 4. `run_patrol.bat --login` → 뜬 크롬에서 네이버 로그인 (**로그인 상태 유지** 체크)
-   `run_patrol.bat --login coupang` → 쿠팡 로그인 (**자동 로그인** 체크) — 로그인 안 하면 쿠팡은 1페이지만 보여 줌
+   `run_patrol.bat --login coupang` → 열린 쿠팡 홈에서 오른쪽 위 로그인 (**자동 로그인** 체크 필수, 끝나면 크롬을 껐다 켜서 유지 확인) — 로그인 안 하면 쿠팡은 1페이지만 보여 줌
 5. 시험: `run_patrol.bat --limit 2 --pages 1 --dry` → 스마트스토어: `run_patrol.bat --platforms smartstore --limit 2 --pages 2 --dry`
 - 자동 수집 프로필·본 상품 기록은 PC 마다 따로 → 노트북 첫 자동 수집은 전부 "처음 본 상품"
 

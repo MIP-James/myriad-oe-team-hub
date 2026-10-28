@@ -235,13 +235,16 @@ def judge(item, kw, common_exclude, brands=None):
 def login(args):
     """자동 수집 크롬을 로그인 화면으로 띄우고, 사람이 로그인하면 닫는다 (비밀번호는 다루지 않음).
     --login = 네이버(스마트스토어용), --login coupang = 쿠팡."""
-    from platforms import naver_logged_in, coupang_logged_in, COUPANG_HOME, COUPANG_LOGIN
+    from platforms import naver_logged_in, coupang_logged_in, COUPANG_HOME
     coupang = args.login == "coupang"
+    done = False
     with browser(args) as ctx:
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         if coupang:
-            page.goto(COUPANG_LOGIN)
-            log("자동 수집 크롬에서 쿠팡에 로그인해 주세요 ('자동 로그인' 체크). 최대 10분 대기")
+            # 로그인 주소로 바로 가면 '찾을 수 없는 페이지' (10-28 노트북) → 홈에서 사람이 '로그인' 클릭
+            page.goto(COUPANG_HOME)
+            log("열린 크롬의 쿠팡 화면 오른쪽 위 '로그인'을 눌러 로그인해 주세요. "
+                "'자동 로그인' 체크 필수 (안 하면 크롬을 닫을 때 풀림). 최대 10분 대기")
         else:
             page.goto("https://nid.naver.com/nidlogin.login?url=https%3A%2F%2Fshopping.naver.com%2F")
             log("자동 수집 크롬에서 네이버에 로그인해 주세요 ('로그인 상태 유지' 체크). 최대 10분 대기")
@@ -249,15 +252,27 @@ def login(args):
         while time.time() < deadline:
             time.sleep(3)
             if coupang:
-                # 로그인하면 쿠팡 홈으로 돌아감 → 그때 화면 맨 위 '로그아웃'으로 확인
                 if "login.coupang.com" in (page.url or "") or not coupang_logged_in(page, wait=0):
                     continue
             elif not naver_logged_in(ctx):
                 continue
-            log("로그인 확인 → 이 프로필에 저장됨. 창을 닫습니다")
+            log("로그인 확인 → 창을 닫습니다")
             time.sleep(3)
-            return
-        log("로그인이 확인되지 않아 종료합니다")
+            done = True
+            break
+        else:
+            log("로그인이 확인되지 않아 종료합니다")
+    if coupang and done:
+        # 세션 쿠키면 크롬을 닫는 순간 풀림 → 껐다 켜서 실제로 남았는지 확인
+        log("저장됐는지 확인하려고 크롬을 다시 엽니다…")
+        with browser(args) as ctx:
+            page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            page.goto(COUPANG_HOME)
+            time.sleep(4)
+            if coupang_logged_in(page):
+                log("✅ 크롬을 다시 켜도 쿠팡 로그인 유지 — 자동 수집 준비 완료")
+            else:
+                log("⚠ 크롬을 다시 켜니 쿠팡 로그인이 풀렸습니다 → '자동 로그인'을 체크하고 이 명령을 다시 실행해 주세요")
 
 
 def scan(pf, page, kw, first, last, bot_wait, pf_seen, today, bag, early_stop=False, deep=False, deadline=None):

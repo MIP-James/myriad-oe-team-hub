@@ -239,11 +239,10 @@ class Smartstore(Platform):
 
 
 COUPANG_HOME = "https://www.coupang.com/"
-COUPANG_LOGIN = "https://login.coupang.com/login/login.pas?rtnUrl=https%3A%2F%2Fwww.coupang.com%2F"
 
 
 _COUPANG_LOGIN_JS = r"""
-() => !!document.querySelector("a[href*='logout' i], a[href*='logOut' i]")
+() => [...document.querySelectorAll("a[href*='logout' i]")].some(a => a.offsetParent !== null)  // 숨은 링크 제외
       || ((document.body && document.body.innerText) || '').includes('로그아웃')
 """
 
