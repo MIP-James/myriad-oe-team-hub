@@ -201,18 +201,18 @@ def open_search(platform, page, keyword, pageno, bot_wait):
     return st
 
 
-def dump_evidence(page, platform, out_dir):
-    """차단 판정 순간의 화면·주소·본문을 남겨, 진단하려고 사이트에 다시 접속하지 않게 한다."""
-    stem = Path(out_dir) / f"blocked_{platform.key}_{datetime.now():%Y-%m-%d_%H%M%S}"
+def dump_evidence(page, platform, out_dir, kind="blocked"):
+    """차단·건너뜀 판정 순간의 화면·주소·본문을 남겨, 진단하려고 사이트에 다시 접속하지 않게 한다."""
+    stem = Path(out_dir) / f"{kind}_{platform.key}_{datetime.now():%Y-%m-%d_%H%M%S}"
     stem.parent.mkdir(parents=True, exist_ok=True)
     try:
         page.screenshot(path=str(stem) + ".png", full_page=False)
         body = page.inner_text("body", timeout=5000)[:2000]
         stem.with_suffix(".txt").write_text(
             f"url: {page.url}\ntitle: {page.title()}\nready: {platform.ready(page)}\n\n{body}", encoding="utf-8")
-        log(f"차단 화면 기록: {stem}.png / .txt")
+        log(f"화면 기록: {stem}.png / .txt")
     except Exception as e:
-        log(f"차단 화면 기록 실패: {e}")
+        log(f"화면 기록 실패: {e}")
 
 
 def judge(item, kw, common_exclude, brands=None):
@@ -250,7 +250,7 @@ def login(args):
             time.sleep(3)
             if coupang:
                 # 로그인하면 쿠팡 홈으로 돌아감 → 그때 화면 맨 위 '로그아웃'으로 확인
-                if "login.coupang.com" in (page.url or "") or not coupang_logged_in(page):
+                if "login.coupang.com" in (page.url or "") or not coupang_logged_in(page, wait=0):
                     continue
             elif not naver_logged_in(ctx):
                 continue
@@ -376,6 +376,7 @@ def run(args):
                 skip = pf.prepare(page)
                 if skip:
                     log(f"⚠ {pf.name}: {skip} → 건너뜀")
+                    dump_evidence(page, pf, args.out, "skip")
                     summary.append({"platform": pf.name, "keyword": "-", "found": 0, "new": 0, "note": skip})
                     continue
                 for kw in keywords:
@@ -391,7 +392,8 @@ def run(args):
             finish("", cfg, args, rules, bag, summary, started, seen, deep)
 
         # ② 깊게 보기 — 지마켓·옥션, 오늘 차례 키워드만 pages+1 ~ 마지막 페이지
-        picks = deep.todays() if deep.enabled and not args.no_deep else []
+        # 깊게 보기 플랫폼(지마켓·옥션)이 이번 실행 대상에 없으면 생략 (예: --platforms coupang 시험)
+        picks = deep.todays() if deep.enabled and not args.no_deep and set(deep.platforms) & set(pf_keys) else []
         if picks:
             started, bag, summary = datetime.now(), bag_of(), []
             deadline = time.time() + deep.cfg["max_minutes"] * 60

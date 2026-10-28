@@ -242,12 +242,25 @@ COUPANG_HOME = "https://www.coupang.com/"
 COUPANG_LOGIN = "https://login.coupang.com/login/login.pas?rtnUrl=https%3A%2F%2Fwww.coupang.com%2F"
 
 
-def coupang_logged_in(page):
-    """쿠팡 화면 맨 위에 '로그아웃'이 보이면 로그인 상태 (로그인 쿠키 이름이 공개돼 있지 않아 화면으로 판정)."""
-    try:
-        return "로그아웃" in page.inner_text("body", timeout=5000)[:600]
-    except Exception:
-        return False
+_COUPANG_LOGIN_JS = r"""
+() => !!document.querySelector("a[href*='logout' i], a[href*='logOut' i]")
+      || ((document.body && document.body.innerText) || '').includes('로그아웃')
+"""
+
+
+def coupang_logged_in(page, wait=10):
+    """쿠팡 화면 어딘가에 로그아웃 링크/글자가 있으면 로그인 상태 (로그인 쿠키 이름이 공개돼 있지 않아 화면으로 판정).
+    상단 메뉴가 늦게 그려질 수 있어 최대 wait 초 동안 다시 봄. (10-28: 맨 위 600자만 보던 판정이 노트북에서 실패)"""
+    deadline = time.time() + wait
+    while True:
+        try:
+            if page.evaluate(_COUPANG_LOGIN_JS):
+                return True
+        except Exception:
+            pass
+        if time.time() >= deadline:
+            return False
+        time.sleep(2)
 
 
 class Coupang(Platform):
