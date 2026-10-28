@@ -217,6 +217,8 @@ def dump_evidence(page, platform, out_dir):
 
 def judge(item, kw, common_exclude, brands=None):
     """제외 사유(없으면 '')."""
+    if item.get("skip"):  # 플랫폼이 카드에서 바로 판정한 제외 (쿠팡 로켓 등)
+        return item["skip"]
     title = item["title"] or ""
     hit = brands.find(title, item.get("seller")) if brands else ""
     if hit:
@@ -231,19 +233,30 @@ def judge(item, kw, common_exclude, brands=None):
 
 
 def login(args):
-    """자동 수집 크롬을 네이버 로그인 화면으로 띄우고, 사람이 로그인하면 닫는다 (비밀번호는 다루지 않음)."""
-    from platforms import naver_logged_in
+    """자동 수집 크롬을 로그인 화면으로 띄우고, 사람이 로그인하면 닫는다 (비밀번호는 다루지 않음).
+    --login = 네이버(스마트스토어용), --login coupang = 쿠팡."""
+    from platforms import naver_logged_in, coupang_logged_in, COUPANG_HOME, COUPANG_LOGIN
+    coupang = args.login == "coupang"
     with browser(args) as ctx:
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
-        page.goto("https://nid.naver.com/nidlogin.login?url=https%3A%2F%2Fshopping.naver.com%2F")
-        log("자동 수집 크롬에서 네이버에 로그인해 주세요 ('로그인 상태 유지' 체크). 최대 10분 대기")
+        if coupang:
+            page.goto(COUPANG_LOGIN)
+            log("자동 수집 크롬에서 쿠팡에 로그인해 주세요 ('자동 로그인' 체크). 최대 10분 대기")
+        else:
+            page.goto("https://nid.naver.com/nidlogin.login?url=https%3A%2F%2Fshopping.naver.com%2F")
+            log("자동 수집 크롬에서 네이버에 로그인해 주세요 ('로그인 상태 유지' 체크). 최대 10분 대기")
         deadline = time.time() + 600
         while time.time() < deadline:
-            if naver_logged_in(ctx):
-                log("로그인 확인 → 이 프로필에 저장됨. 창을 닫습니다")
-                time.sleep(3)
-                return
             time.sleep(3)
+            if coupang:
+                # 로그인하면 쿠팡 홈으로 돌아감 → 그때 화면 맨 위 '로그아웃'으로 확인
+                if "login.coupang.com" in (page.url or "") or not coupang_logged_in(page):
+                    continue
+            elif not naver_logged_in(ctx):
+                continue
+            log("로그인 확인 → 이 프로필에 저장됨. 창을 닫습니다")
+            time.sleep(3)
+            return
         log("로그인이 확인되지 않아 종료합니다")
 
 
@@ -422,7 +435,7 @@ def run(args):
 def main():
     ap = argparse.ArgumentParser(description="자동 수집 실행기 (1단계)")
     ap.add_argument("--config", default=str(HERE / "keywords.local.json"))
-    ap.add_argument("--platforms", help="쉼표 구분: gmarket,auction,smartstore,11st")
+    ap.add_argument("--platforms", help="쉼표 구분: gmarket,auction,smartstore,11st,coupang")
     ap.add_argument("--pages", type=int, help="키워드당 페이지 수 (기본: 설정 파일 값)")
     ap.add_argument("--limit", type=int, help="앞에서부터 키워드 N개만 (시험용)")
     ap.add_argument("--bot-wait", type=float, default=30, help="봇 확인 대기 시간(분)")
@@ -434,7 +447,8 @@ def main():
                     help="브라우저 방식 (기본 uc = undetected-chromedriver)")
     ap.add_argument("--no-deep", action="store_true", help="깊게 보기(지마켓·옥션 끝 페이지까지) 생략")
     ap.add_argument("--deep-only", action="store_true", help="매일 수집은 건너뛰고 깊게 보기만 (시험용)")
-    ap.add_argument("--login", action="store_true", help="자동 수집 크롬에 네이버 로그인 (스마트스토어용, 1회)")
+    ap.add_argument("--login", nargs="?", const="naver", choices=["naver", "coupang"],
+                    help="자동 수집 크롬에 로그인 (1회): 생략 = 네이버(스마트스토어용), coupang = 쿠팡")
     args = ap.parse_args()
     login(args) if args.login else run(args)
 

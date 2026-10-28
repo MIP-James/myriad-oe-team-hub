@@ -32,9 +32,10 @@ _PLATFORM_ID = [
     ("smartstore.naver.com", "스마트스토어", re.compile(r"/products/(\d+)")),
     ("brand.naver.com", "스마트스토어", re.compile(r"/products/(\d+)")),
     ("11st.co.kr", "11번가", re.compile(r"/products/(\d+)")),
+    ("coupang.com", "쿠팡", re.compile(r"/v[pm]/products/(\d+)")),  # PC /vp, 모바일 /vm
 ]
 _BPM_PLATFORM = {"gmarket": "지마켓", "auction": "옥션", "smartstore": "스마트스토어", "naver": "스마트스토어",
-                 "11st": "11번가", "11번가": "11번가"}
+                 "11st": "11번가", "11번가": "11번가", "coupang": "쿠팡", "쿠팡": "쿠팡"}
 
 
 def platform_key(url):

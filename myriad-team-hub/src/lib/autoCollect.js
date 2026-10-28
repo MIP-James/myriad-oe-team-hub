@@ -16,7 +16,7 @@ export const TIERS = [
   { key: 'C', label: '참고' }
 ]
 
-export const PLATFORMS = ['지마켓', '옥션', '스마트스토어', '11번가']
+export const PLATFORMS = ['지마켓', '옥션', '스마트스토어', '11번가', '쿠팡']
 
 const COLS = 'id, platform, product_id, url, title, price, image, model_type, product_type, tier, score, status, review_match, bpm_registered, first_seen'
 

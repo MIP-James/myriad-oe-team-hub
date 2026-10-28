@@ -9,6 +9,9 @@
 - 11번가 sortCd=N 최신순 (NP 는 무시됨), 상단 광고·추천 약 9개는 정렬 무관
 - 스마트스토어(네이버 쇼핑): 로그인한 프로필 + 네이버 → 쇼핑 진입 + 네이버페이 탭(productSet=checkout).
   검색 첫 화면이 418 '접속 제한' 으로 와도 같은 주소를 다시 열면(주소창 엔터) 풀림. F5(reload)는 잘 안 풀림
+- 쿠팡 sorter=latestAsc 최신순, 60건/페이지 (2026-10-28). 로그인 안 하면 1페이지만 주고 2페이지부터
+  '검색결과가 없습니다' + '로그인하고 더 많은 상품을 확인해보세요' → 로그인한 프로필 필수. 목록엔 판매자명 없음.
+  한 페이지 60건 중 파란 로켓 14 / 판매자로켓 27 (맥세이프 투명 케이스 첫 페이지)
 """
 import random
 import re
@@ -34,7 +37,8 @@ _CARD_JS = r"""
     }
     const img = el.querySelector('img');
     const src = img ? (img.currentSrc || img.src || img.getAttribute('data-src') || img.getAttribute('data-original') || '') : '';
-    out.push({id, href: a.href, text: el.innerText || '', img: src.startsWith('data:') ? '' : src});
+    const badges = [...el.querySelectorAll('img')].map(i => i.getAttribute('src') || '').filter(s => /logo|badge/i.test(s));
+    out.push({id, href: a.href, text: el.innerText || '', img: src.startsWith('data:') ? '' : src, badges});
   }
   return out;
 }
@@ -120,7 +124,8 @@ class Platform:
         if ("잠시만 기다리십시오" in title or "Just a moment" in title or "봇 확인 절차" in body
                 or page.locator("iframe[src*='challenges.cloudflare.com']").count()):
             return "bot_check"
-        if any(s in body for s in ("접근이 차단", "비정상적인 접근", "Access Denied", "일시적으로 제한")):
+        if any(s in body for s in ("접근이 차단", "비정상적인 접근", "Access Denied", "일시적으로 제한",
+                                   "사용권한이 없습니다")):  # 쿠팡 차단 화면 (BPM Collector v0.68 실측)
             return "blocked"
         if any(s in body for s in ("검색결과가 없습니다", "검색 결과가 없습니다", "찾으시는 상품이 없습니다")):
             return "empty"
@@ -233,5 +238,58 @@ class Smartstore(Platform):
         return items
 
 
-PLATFORMS = {p.key: p for p in (Gmarket(), Auction(), Smartstore(), Elevenst())}
-ORDER = ["gmarket", "auction", "smartstore", "11st"]
+COUPANG_HOME = "https://www.coupang.com/"
+COUPANG_LOGIN = "https://login.coupang.com/login/login.pas?rtnUrl=https%3A%2F%2Fwww.coupang.com%2F"
+
+
+def coupang_logged_in(page):
+    """쿠팡 화면 맨 위에 '로그아웃'이 보이면 로그인 상태 (로그인 쿠키 이름이 공개돼 있지 않아 화면으로 판정)."""
+    try:
+        return "로그아웃" in page.inner_text("body", timeout=5000)[:600]
+    except Exception:
+        return False
+
+
+class Coupang(Platform):
+    """쿠팡 검색 (최신순). 로그인한 프로필로 쿠팡 홈 → 검색 순서로 진입 (로그인 안 하면 1페이지만 보임).
+    목록엔 판매자명이 없어 판매자 기반 판정(재침해자·리스팅 수)은 빠지고 상품명·이미지로만 등급."""
+    key, name = "coupang", "쿠팡"
+    link_sel = "li[class*='ProductUnit_productUnit'] a[href*='/vp/products/']"  # 하단 추천 위젯 제외
+    id_re = r"/vp/products/(\d+)"
+    referer = COUPANG_HOME
+
+    def prepare(self, page):
+        page.goto(COUPANG_HOME, wait_until="domcontentloaded", timeout=45000)
+        time.sleep(random.uniform(3, 6))
+        if self.state(page) == "blocked":
+            return "쿠팡 접속 차단 화면"
+        if not coupang_logged_in(page):
+            return "쿠팡 로그인 필요 (run_patrol.bat --login coupang)"
+        return ""
+
+    def search_url(self, keyword, page):
+        return (f"https://www.coupang.com/np/search?q={quote_plus(keyword)}"
+                f"&sorter=latestAsc&listSize=60&page={page}")
+
+    def item_url(self, item_id):
+        return f"https://www.coupang.com/vp/products/{item_id}"
+
+    def parse_card(self, card):
+        it = super().parse_card(card)
+        lines = [s for s in _lines(card["text"]) if s not in ("광고", "AD")]
+        it["title"] = lines[0] if lines else ""
+        # 같은 상품번호에 판매자가 여럿 → 검색에 뜬 판매자로 고정 (검색 추적 파라미터는 뺌)
+        item = re.search(r"[?&]itemId=(\d+)", card["href"])
+        vendor = re.search(r"[?&]vendorItemId=(\d+)", card["href"])
+        if item and vendor:
+            it["url"] += f"?itemId={item.group(1)}&vendorItemId={vendor.group(1)}"
+        # 쿠팡 리테일 로켓(파란 로켓·로켓직구·로켓프레시 등)은 신고 의미 없음 → 제외, 주황 '판매자로켓'만 수집 (사용자 결정 2026-10-28)
+        # 배지는 글자 없는 이미지: logo_rocket_filter = 파란 로켓, logo_rocket_merchant = 판매자로켓 (10-28 화면 확인)
+        rockets = [b for b in card.get("badges", []) if "rocket" in b.lower() and "merchant" not in b.lower()]
+        if rockets or any("로켓" in s and "판매자로켓" not in s.replace(" ", "") for s in lines[1:]):  # [0] = 상품명
+            it["skip"] = "쿠팡 로켓(리테일)"
+        return it
+
+
+PLATFORMS = {p.key: p for p in (Gmarket(), Auction(), Smartstore(), Elevenst(), Coupang())}
+ORDER = ["gmarket", "auction", "smartstore", "11st", "coupang"]

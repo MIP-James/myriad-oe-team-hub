@@ -190,7 +190,7 @@ def triage(rows, keywords_by_text, rules, seller_counts=None):
                 score += 30
                 reasons.append("재침해자")
             n = seller_counts.get((plat, seller), 0)
-            if rules["seller_min_listings"]:
+            if rules["seller_min_listings"] and seller:  # 판매자명 없는 카드(쿠팡 등)는 규모 판단 불가
                 if n >= rules["seller_min_listings"]:
                     score += 10
                     reasons.append(f"판매자 리스팅 {n}건")

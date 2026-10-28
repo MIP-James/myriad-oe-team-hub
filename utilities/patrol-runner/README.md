@@ -8,6 +8,7 @@
 2. Python 3.13 설치 (python.org, "Add python.exe to PATH" 체크) + Chrome 설치 확인
 3. `setup_patrol.bat` 실행 (playwright·openpyxl 설치)
 4. `run_patrol.bat --login` → 뜬 크롬에서 네이버 로그인 (**로그인 상태 유지** 체크)
+   `run_patrol.bat --login coupang` → 쿠팡 로그인 (**자동 로그인** 체크) — 로그인 안 하면 쿠팡은 1페이지만 보여 줌
 5. 시험: `run_patrol.bat --limit 2 --pages 1 --dry` → 스마트스토어: `run_patrol.bat --platforms smartstore --limit 2 --pages 2 --dry`
 - 자동 수집 프로필·본 상품 기록은 PC 마다 따로 → 노트북 첫 자동 수집은 전부 "처음 본 상품"
 
@@ -26,7 +27,8 @@ run_patrol.bat --platforms auction --limit 2 --pages 1 --dry   시험
 ```
 | 옵션 | 뜻 |
 |---|---|
-| `--platforms` | `gmarket,auction,smartstore,11st` (기본 = 설정 파일 순서) |
+| `--platforms` | `gmarket,auction,smartstore,11st,coupang` (기본 = 설정 파일 순서) |
+| `--login [coupang]` | 자동 수집 크롬에 로그인 (생략 = 네이버) |
 | `--pages` | 키워드당 페이지 수 (기본 = 설정 파일 `pages`) |
 | `--limit` | 앞에서부터 키워드 N개만 |
 | `--bot-wait` | 봇 확인 대기 분 (기본 30) |
@@ -88,3 +90,4 @@ run_patrol.bat --platforms auction --limit 2 --pages 1 --dry   시험
 | 옥션 | 동작 확인 (100건/페이지, 상품명·가격·판매자) |
 | 11번가 | 동작 확인 (84건/페이지, 상단 광고·추천 자동 제외) |
 | 스마트스토어 | 동작 확인 (키워드 2×2페이지 139건, 누락 0). 네이버 로그인 필요(`run_patrol.bat --login`, 자동 수집 크롬에서 사람이 직접 로그인 + 로그인 상태 유지). 검색 = 네이버페이 탭(`productSet=checkout`) 등록일순, 상품 데이터는 페이지의 `__NEXT_DATA__` 에서 읽음. 검색 화면이 거의 매번 418 '접속 제한'으로 먼저 오지만 **같은 주소를 다시 열면(주소창 엔터) 1회에 풀림** — F5 는 잘 안 풀림. 3회 다시 열어도 안 풀리면 차단으로 보고 `output\blocked_*.png/.txt` 남김 |
+| 쿠팡 | 2026-10-28 추가, **노트북 첫 실행으로 확인 필요**. 최신순(`sorter=latestAsc`) 60건/페이지, 로그인 필수(비로그인은 2페이지부터 '검색결과가 없습니다'). 목록엔 판매자명 없음 → 판매자 기반 판정 빠짐. **파란 로켓·로켓직구 등 리테일 로켓 제외, 주황 '판매자로켓'만 수집**(배지 이미지 `logo_rocket_filter` / `logo_rocket_merchant`). 차단 화면 '사용권한이 없습니다' → 그날 쿠팡 중단 + 증거 저장. 깊게 보기 대상 아님 |
