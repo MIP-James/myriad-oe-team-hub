@@ -15,6 +15,29 @@ import { useAuth } from '../contexts/AuthContext'
 
 const PAGE = 120
 
+// 쿠팡은 접속 확인 쿠키가 없으면 상품 주소로 바로 들어갈 때 차단 화면(사용권한이 없습니다)을 띄움.
+// 쿠팡 홈을 한 번 열면 쿠키가 생겨 그 뒤로는 바로 열림 (사용자 실측 2026-10-28) → 새 탭에서 홈 먼저, 잠시 뒤 상품으로.
+const COUPANG_WARM_KEY = 'autoCollect.coupangWarmAt'
+const COUPANG_WARM_MS = 20 * 60 * 1000 // 이 시간 안에 홈을 거쳤으면 바로 상품으로
+
+function openCoupang(url) {
+  let warmAt = 0
+  try { warmAt = Number(localStorage.getItem(COUPANG_WARM_KEY)) || 0 } catch { /* 저장소 막힘 → 매번 홈 경유 */ }
+  if (Date.now() - warmAt < COUPANG_WARM_MS) {
+    window.open(url, '_blank', 'noopener')
+    return
+  }
+  const win = window.open('https://www.coupang.com/', '_blank')
+  if (!win) { // 팝업 차단 → 그냥 상품으로
+    window.open(url, '_blank', 'noopener')
+    return
+  }
+  try { localStorage.setItem(COUPANG_WARM_KEY, String(Date.now())) } catch { /* 무시 */ }
+  setTimeout(() => {
+    try { win.location.href = url } catch { /* 탭이 닫힘 */ }
+  }, 3500)
+}
+
 export default function AutoCollect() {
   const { user } = useAuth()
   const [dates, setDates] = useState([])
@@ -346,9 +369,14 @@ function Card({ it, selected, onToggle, onReview, onExclude }) {
         <a
           href={it.url}
           target="_blank"
-          // 쿠팡은 Referer 없는 외부 진입을 차단 화면(사용권한이 없습니다)으로 막음 → 일반 링크처럼 출처(origin)를 보냄
           rel={it.platform === '쿠팡' ? 'noopener' : 'noreferrer'}
-          onClick={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation()
+            if (it.platform === '쿠팡' && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+              e.preventDefault()
+              openCoupang(it.url)
+            }
+          }}
           className="text-[13px] leading-snug text-slate-800 hover:underline line-clamp-2 min-h-[2.4em]"
           title={it.title}
         >
