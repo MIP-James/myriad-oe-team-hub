@@ -303,8 +303,15 @@ class Coupang(Platform):
         # 배지는 글자 없는 이미지: logo_rocket_filter = 파란 로켓, logo_rocket_merchant = 판매자로켓 (10-28 화면 확인)
         rockets = [b for b in card.get("badges", []) if "rocket" in b.lower() and "merchant" not in b.lower()]
         names = [re.sub(r"\.(png|svg|webp).*$", "", b.strip().split("/")[-1]) for b in card.get("badges", []) if "rocket" in b.lower()]
+        # 배지가 안 뜨는 직매입 카드(품절 등)는 썸네일 경로로 판정: retail·rs_quotation_api = 쿠팡 직매입 사진
+        # (10-28 실행 2,890건: 파란 로켓 371건 중 364건이 이 경로, 판매자로켓 1,000여 건은 0건 → 배지 없는 직매입 650여 건이 새던 원인)
+        retail = (bool(re.search(r"/image/(retail|rs_quotation_api)/", it["image"]))
+                  and not any("merchant" in n for n in names))  # 판매자로켓 배지가 보이면 그쪽이 우선
+        if retail and not names:
+            names = ["직매입 사진"]
         it["badge"] = ", ".join(dict.fromkeys(names))  # 엑셀 '배송 배지' 열 — 로켓 판정 확인용
-        if rockets or any("로켓" in s and "판매자로켓" not in s.replace(" ", "") for s in lines[1:]):  # [0] = 상품명
+        if (rockets or retail
+                or any("로켓" in s and "판매자로켓" not in s.replace(" ", "") for s in lines[1:])):  # [0] = 상품명
             it["skip"] = "쿠팡 로켓(리테일)"
         return it
 
