@@ -7,6 +7,8 @@ goto / reload / title / url / inner_text / locator().count() / evaluate / mouse.
 import time
 from contextlib import contextmanager
 
+_GRACEFUL = True  # 종료 때 크롬에 정상 종료 요청 (시험에서만 끔)
+
 
 def detect_chrome_major():
     """레지스트리의 설치 Chrome major 버전 (Enforcement Tools 와 같은 방식). 실패 시 None."""
@@ -127,7 +129,15 @@ def open_uc(profile_dir):
     try:
         yield page.context
     finally:
+        # quit() 만 쓰면 UC 가 크롬 프로세스를 강제 종료 → 크롬이 아직 디스크에 안 쓴 최근 쿠키가 사라짐
+        # (2026-10-28 쿠팡 '자동 로그인' 직후 종료하자 다음 실행에서 로그아웃) → 크롬에 정상 종료를 먼저 요청
+        if _GRACEFUL:
+            try:
+                driver.execute_cdp_cmd("Browser.close", {})
+                time.sleep(3)
+            except Exception:
+                pass
         try:
-            driver.quit()  # 정상 종료 → 로그인 쿠키 유지
+            driver.quit()
         except Exception:
             pass
