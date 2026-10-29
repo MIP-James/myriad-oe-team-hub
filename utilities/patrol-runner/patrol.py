@@ -109,6 +109,37 @@ def log(msg):
     print(f"[{datetime.now():%H:%M:%S}] {msg}", flush=True)
 
 
+class Tee:
+    """콘솔과 로그 파일에 같이 씀 — 예약 실행 창이 비어 멈춘 건지 알 수 없던 문제 (10-29)."""
+    def __init__(self, stream, f):
+        self.stream, self.f = stream, f
+
+    def write(self, s):
+        try:
+            self.stream.write(s)
+        except Exception:  # 콘솔이 없거나 인코딩 문제여도 파일 기록은 계속
+            pass
+        self.f.write(s)
+        return len(s)
+
+    def flush(self):
+        for x in (self.stream, self.f):
+            try:
+                x.flush()
+            except Exception:
+                pass
+
+    def __getattr__(self, name):
+        return getattr(self.stream, name)
+
+
+def tee_to(path):
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    f = open(path, "a", encoding="utf-8", buffering=1)
+    f.write(f"==== {datetime.now():%Y-%m-%d %H:%M:%S} ====\n")
+    sys.stdout, sys.stderr = Tee(sys.stdout, f), Tee(sys.stderr, f)
+
+
 def human_pause(lo=3.0, hi=7.0):
     time.sleep(random.uniform(lo, hi))
 
@@ -337,12 +368,12 @@ def finish(label, cfg, args, rules, bag, summary, started, seen, deep):
     db = imgsim.RefDB.load() if new_rows else None
     if db:
         log(f"썸네일 {len(new_rows)}건 ↔ 위반 확정 이미지 {len(db.meta):,}건 비교 중…")
-        imgsim.annotate(new_rows, db)
+        imgsim.annotate(new_rows, db, log=log)
     if new_rows and camera.CLF.exists():
         try:
             n = sum(1 for r in new_rows if r.get("model_type") == "MagSafe iPhone case")
             log(f"맥세이프 케이스 {n}건 카메라 홀 판정 중…")
-            camera.annotate(new_rows, imgsim.fetch_bytes)
+            camera.annotate(new_rows, imgsim.fetch_bytes, log=log)
         except Exception as e:  # 모델·torch 문제여도 자동 수집 결과는 저장
             log(f"⚠ 카메라 홀 판정 건너뜀: {e}")
     if cfg.get("triage") and new_rows:
@@ -494,7 +525,10 @@ def main():
     ap.add_argument("--deep-only", action="store_true", help="매일 수집은 건너뛰고 깊게 보기만 (시험용)")
     ap.add_argument("--login", nargs="?", const="naver", choices=["naver", "coupang"],
                     help="자동 수집 크롬에 로그인 (1회): 생략 = 네이버(스마트스토어용), coupang = 쿠팡")
+    ap.add_argument("--log", help="콘솔 출력을 이 파일에도 이어 씀 (예약 실행용)")
     args = ap.parse_args()
+    if args.log:
+        tee_to(args.log)
     login(args) if args.login else run(args)
 
 

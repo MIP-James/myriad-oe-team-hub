@@ -12,6 +12,7 @@
 """
 import io
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import numpy as np
@@ -58,12 +59,15 @@ def _onnx():
     return _SESSION
 
 
-def embed(images, batch=16):
+def embed(images, batch=16, log=None):
     """PIL 이미지 목록 → (N, 768) 특징 = CLS + 패치 평균 (L2 정규화). ONNX 파일이 있으면 onnxruntime, 없으면 torch."""
     sess = _onnx()
     if sess is not None:
-        out = [sess.run(None, {"x": np.stack([_prep(im) for im in images[i:i + batch]]).astype(np.float32)})[0]
-               for i in range(0, len(images), batch)]
+        out = []
+        for i in range(0, len(images), batch):
+            out.append(sess.run(None, {"x": np.stack([_prep(im) for im in images[i:i + batch]]).astype(np.float32)})[0])
+            if log and (i // batch + 1) % 32 == 0:  # 512장마다
+                log(f"  카메라 홀 판정 {i + batch:,}/{len(images):,}")
         f = np.concatenate(out) if out else np.zeros((0, 768), np.float32)
         return f / np.linalg.norm(f, axis=1, keepdims=True).clip(1e-6)
     import torch
@@ -106,15 +110,20 @@ class Classifier:
         return 1 / (1 + np.exp(-(feats @ self.w4 + self.b4)))
 
 
-def annotate(rows, fetch_bytes, clf=None):
+def annotate(rows, fetch_bytes, clf=None, log=None, workers=8):
     """맥세이프 케이스 행에 cam_judge(판단 가능 확률)·cam_square(정사각 확률)를 채운다. 이미지 못 받으면 None."""
     clf = clf or Classifier.load()
     targets = [r for r in rows if r.get("model_type") in ("MagSafe iPhone case", "Apple Watch Band") and r.get("image")]
     if not clf or not targets:
         return rows
     imgs, keep = [], []
-    for r in targets:
-        data = fetch_bytes(r["image"])
+    with ThreadPoolExecutor(workers) as ex:  # 한 장씩 받으면 수천 건에 수십 분 (10-29)
+        datas = []
+        for data in ex.map(lambda r: fetch_bytes(r["image"]), targets):
+            datas.append(data)
+            if log and len(datas) % 1000 == 0:
+                log(f"  사진 받기 {len(datas):,}/{len(targets):,}")
+    for r, data in zip(targets, datas):
         if data:
             try:
                 imgs.append(Image.open(io.BytesIO(data)))
@@ -124,7 +133,7 @@ def annotate(rows, fetch_bytes, clf=None):
                 pass
         r["cam_judge"] = r["cam_square"] = r["cam_clear"] = r["band_std"] = None
     if imgs:
-        feats = embed(imgs)
+        feats = embed(imgs, log=log)
         pj, ps, pc = clf.predict(feats)
         pb = clf.p_band(feats)
         for r, a, b, c, d in zip(keep, pj, ps, pc, pb):

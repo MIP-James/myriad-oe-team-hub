@@ -118,10 +118,14 @@ def fetch_hash(url, timeout=10):
         return None
 
 
-def annotate(rows, db, workers=8):
+def annotate(rows, db, workers=8, log=None):
     """rows 에 img_dist / img_model 을 채운다 (이미지 못 받으면 None)."""
+    hashes = []
     with ThreadPoolExecutor(workers) as ex:
-        hashes = list(ex.map(lambda r: fetch_hash(r.get("image")), rows))
+        for hv in ex.map(lambda r: fetch_hash(r.get("image")), rows):
+            hashes.append(hv)
+            if log and len(hashes) % 1000 == 0:
+                log(f"  썸네일 비교 {len(hashes):,}/{len(rows):,}")
     for r, hv in zip(rows, hashes):
         if hv is None:
             r["img_dist"], r["img_model"], r["img_hash"] = None, "", None
