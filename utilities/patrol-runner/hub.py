@@ -6,7 +6,9 @@
 review_hashes('상세 확인 필요' 사진 지문, mig 041)도 저장 → 같은 사진은 빼지 않고 review_match 로 표시(허브 빨간 테두리).
 handled(판정한 상품번호: 제외·상세 확인·BPM 전송 완료)는 누적 저장 → 판정 없이 KEEP_DAYS 가 지나 허브에서 지워진
 상품만 다시 올림 (patrol.scan). 'BPM 전송 완료' 행은 허브에서 7일 뒤 지워지므로 노트북이 계속 기억해야 함.
-세 목록은 수집 시작 전에 fetch_judged(GET)로 먼저 받음 → 어제 판정이 오늘 등급에 바로 반영 (업로드 응답만 쓰면 하루 늦음).
+sent_hashes('BPM 전송 완료' 사진 지문)는 누적 저장 → 이 사진과 같은 사진은 '제외' 사진과 겹쳐도 자동 제외 안 함
+(허브의 전송 완료 행은 7일 뒤 지워지므로 노트북이 계속 기억, 2026-10-29).
+목록은 수집 시작 전에 fetch_judged(GET)로 먼저 받음 → 어제 판정이 오늘 등급에 바로 반영 (업로드 응답만 쓰면 하루 늦음).
 """
 import json
 import os
@@ -18,6 +20,7 @@ HERE = Path(__file__).resolve().parent
 EXCLUDED = HERE / "excluded_hashes.local.json"
 REVIEW = HERE / "review_hashes.local.json"
 HANDLED = Path(os.environ.get("LOCALAPPDATA", HERE)) / "MyriadPatrol" / "handled.json"  # {플랫폼명: [상품번호]}
+SENT = HANDLED.parent / "sent_hashes.json"  # BPM 전송 완료 사진 지문 (누적)
 KEEP_DAYS = 7  # 허브 보관 기간 (functions/api/auto-collect-upload.js 의 KEEP_DAYS 와 같게)
 DEFAULT_URL = "https://myriad-oe-team-hub.pages.dev"
 _LAUNCHER_CONFIGS = [
@@ -88,7 +91,7 @@ def upload(cfg, rows, summary, started, finished, registered, product_type_of, l
     handled = _save_judged(res)
     log(f"허브 업로드: {res.get('upserted', 0)}건 (BPM 등록 표시 {res.get('registered', 0)}건, "
         f"제외 사진 {len(res.get('excluded_hashes') or [])}개 / 상세 확인 사진 {len(res.get('review_hashes') or [])}개 / "
-        f"판정한 상품 누적 {handled:,}건)")
+        f"BPM 전송 사진 누적 {len(load_sent()):,}개 / 판정한 상품 누적 {handled:,}건)")
     return res
 
 
@@ -104,7 +107,8 @@ def fetch_judged(cfg, log=print):
         return None
     handled = _save_judged(res)
     log(f"허브 최신 판정 받음: 제외 사진 {len(res.get('excluded_hashes') or [])}개 / "
-        f"상세 확인 사진 {len(res.get('review_hashes') or [])}개 / 판정한 상품 누적 {handled:,}건")
+        f"상세 확인 사진 {len(res.get('review_hashes') or [])}개 / BPM 전송 사진 누적 {len(load_sent()):,}개 / "
+        f"판정한 상품 누적 {handled:,}건")
     return res
 
 
@@ -127,16 +131,26 @@ def _call(token, url, what, log, body=None):
 
 
 def _save_judged(res):
-    """응답의 사진 지문 2종은 덮어쓰고, 판정한 상품번호는 누적 → 누적 건수"""
+    """응답의 제외·상세 확인 사진 지문은 덮어쓰고, BPM 전송 사진 지문·판정한 상품번호는 누적 → 판정 누적 건수"""
     EXCLUDED.write_text(json.dumps(res.get("excluded_hashes") or []), encoding="utf-8")
     REVIEW.write_text(json.dumps(res.get("review_hashes") or []), encoding="utf-8")
+    HANDLED.parent.mkdir(parents=True, exist_ok=True)
+    sent = set(_read_json(SENT, []))
+    sent.update(h for h in res.get("sent_hashes") or [] if h)
+    SENT.write_text(json.dumps(sorted(sent)), encoding="utf-8")
     handled = load_handled()
     for h in res.get("handled") or []:
         if h.get("platform") and h.get("product_id"):
             handled.setdefault(h["platform"], set()).add(str(h["product_id"]))
-    HANDLED.parent.mkdir(parents=True, exist_ok=True)
     HANDLED.write_text(json.dumps({k: sorted(v) for k, v in handled.items()}, ensure_ascii=False), encoding="utf-8")
     return sum(len(v) for v in handled.values())
+
+
+def _read_json(path, default):
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return default
 
 
 def _load_hashes(path):
@@ -162,3 +176,8 @@ def load_excluded():
 def load_review():
     """실무자 '상세 확인 필요' 사진 지문 → [(pHash, dHash)]"""
     return _load_hashes(REVIEW)
+
+
+def load_sent():
+    """실무자 'BPM 전송 완료' 사진 지문(누적) → [(pHash, dHash)]"""
+    return _load_hashes(SENT)

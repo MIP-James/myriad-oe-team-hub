@@ -10,15 +10,17 @@
  *     registered: [{ platform, product_id }]   // 예전에 올린 것 중 BPM 에 등록된 것
  *   }
  *
- * 응답: { run_id, upserted, registered, excluded_hashes: [img_hash...], review_hashes: [img_hash...],
+ * 응답: { run_id, upserted, registered, excluded_hashes: [img_hash...], review_hashes: [img_hash...], sent_hashes,
  *         handled: [{ platform, product_id }] }
  *   excluded_hashes = 실무자가 '제외'한 상품의 사진 지문 → 실행기가 다음 자동 수집에서 같은 사진을 자동 제외.
  *                     같은 사진이 'BPM 전송 완료'·'상세 확인'에도 있으면 빠짐 (전송·상세 확인이 우선).
+ *   sent_hashes     = 'BPM 전송 완료' 사진 지문 → 실행기가 누적. 이 사진과 거의 같은(거리 ≤4) 제외 사진은 자동 제외 안 함
+ *                     (위 excluded_hashes 정리는 완전히 같은 지문만 — 거리 비교는 CPU 10ms 한도 때문에 실행기 몫, 2026-10-29).
  *   review_hashes   = '상세 확인 필요'로 넘긴 사진 지문 → 다음 자동 수집에서 같은 사진은 빼지 않고 review_match 표시 (mig 041).
  *   handled         = 실무자가 판정한(제외·상세 확인·BPM 전송 완료) 상품번호 → 실행기가 로컬에 누적.
  *                     판정 없이 보관 기간이 지나 지워진 상품은 실행기가 다시 올려 허브에 다시 보이게 함 (2026-10-28).
  *
- *   GET /api/auto-collect-upload  (같은 토큰) → { excluded_hashes, review_hashes, handled } 만 돌려줌.
+ *   GET /api/auto-collect-upload  (같은 토큰) → { excluded_hashes, review_hashes, sent_hashes, handled } 만 돌려줌.
  *     실행기가 수집 '시작 전'에 최신 판정을 받아 감 — 업로드 응답만 쓰면 어제 판정이 오늘 등급에 안 들어가고
  *     하루 늦게 반영됨 (2026-10-28).
  *
@@ -125,7 +127,7 @@ export async function onRequestPost(context) {
   }
 }
 
-/** 실무자 판정 → { excluded_hashes, review_hashes, handled } (GET·POST 공통) */
+/** 실무자 판정 → { excluded_hashes, review_hashes, sent_hashes, handled } (GET·POST 공통) */
 async function judgedPayload(adminSb) {
   const marked = await fetchHandled(adminSb)
   const hashesOf = (st) => [...new Set(marked.filter((r) => r.status === st && r.img_hash).map((r) => r.img_hash))]
@@ -135,6 +137,7 @@ async function judgedPayload(adminSb) {
   return {
     excluded_hashes: hashesOf('excluded').filter((h) => !keep.has(h)),
     review_hashes: hashesOf('review'),
+    sent_hashes: hashesOf('sent'),
     handled: marked.map((r) => ({ platform: r.platform, product_id: r.product_id }))
   }
 }
