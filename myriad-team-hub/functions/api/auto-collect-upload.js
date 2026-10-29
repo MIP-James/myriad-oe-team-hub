@@ -104,7 +104,7 @@ export async function onRequestPost(context) {
       if (p && id) (byPlatform[p] ||= []).push(id)
     }
     for (const [platform, ids] of Object.entries(byPlatform)) {
-      for (let i = 0; i < ids.length; i += 200) {
+      for (let i = 0; i < ids.length; i += CHUNK) {
         const { data, error } = await adminSb
           .from('patrol_items')
           .update({ bpm_registered: true, bpm_checked_at: new Date().toISOString() })
