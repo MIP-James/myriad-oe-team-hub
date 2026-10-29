@@ -3,6 +3,7 @@
  *
  * 실무자에겐 썸네일·상품명·가격만 (판단 근거·점수는 화면에 안 보임 — 사용자 결정 2026-10-27).
  * 카드 클릭 = 선택 → '선택 URL 복사' → BPM Collector 대량 캡처(URL 목록) / BPM 작업 추가(URL)에 붙여넣기.
+ * 선택한 카드는 '일괄 상세 확인' / '일괄 제외' 로 한 번에 처리 가능 (2026-10-29).
  * BPM 판매정보 등록은 그 재수집이 담당 (스크린샷·상세 정보가 필요하므로 자동 수집에서 하지 않음).
  * '제외' = 같은 사진은 다음 자동 수집부터 자동으로 빠짐 (아예 필요 없는 것만).
  * '상세 확인' = 지금 목록에선 빠지지만, 같은 사진이 다음에 다시 수집되면 빨간 테두리로 표시 (mig 041).
@@ -58,6 +59,7 @@ export default function AutoCollect() {
   const [copiedIds, setCopiedIds] = useState(() => new Set()) // 마지막으로 URL 복사한 카드 → 'BPM 전송 완료' 대상
   const [undo, setUndo] = useState(null) // { entries: [{ it, index }], status, tier } — 방금 처리한 것 되돌리기
   const undoTimer = useRef(null)
+  const [marking, setMarking] = useState(false) // 일괄 처리 중 — 중복 클릭 방지
 
   const filters = useMemo(
     () => ({ date, tier, platform, productType, modelType, hideRegistered }),
@@ -142,6 +144,16 @@ export default function AutoCollect() {
     }
   }
 
+  async function markSelected(status) {
+    if (marking) return
+    setMarking(true)
+    try {
+      await mark(items.filter((it) => selected.has(it.id)), status)
+    } finally {
+      setMarking(false)
+    }
+  }
+
   async function revert() {
     const u = undo
     if (!u) return
@@ -181,6 +193,7 @@ export default function AutoCollect() {
       <p className="text-sm text-slate-500 mb-5">
         카드를 눌러 고른 뒤 <b>선택 URL 복사</b> → BPM Collector 대량 캡처 또는 BPM 작업 추가(URL)에 붙여넣으세요.
         상품명을 누르면 판매 페이지가 새 창으로 열립니다.
+        여러 장을 고른 뒤 <b>일괄 상세 확인</b> / <b>일괄 제외</b>로 한 번에 처리할 수도 있습니다.
       </p>
       <ul className="text-sm text-slate-500 mb-5 -mt-3 space-y-0.5">
         <li>
@@ -263,6 +276,34 @@ export default function AutoCollect() {
             </button>
           </div>
 
+          {selected.size > 0 && (
+            <div className="flex items-center gap-2 mb-4 -mt-1 flex-wrap justify-end">
+              <span className="text-sm text-slate-500 mr-1">선택한 {selected.size}건을</span>
+              <button
+                onClick={() => markSelected('review')}
+                disabled={marking}
+                title="목록에서 빼되, 같은 사진이 다음에 다시 수집되면 빨간 테두리로 표시"
+                className="text-sm px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 flex items-center gap-1.5 disabled:opacity-40"
+              >
+                <Eye size={15} /> 일괄 상세 확인
+              </button>
+              <button
+                onClick={() => markSelected('excluded')}
+                disabled={marking}
+                title="아예 필요 없는 건 — 같은 사진은 다음 자동 수집부터 자동으로 빠짐"
+                className="text-sm px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 flex items-center gap-1.5 disabled:opacity-40"
+              >
+                <X size={15} /> 일괄 제외
+              </button>
+              <button
+                onClick={() => setSelected(new Set())}
+                className="text-sm px-2.5 py-1.5 rounded-lg text-slate-400 hover:text-slate-600"
+              >
+                선택 해제
+              </button>
+            </div>
+          )}
+
           {loading ? (
             <div className="py-16 flex justify-center text-slate-400"><Loader2 className="animate-spin" /></div>
           ) : items.length === 0 ? (
@@ -299,7 +340,9 @@ export default function AutoCollect() {
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-slate-900 text-white text-sm rounded-xl shadow-lg pl-4 pr-2 py-2 flex items-center gap-3">
           <span>
             {undo.status === 'sent' ? `BPM 전송 완료 ${undo.entries.length}건을 목록에서 뺐습니다`
-              : undo.status === 'review' ? '상세 확인으로 넘겼습니다' : '제외했습니다'}
+              : undo.status === 'review'
+                ? `${undo.entries.length > 1 ? `${undo.entries.length}건을 ` : ''}상세 확인으로 넘겼습니다`
+                : `${undo.entries.length > 1 ? `${undo.entries.length}건을 ` : ''}제외했습니다`}
           </span>
           <button onClick={revert} className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 flex items-center gap-1.5">
             <Undo2 size={14} /> 되돌리기
