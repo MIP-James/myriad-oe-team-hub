@@ -35,7 +35,8 @@ import { createClient } from '@supabase/supabase-js'
 
 const TIERS = new Set(['A', 'B', 'C', 'X'])
 const MAX_ITEMS = 20000
-const CHUNK = 500
+const CHUNK = 500 // .in() 목록 — 주소 길이 제한
+const UPSERT_CHUNK = 1000 // 저장은 본문으로 가므로 크게 → Cloudflare 무료 한도(요청당 외부 호출 50회) 여유 (2026-10-29)
 const KEEP_DAYS = 7
 
 export async function onRequestGet(context) {
@@ -87,11 +88,11 @@ export async function onRequestPost(context) {
     // 같은 (플랫폼, 상품번호)가 한 번에 두 번 오면 upsert 가 실패 → 마지막 것만
     const uniq = new Map(items.map((it) => [it.platform + '\u0000' + it.product_id, it]))
     const rows = [...uniq.values()]
-    for (let i = 0; i < rows.length; i += CHUNK) {
+    for (let i = 0; i < rows.length; i += UPSERT_CHUNK) {
       // status / first_seen / excluded_* 는 보내지 않음 → 이미 있던 행의 제외 처리·처음 본 날 유지
       const { error } = await adminSb
         .from('patrol_items')
-        .upsert(rows.slice(i, i + CHUNK), { onConflict: 'platform,product_id' })
+        .upsert(rows.slice(i, i + UPSERT_CHUNK), { onConflict: 'platform,product_id' })
       if (error) return json({ error: 'patrol_items 저장 실패: ' + error.message, run_id: runRow.id }, 500)
     }
 
