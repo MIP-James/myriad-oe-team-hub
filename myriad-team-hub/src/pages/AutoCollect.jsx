@@ -274,35 +274,23 @@ export default function AutoCollect() {
             >
               <Send size={15} /> BPM 전송 완료{copiedIds.size ? ` (${copiedIds.size})` : ''}
             </button>
+            <button
+              onClick={() => markSelected('review')}
+              disabled={!selected.size || marking}
+              title="선택한 카드를 목록에서 빼되, 같은 사진이 다음에 다시 수집되면 빨간 테두리로 표시"
+              className="text-sm px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 flex items-center gap-1.5 disabled:opacity-40"
+            >
+              <Eye size={15} /> 일괄 상세 확인{selected.size ? ` (${selected.size})` : ''}
+            </button>
+            <button
+              onClick={() => markSelected('excluded')}
+              disabled={!selected.size || marking}
+              title="선택한 카드 중 아예 필요 없는 건 — 같은 사진은 다음 자동 수집부터 자동으로 빠짐"
+              className="text-sm px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 flex items-center gap-1.5 disabled:opacity-40"
+            >
+              <X size={15} /> 일괄 제외{selected.size ? ` (${selected.size})` : ''}
+            </button>
           </div>
-
-          {selected.size > 0 && (
-            <div className="flex items-center gap-2 mb-4 -mt-1 flex-wrap justify-end">
-              <span className="text-sm text-slate-500 mr-1">선택한 {selected.size}건을</span>
-              <button
-                onClick={() => markSelected('review')}
-                disabled={marking}
-                title="목록에서 빼되, 같은 사진이 다음에 다시 수집되면 빨간 테두리로 표시"
-                className="text-sm px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 flex items-center gap-1.5 disabled:opacity-40"
-              >
-                <Eye size={15} /> 일괄 상세 확인
-              </button>
-              <button
-                onClick={() => markSelected('excluded')}
-                disabled={marking}
-                title="아예 필요 없는 건 — 같은 사진은 다음 자동 수집부터 자동으로 빠짐"
-                className="text-sm px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 flex items-center gap-1.5 disabled:opacity-40"
-              >
-                <X size={15} /> 일괄 제외
-              </button>
-              <button
-                onClick={() => setSelected(new Set())}
-                className="text-sm px-2.5 py-1.5 rounded-lg text-slate-400 hover:text-slate-600"
-              >
-                선택 해제
-              </button>
-            </div>
-          )}
 
           {loading ? (
             <div className="py-16 flex justify-center text-slate-400"><Loader2 className="animate-spin" /></div>
