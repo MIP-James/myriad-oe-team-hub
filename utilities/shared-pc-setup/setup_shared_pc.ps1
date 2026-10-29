@@ -155,7 +155,12 @@ if (Ask-YesNo '  Install / update the agent now?') {
     icacls $root /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' | Out-Null
 
     $action    = New-ScheduledTaskAction -Execute (Join-Path $bin 'MyriadLauncher.exe') -Argument '--shared-pc-agent' -WorkingDirectory $bin
-    $trigger   = New-ScheduledTaskTrigger -AtStartup
+    # boot + every 5 min: if the agent died (no log, RestartCount does not cover it) it comes back.
+    # MultipleInstances defaults to IgnoreNew, so a running agent is left alone.
+    $trigger   = @(
+        (New-ScheduledTaskTrigger -AtStartup),
+        (New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 5))
+    )
     $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
     $settings  = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
                    -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -StartWhenAvailable
