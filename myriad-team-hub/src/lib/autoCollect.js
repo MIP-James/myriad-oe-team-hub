@@ -18,7 +18,7 @@ export const TIERS = [
 
 export const PLATFORMS = ['지마켓', '옥션', '스마트스토어', '11번가', '쿠팡']
 
-const COLS = 'id, platform, product_id, url, title, price, image, model_type, product_type, tier, score, status, review_match, bpm_registered, first_seen'
+const COLS = 'id, platform, product_id, url, title, price, seller, image, model_type, product_type, tier, score, status, review_match, bpm_registered, first_seen'
 
 function applyFilters(q, f) {
   q = q.eq('first_seen', f.date).eq('status', 'new')
@@ -93,6 +93,17 @@ export async function listItems(f, { offset = 0, limit = 120 } = {}) {
     .range(offset, offset + limit - 1)
   if (error) throw error
   return data ?? []
+}
+
+/** 판매자별 보기용 — 현재 필터의 상품 전부 (1000건씩 끊어 받음) */
+export async function listAllItems(f) {
+  const out = []
+  for (let offset = 0; offset < 50000; offset += 1000) {
+    const rows = await listItems(f, { offset, limit: 1000 })
+    out.push(...rows)
+    if (rows.length < 1000) break
+  }
+  return out
 }
 
 /**

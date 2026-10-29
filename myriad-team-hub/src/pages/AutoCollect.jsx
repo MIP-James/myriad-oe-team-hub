@@ -8,13 +8,15 @@
  * '제외' = 같은 사진은 다음 자동 수집부터 자동으로 빠짐 (아예 필요 없는 것만).
  * '상세 확인' = 지금 목록에선 빠지지만, 같은 사진이 다음에 다시 수집되면 빨간 테두리로 표시 (mig 041).
  * 'BPM 전송 완료' = 복사한 카드들을 목록에서 뺌 (mig 042). BPM 에 등록된 건은 BPM 동기화로 자동 표시.
+ * '판매자별' 보기 = 같은 (플랫폼, 판매자) 끼리 묶음. 판매자명을 못 뽑는 카드(쿠팡 검색 결과 등)는 '판매자 확인 안 됨' 칸에 따로 (2026-10-29).
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ScanSearch, Copy, Check, Loader2, AlertTriangle, ImageOff, CheckSquare, Square, X, Eye, Undo2, Send } from 'lucide-react'
-import { TIERS, listDates, listFacets, countByTier, listItems, markItems, restoreItems } from '../lib/autoCollect'
+import { ScanSearch, Copy, Check, Loader2, AlertTriangle, ImageOff, CheckSquare, Square, X, Eye, Undo2, Send, LayoutGrid, Store, ChevronDown, ChevronRight } from 'lucide-react'
+import { TIERS, listDates, listFacets, countByTier, listItems, listAllItems, markItems, restoreItems } from '../lib/autoCollect'
 import { useAuth } from '../contexts/AuthContext'
 
 const PAGE = 120
+const VIEW_KEY = 'autoCollect.view'
 
 // 쿠팡은 접속 확인 쿠키가 없으면 상품 주소로 바로 들어갈 때 차단 화면(사용권한이 없습니다)을 띄움.
 // 쿠팡 홈을 한 번 열면 쿠키가 생겨 그 뒤로는 바로 열림 (사용자 실측 2026-10-28) → 새 탭에서 홈 먼저, 잠시 뒤 상품으로.
@@ -60,6 +62,14 @@ export default function AutoCollect() {
   const [undo, setUndo] = useState(null) // { entries: [{ it, index }], status, tier } — 방금 처리한 것 되돌리기
   const undoTimer = useRef(null)
   const [marking, setMarking] = useState(false) // 일괄 처리 중 — 중복 클릭 방지
+  const [view, setView] = useState(() => {
+    try { return localStorage.getItem(VIEW_KEY) === 'seller' ? 'seller' : 'card' } catch { return 'card' }
+  })
+
+  function changeView(v) {
+    setView(v)
+    try { localStorage.setItem(VIEW_KEY, v) } catch { /* 무시 */ }
+  }
 
   const filters = useMemo(
     () => ({ date, tier, platform, productType, modelType, hideRegistered }),
@@ -83,15 +93,17 @@ export default function AutoCollect() {
     if (!date) return
     let alive = true
     setLoading(true); setError(null); setSelected(new Set()); setCopiedIds(new Set()); setUndo(null)
-    Promise.all([countByTier(filters), listItems(filters, { offset: 0, limit: PAGE })])
+    // 판매자별 보기는 묶음이 정확해야 하므로 조건에 맞는 상품을 전부 받음
+    const load = view === 'seller' ? listAllItems(filters) : listItems(filters, { offset: 0, limit: PAGE })
+    Promise.all([countByTier(filters), load])
       .then(([c, rows]) => {
         if (!alive) return
-        setCounts(c); setItems(rows); setHasMore(rows.length === PAGE)
+        setCounts(c); setItems(rows); setHasMore(view !== 'seller' && rows.length === PAGE)
       })
       .catch((e) => alive && setError(e.message))
       .finally(() => alive && setLoading(false))
     return () => { alive = false }
-  }, [filters])
+  }, [filters, view])
 
   async function loadMore() {
     try {
@@ -255,6 +267,19 @@ export default function AutoCollect() {
               BPM 등록된 건 숨기기
             </label>
             <div className="flex-1" />
+            <div className="flex rounded-lg border border-slate-200 bg-white overflow-hidden">
+              {[['card', LayoutGrid, '상품 카드'], ['seller', Store, '판매자별']].map(([key, Icon, label]) => (
+                <button
+                  key={key}
+                  onClick={() => changeView(key)}
+                  className={`text-sm px-3 py-1.5 flex items-center gap-1.5 ${
+                    view === key ? 'bg-slate-800 text-white' : 'text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  <Icon size={14} /> {label}
+                </button>
+              ))}
+            </div>
             <button
               onClick={selectAll}
               disabled={!pickableCount}
@@ -315,6 +340,14 @@ export default function AutoCollect() {
             <div className="bg-white border border-slate-200 rounded-2xl p-10 text-center text-sm text-slate-500">
               이 조건에 해당하는 상품이 없습니다.
             </div>
+          ) : view === 'seller' ? (
+            <SellerView
+              items={items}
+              selected={selected}
+              setSelected={setSelected}
+              onToggle={toggle}
+              onMark={mark}
+            />
           ) : (
             <>
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6 gap-3">
@@ -352,6 +385,161 @@ export default function AutoCollect() {
           <button onClick={revert} className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 flex items-center gap-1.5">
             <Undo2 size={14} /> 되돌리기
           </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+const SECTION_PAGE = 60 // 한 묶음을 펼쳤을 때 처음 보여 줄 카드 수
+
+/** 판매자별 보기 — (플랫폼, 판매자) 묶음 + 판매자명 없는 카드는 '판매자 확인 안 됨' 칸 */
+function SellerView({ items, selected, setSelected, onToggle, onMark }) {
+  const [open, setOpen] = useState(() => new Set())
+  const { groups, unknown } = useMemo(() => {
+    const map = new Map()
+    const unknown = []
+    for (const it of items) {
+      const name = (it.seller || '').trim()
+      if (!name) { unknown.push(it); continue }
+      const key = `${it.platform}|${name}`
+      if (!map.has(key)) map.set(key, { key, platform: it.platform, name, items: [] })
+      map.get(key).items.push(it)
+    }
+    const groups = [...map.values()].sort(
+      (a, b) => b.items.length - a.items.length || a.name.localeCompare(b.name, 'ko')
+    )
+    return { groups, unknown }
+  }, [items])
+
+  function flip(key) {
+    setOpen((prev) => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n })
+  }
+
+  function pickGroup(list) {
+    const ids = list.filter((it) => !it.bpm_registered).map((it) => it.id)
+    setSelected((prev) => {
+      const n = new Set(prev)
+      const all = ids.length && ids.every((id) => n.has(id))
+      ids.forEach((id) => (all ? n.delete(id) : n.add(id)))
+      return n
+    })
+  }
+
+  const group = (key, title, sub, list) => (
+    <SellerGroup
+      key={key}
+      title={title}
+      sub={sub}
+      list={list}
+      isOpen={open.has(key)}
+      onFlip={() => flip(key)}
+      onPick={() => pickGroup(list)}
+      selected={selected}
+      onToggle={onToggle}
+      onMark={onMark}
+    />
+  )
+
+  return (
+    <div className="space-y-6">
+      <section>
+        <h2 className="text-sm font-semibold text-slate-700 mb-2">
+          판매자 확인됨{' '}
+          <span className="text-slate-400 font-normal">
+            · 판매자 {groups.length.toLocaleString()}곳 · 상품 {(items.length - unknown.length).toLocaleString()}건
+          </span>
+        </h2>
+        {groups.length ? (
+          <div className="bg-white border border-slate-200 rounded-xl divide-y divide-slate-100">
+            {groups.map((g) => group(g.key, g.name, g.platform, g.items))}
+          </div>
+        ) : (
+          <p className="text-sm text-slate-400">판매자 정보가 있는 상품이 없습니다.</p>
+        )}
+      </section>
+      {unknown.length > 0 && (
+        <section>
+          <h2 className="text-sm font-semibold text-slate-700 mb-1">
+            판매자 확인 안 됨 <span className="text-slate-400 font-normal">· 상품 {unknown.length.toLocaleString()}건</span>
+          </h2>
+          <p className="text-xs text-slate-400 mb-2">
+            검색 결과에 판매자명이 나오지 않는 플랫폼(쿠팡 등)의 상품입니다. 판매자는 상품 페이지에서 확인해 주세요.
+          </p>
+          <div className="bg-white border border-slate-200 rounded-xl">
+            {group('__unknown', '판매자 확인 안 됨', [...new Set(unknown.map((it) => it.platform))].join(' · '), unknown)}
+          </div>
+        </section>
+      )}
+    </div>
+  )
+}
+
+function SellerGroup({ title, sub, list, isOpen, onFlip, onPick, selected, onToggle, onMark }) {
+  const [limit, setLimit] = useState(SECTION_PAGE)
+  const pickable = list.filter((it) => !it.bpm_registered)
+  const picked = pickable.filter((it) => selected.has(it.id)).length
+  const again = list.some((it) => it.review_match)
+  return (
+    <div>
+      <div className="flex items-center gap-3 px-3 py-2.5">
+        <button onClick={onFlip} className="flex items-center gap-2 min-w-0 flex-1 text-left">
+          {isOpen
+            ? <ChevronDown size={16} className="text-slate-400 shrink-0" />
+            : <ChevronRight size={16} className="text-slate-400 shrink-0" />}
+          <div className="flex -space-x-2 shrink-0">
+            {list.slice(0, 4).map((it) => (
+              <img
+                key={it.id}
+                src={it.image}
+                alt=""
+                loading="lazy"
+                referrerPolicy="no-referrer"
+                onError={(e) => { e.currentTarget.style.visibility = 'hidden' }}
+                className="w-8 h-8 rounded-md border border-white bg-slate-50 object-cover"
+              />
+            ))}
+          </div>
+          <span className="font-semibold text-sm text-slate-800 truncate">{title}</span>
+          <span className="text-xs text-slate-400 shrink-0">{sub}</span>
+          {again && (
+            <span className="text-[11px] px-1.5 py-0.5 rounded-md bg-rose-600 text-white shrink-0">다시 나온 사진</span>
+          )}
+        </button>
+        <span className="text-sm font-bold text-slate-900 shrink-0">{list.length.toLocaleString()}건</span>
+        <button
+          onClick={onPick}
+          disabled={!pickable.length}
+          className="text-xs px-2.5 py-1 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50 flex items-center gap-1 shrink-0 disabled:opacity-40"
+        >
+          {pickable.length && picked === pickable.length ? <CheckSquare size={13} /> : <Square size={13} />}
+          {picked ? `${picked}건 선택됨` : '이 판매자 전체 선택'}
+        </button>
+      </div>
+      {isOpen && (
+        <div className="px-3 pb-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+            {list.slice(0, limit).map((it) => (
+              <Card
+                key={it.id}
+                it={it}
+                selected={selected.has(it.id)}
+                onToggle={() => onToggle(it)}
+                onReview={() => onMark([it], 'review')}
+                onExclude={() => onMark([it], 'excluded')}
+              />
+            ))}
+          </div>
+          {list.length > limit && (
+            <div className="flex justify-center mt-3">
+              <button
+                onClick={() => setLimit((n) => n + SECTION_PAGE)}
+                className="text-sm px-4 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50"
+              >
+                더 보기 ({(list.length - limit).toLocaleString()}건 남음)
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
