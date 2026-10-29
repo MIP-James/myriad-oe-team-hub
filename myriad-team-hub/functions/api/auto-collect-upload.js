@@ -24,6 +24,7 @@
  *
  * 보관 기간: 처음 본 날로부터 KEEP_DAYS(7일) 지난 미처리('new')·BPM 전송 완료('sent') 상품과 실행 기록은 업로드 때마다 삭제
  *   (Supabase 무료 용량 보호). '제외'·'상세 확인' 행은 사진 지문이 필요하므로 남김.
+ *   '전송 완료' 중 같은 사진이 '제외'에도 있는 행도 남김 (전송 우선 판정을 유지하려고).
  *   삭제를 저장보다 먼저 함 → 다시 올라온 미처리 상품이 지워질 옛 행에 덮이지 않고 새 행(처음 본 날 = 오늘)으로 들어감.
  *
  * 노트북(자동 수집 실행기)은 런처 기기 토큰만 가짐 — 관리자 키는 이 함수(service role)에만.
@@ -100,7 +101,7 @@ export async function onRequestPost(context) {
       if (p && id) (byPlatform[p] ||= []).push(id)
     }
     for (const [platform, ids] of Object.entries(byPlatform)) {
-      for (let i = 0; i < ids.length; i += CHUNK) {
+      for (let i = 0; i < ids.length; i += 200) {
         const { data, error } = await adminSb
           .from('patrol_items')
           .update({ bpm_registered: true, bpm_checked_at: new Date().toISOString() })
@@ -160,16 +161,52 @@ async function purgeOld(adminSb) {
   const cutoff = new Date(Date.now() - KEEP_DAYS * 86400000)
   // first_seen 은 한국 날짜 → 한국 시각 기준으로 자른 날짜와 비교
   const cutoffDay = new Date(cutoff.getTime() + 9 * 3600000).toISOString().slice(0, 10)
-  const { count: items } = await adminSb
+  const { count: newCount } = await adminSb
     .from('patrol_items')
     .delete({ count: 'exact' })
-    .in('status', ['new', 'sent'])
+    .eq('status', 'new')
     .lt('first_seen', cutoffDay)
+  const sentCount = await purgeOldSent(adminSb, cutoffDay)
+  const items = (newCount ?? 0) + sentCount
   const { count: runs } = await adminSb
     .from('patrol_runs')
     .delete({ count: 'exact' })
     .lt('created_at', cutoff.toISOString())
-  return { items: items ?? 0, runs: runs ?? 0 }
+  return { items, runs: runs ?? 0 }
+}
+
+/**
+ * 보관 기간 지난 'BPM 전송 완료' 삭제 — 단, 같은 사진이 '제외'에도 있는 행은 남김.
+ * 이 행이 있어야 judgedPayload 가 그 사진을 자동 제외 지문에서 계속 빼 줌 (지우면 7일 뒤 다시 자동 제외됨, 2026-10-29).
+ */
+async function purgeOldSent(adminSb, cutoffDay) {
+  const { data: old, error } = await adminSb
+    .from('patrol_items')
+    .select('id, img_hash')
+    .eq('status', 'sent')
+    .lt('first_seen', cutoffDay)
+    .limit(5000)
+  if (error || !old?.length) return 0
+  const hashes = [...new Set(old.map((r) => r.img_hash).filter(Boolean))]
+  const guarded = new Set()
+  for (let i = 0; i < hashes.length; i += 200) { // 주소 길이 제한 → 200개씩
+    const { data } = await adminSb
+      .from('patrol_items')
+      .select('img_hash')
+      .eq('status', 'excluded')
+      .in('img_hash', hashes.slice(i, i + 200))
+    for (const r of data || []) guarded.add(r.img_hash)
+  }
+  const ids = old.filter((r) => !guarded.has(r.img_hash)).map((r) => r.id)
+  let n = 0
+  for (let i = 0; i < ids.length; i += 200) {
+    const { count } = await adminSb
+      .from('patrol_items')
+      .delete({ count: 'exact' })
+      .in('id', ids.slice(i, i + 200))
+    n += count ?? 0
+  }
+  return n
 }
 
 function clean(it, runId) {
