@@ -13,6 +13,7 @@
  * 응답: { run_id, upserted, registered, excluded_hashes: [img_hash...], review_hashes: [img_hash...],
  *         handled: [{ platform, product_id }] }
  *   excluded_hashes = 실무자가 '제외'한 상품의 사진 지문 → 실행기가 다음 자동 수집에서 같은 사진을 자동 제외.
+ *                     같은 사진이 'BPM 전송 완료'·'상세 확인'에도 있으면 빠짐 (전송·상세 확인이 우선).
  *   review_hashes   = '상세 확인 필요'로 넘긴 사진 지문 → 다음 자동 수집에서 같은 사진은 빼지 않고 review_match 표시 (mig 041).
  *   handled         = 실무자가 판정한(제외·상세 확인·BPM 전송 완료) 상품번호 → 실행기가 로컬에 누적.
  *                     판정 없이 보관 기간이 지나 지워진 상품은 실행기가 다시 올려 허브에 다시 보이게 함 (2026-10-28).
@@ -127,8 +128,11 @@ export async function onRequestPost(context) {
 async function judgedPayload(adminSb) {
   const marked = await fetchHandled(adminSb)
   const hashesOf = (st) => [...new Set(marked.filter((r) => r.status === st && r.img_hash).map((r) => r.img_hash))]
+  // 같은 사진을 다른 상품에선 BPM 으로 보냈거나 상세 확인으로 넘겼으면 자동 제외 지문에서 뺌
+  // → 위반 사진을 '제외'로 잘못 눌러도 그 사진의 침해 상품이 다음 수집에서 통째로 빠지지 않게 (2026-10-29)
+  const keep = new Set([...hashesOf('sent'), ...hashesOf('review')])
   return {
-    excluded_hashes: hashesOf('excluded'),
+    excluded_hashes: hashesOf('excluded').filter((h) => !keep.has(h)),
     review_hashes: hashesOf('review'),
     handled: marked.map((r) => ({ platform: r.platform, product_id: r.product_id }))
   }

@@ -146,6 +146,11 @@ export default function AutoCollect() {
 
   async function markSelected(status) {
     if (marking) return
+    // A(대표 이미지 일치) = 위반 확정과 같은 사진 → 제외하면 그 사진의 이후 수집분도 자동으로 빠짐
+    if (status === 'excluded' && tier === 'A' && !window.confirm(
+      `선택한 ${selected.size}건은 위반 확정 사진과 같은 사진입니다.\n` +
+      '제외하면 앞으로 이 사진을 쓰는 상품도 자동 수집에서 자동으로 빠집니다.\n\n그래도 제외할까요?'
+    )) return
     setMarking(true)
     try {
       await mark(items.filter((it) => selected.has(it.id)), status)
