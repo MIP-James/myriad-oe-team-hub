@@ -27,6 +27,7 @@ from collections import Counter
 
 from platforms import PLATFORMS, ORDER
 from deep import Deep
+from stores import Stores, search as store_search, to_item as store_item
 import bpm
 import camera
 import hub
@@ -40,6 +41,7 @@ PROFILE_DIR = DATA_DIR / "chrome-profile"
 SEEN_PATH = DATA_DIR / "seen.json"
 DEEP_PATH = DATA_DIR / "deep.json"
 SWEEP_PATH = DATA_DIR / "sweep.json"  # {플랫폼: {키워드: 1~pages 를 처음 끝까지 본 날}}
+STORES_PATH = DATA_DIR / "stores.json"  # {판매자 아이디: 매장 순회로 마지막 본 날}
 UNSWEPT_PAGES = 3  # 아직 차례가 안 온(전체 훑기 전) 키워드는 예전처럼 3페이지만
 CDP_PORT = 9333
 
@@ -317,6 +319,28 @@ def login(args):
                 log("⚠ 크롬을 다시 켜니 쿠팡 로그인이 풀렸습니다 → '자동 로그인'을 체크하고 이 명령을 다시 실행해 주세요")
 
 
+def take(pf, it, kw, pf_seen, today, bag, via=""):
+    """상품 하나를 이미 본 것 확인 → 판정해 bag 에 담음. 반환 (new / again / '' = 건너뜀, 신규 목록에 담았는지)."""
+    if it["id"] in pf_seen:
+        # 판정 없이 허브 보관 기간이 지난 상품(허브에선 이미 지워짐)은 다시 올림 — 안 본 채 영영 사라지지 않게.
+        # 조기 종료 판단엔 안 셈 (세면 매일 키워드마다 끝 페이지까지 보게 됨)
+        if pf_seen[it["id"]] >= bag["recollect_before"] or str(it["id"]) in bag["handled"].get(pf.name, ()):
+            return "", False
+        got = "again"
+    else:
+        got = "new"
+    pf_seen[it["id"]] = today
+    row = {"platform": pf.name, "keyword": kw["keyword"], "model_type": kw.get("model_type", ""), **it}
+    if via:
+        row["via"] = via
+    reason = judge(it, kw, bag["common_exclude"], bag["rules"]["_brands"])
+    if reason:
+        bag["excluded"].append({**row, "reason": reason})
+        return got, False
+    bag["new"].append(row)
+    return got, True
+
+
 def scan(pf, page, kw, first, last, bot_wait, pf_seen, today, bag, early_stop=False, deep=False, deadline=None):
     """한 키워드를 first~last 페이지까지 훑어 bag 의 new/excluded 에 담는다.
     반환 (found, fresh, note, pf_stop, resume) — pf_stop = 이 플랫폼을 그만 볼 사유,
@@ -346,22 +370,10 @@ def scan(pf, page, kw, first, last, bot_wait, pf_seen, today, bag, early_stop=Fa
         page_new = again = 0
         for it in items:
             found += 1
-            if it["id"] in pf_seen:
-                # 판정 없이 허브 보관 기간이 지난 상품(허브에선 이미 지워짐)은 다시 올림 — 안 본 채 영영 사라지지 않게.
-                # 조기 종료 판단엔 안 셈 (세면 매일 키워드마다 끝 페이지까지 보게 됨)
-                if pf_seen[it["id"]] >= bag["recollect_before"] or str(it["id"]) in bag["handled"].get(pf.name, ()):
-                    continue
-                again += 1
-            else:
-                page_new += 1
-            pf_seen[it["id"]] = today
-            row = {"platform": pf.name, "keyword": kw["keyword"], "model_type": kw.get("model_type", ""), **it}
-            reason = judge(it, kw, bag["common_exclude"], bag["rules"]["_brands"])
-            if reason:
-                bag["excluded"].append({**row, "reason": reason})
-            else:
-                bag["new"].append(row)
-                fresh += 1
+            got, kept = take(pf, it, kw, pf_seen, today, bag)
+            page_new += got == "new"
+            again += got == "again"
+            fresh += kept
         log(f"{pf.name} '{kw['keyword']}' p{n}: {len(items)}건 중 처음 본 것 {page_new}"
             + (f" / 판정 없이 지나 다시 올림 {again}" if again else ""))
         # 신규순이라 한 페이지가 통째로 이미 본 것이면 뒤 페이지는 더 오래된 것 (깊게 보기는 끝까지)
@@ -389,9 +401,13 @@ def finish(label, cfg, args, rules, bag, summary, started, seen, deep):
         # 판매자 규모는 이번 단계에서 본 전체(필터 제외 포함) 기준
         counts = Counter((r["platform"], r.get("seller") or "") for r in new_rows + excluded_rows)
         triage.triage(new_rows, {k["keyword"]: k for k in cfg["keywords"]}, rules, counts)
+        for r in new_rows:
+            if r.get("via"):  # 허브·엑셀 근거 맨 앞에 어디서 찾았는지 (예: 판매자 매장 순회)
+                r["reasons"] = " · ".join(x for x in (r["via"], r.get("reasons")) if x)
         tiers = Counter(r["tier"] for r in new_rows)
         log(f"등급: A {tiers['A']} / B {tiers['B']} / C {tiers['C']} / X {tiers['X']}")
-        deep.record(new_rows, {PLATFORMS[k].name for k in deep.platforms})
+        # 깊게 보기 재분류 근거는 검색 결과만 (매장 순회 결과까지 세면 그 키워드가 부풀려짐)
+        deep.record([r for r in new_rows if not r.get("via")], {PLATFORMS[k].name for k in deep.platforms})
     out = Path(args.out) / f"patrol_{started:%Y-%m-%d_%H%M}{label}.xlsx"
     finished = datetime.now()
     report.write(out, new_rows, excluded_rows, summary, started, finished)
@@ -427,6 +443,7 @@ def run(args):
     sweep_per_day = cfg.get("sweep_per_day", 8)
     deep = Deep(cfg.get("deep"), keywords, DEEP_PATH, today)
     deep.maybe_regroup(log)
+    stores = Stores(cfg.get("stores"), keywords, STORES_PATH, today, cfg.get("triage", {}).get("channel_sellers", []))
     handled = hub.load_handled()
     recollect_before = (datetime.now() - timedelta(days=hub.KEEP_DAYS)).strftime("%Y-%m-%d")
     bag_of = lambda: {"new": [], "excluded": [], "common_exclude": cfg.get("common_exclude", []),
@@ -438,7 +455,7 @@ def run(args):
         # ① 매일 수집 — 전 플랫폼, 신규순 1~pages 페이지
         # 키워드마다 처음 한 번은 1~pages 를 끝까지(조기 종료 없이) = '전체 훑기', 플랫폼당 하루 sweep_per_day 개.
         # 이미 본 상품만 있는 페이지에서 멈추는 규칙 때문에, 훑기 전엔 4페이지 이후를 영영 못 봄 (10-28)
-        if not args.deep_only:
+        if not args.deep_only and not args.stores_only:
             started, bag, summary = datetime.now(), bag_of(), []
             for pf in platforms:
                 pf_seen = seen.setdefault(pf.key, {})
@@ -476,7 +493,7 @@ def run(args):
         # 깊게 보기 플랫폼(지마켓·옥션)이 이번 실행 대상에 없으면 생략 (예: --platforms coupang 시험)
         # 1~pages 전체 훑기가 끝난 키워드만 (아니면 pages+1 부터 보는 깊게 보기가 그 사이를 건너뜀)
         swept = lambda kw: all(kw["keyword"] in sweep.get(k, {}) for k in deep.platforms if k in pf_keys)
-        picks = deep.todays(swept) if deep.enabled and not args.no_deep and set(deep.platforms) & set(pf_keys) else []
+        picks = deep.todays(swept) if deep.enabled and not args.no_deep and not args.stores_only and set(deep.platforms) & set(pf_keys) else []
         if picks:
             started, bag, summary = datetime.now(), bag_of(), []
             deadline = time.time() + deep.cfg["max_minutes"] * 60
@@ -511,10 +528,59 @@ def run(args):
                     save_json(SEEN_PATH, seen)
             finish("_deep", cfg, args, rules, bag, summary, started, seen, deep)
 
+        # ③ 판매자 매장 순회 — 지마켓 위반 확정 판매자 매장에서 그 판매자의 위반 유형만 매장 안 검색 (stores.py)
+        # 실패해도 ①② 결과는 이미 저장·업로드됨
+        if stores.enabled and not args.no_stores and not args.deep_only and "gmarket" in pf_keys:
+            try:
+                run_stores(stores, bpm_cache, page, seen, today, bag_of, cfg, args, rules, deep)
+            except Exception as e:
+                log(f"⚠ 판매자 매장 순회 중단: {e}")
+
     if args.dry:
-        log("--dry: 본 상품 기록(seen.json)·깊게 보기 진행은 갱신하지 않음")
+        log("--dry: 본 상품 기록(seen.json)·깊게 보기·매장 순회 진행은 갱신하지 않음")
     else:
         deep.save()
+        stores.save()
+
+
+def run_stores(stores, bpm_cache, page, seen, today, bag_of, cfg, args, rules, deep):
+    if not bpm_cache:
+        log("판매자 매장 순회 건너뜀: BPM 동기화 정보 없음 (설정 bpm.secret_key)")
+        return
+    picks = stores.todays(bpm_cache)
+    if not picks:
+        log("판매자 매장 순회: 오늘 차례인 판매자 없음")
+        return
+    pf = PLATFORMS["gmarket"]
+    pf_seen = seen.setdefault(pf.key, {})
+    started, bag, summary = datetime.now(), bag_of(), []
+    deadline = time.time() + stores.cfg["max_minutes"] * 60
+    log(f"=== 판매자 매장 순회 (지마켓 {len(picks)}곳)")
+    for s in picks:
+        if time.time() > deadline:
+            log("매장 순회 시간 상한 → 나머지는 다음 실행에서")
+            break
+        found = fresh = 0
+        done = set()  # 유형이 달라도 검색어가 같으면 한 번만 (예: 라이트닝)
+        for mt in s["model_types"]:
+            kw = stores.kw_of[mt]
+            for term in stores.terms(mt):
+                if term in done:
+                    continue
+                done.add(term)
+                cards = store_search(page, s["seller"], term, stores.cfg["max_pages"], log, lambda: human_pause(1, 3))
+                for c in cards:
+                    found += 1
+                    fresh += take(pf, store_item(c, pf, s["name"]), kw, pf_seen, today, bag,
+                                  via=f"판매자 매장 순회 ({s['name']})")[1]
+                human_pause(1, 3)
+        stores.mark(s["seller"])
+        log(f"매장 {s['name']}({s['seller']}, 최근 위반 {s['recent']}건): {found}건 중 신규 후보 {fresh}")
+        summary.append({"platform": pf.name, "keyword": f"매장 {s['name']}", "found": found, "new": fresh,
+                        "note": "판매자 매장 순회 " + ", ".join(s["model_types"])})
+    if not args.dry:
+        save_json(SEEN_PATH, seen)
+    finish("_stores", cfg, args, rules, bag, summary, started, seen, deep)
 
 
 def main():
@@ -532,6 +598,8 @@ def main():
                     help="브라우저 방식 (기본 uc = undetected-chromedriver)")
     ap.add_argument("--no-deep", action="store_true", help="깊게 보기(지마켓·옥션 끝 페이지까지) 생략")
     ap.add_argument("--deep-only", action="store_true", help="매일 수집은 건너뛰고 깊게 보기만 (시험용)")
+    ap.add_argument("--no-stores", action="store_true", help="판매자 매장 순회(지마켓) 생략")
+    ap.add_argument("--stores-only", action="store_true", help="매일 수집·깊게 보기는 건너뛰고 판매자 매장 순회만 (시험용)")
     ap.add_argument("--login", nargs="?", const="naver", choices=["naver", "coupang"],
                     help="자동 수집 크롬에 로그인 (1회): 생략 = 네이버(스마트스토어용), coupang = 쿠팡")
     ap.add_argument("--log", help="콘솔 출력을 이 파일에도 이어 씀 (예약 실행용)")

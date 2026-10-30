@@ -81,6 +81,11 @@ run_patrol.bat --platforms auction --limit 2 --pages 1 --dry   시험
   - 30일마다 지마켓·옥션 A×3+B 점수로 자동 재분류 (상위 1/3 상, 하위 1/3 하). 고정 = 설정 `"deep": {"pin": {"키워드": "상"}}`
   - 봇 확인은 2분만 기다림(사람 대기 없음) · 차단 · 시간 상한(150분) → 멈춘 페이지를 `%LOCALAPPDATA%\MyriadPatrol\deep.json` 에 저장, 다음 실행에서 이어감
   - 설정 `"deep"` 로 조절: `enabled` / `per_day` / `max_page` / `interval_days` / `regroup_days` / `max_minutes` / `bot_wait`. 옵션 `--no-deep`, `--deep-only`(시험)
+- **③ 판매자 매장 순회** (`stores.py`, 2026-10-30): 지마켓은 사람이 주 2회 최신순으로 모니터링해 ①② 로는 새로 찾는 게 적음 → BPM 위반 확정 판매자의 미니샵에서 **그 판매자가 위반했던 Model Type 검색어로만** 매장 안 검색 → 3차 업로드(`patrol_…_stores.xlsx`, 근거 맨 앞 "판매자 매장 순회 (판매자명)")
+  - 대상 = 최근 90일 안에 위반 확정이 있고 누적 2~300건인 판매자 (홈쇼핑·대형몰 채널 제외), 판매자마다 3일 주기, 최근 위반 많은 순 하루 30곳, 시간 상한 40분 → `%LOCALAPPDATA%\MyriadPatrol\stores.json`
+  - 매장 주소 `minishop.gmarket.co.kr/{아이디}/List?keyword=..&page=N&pageSize=60` — Cloudflare 확인 없음. 이미 본 상품(seen.json)·BPM 등록·판정은 ①② 와 같은 규칙
+  - 설정 `"stores"` 로 조절: `enabled` / `per_day` / `interval_days` / `recent_days` / `min_violations` / `max_violations` / `max_types` / `max_pages` / `max_minutes` / `exclude`(판매자 아이디) / `terms`(Model Type → 검색어). 옵션 `--no-stores`, `--stores-only`(시험)
+  - 실측(10-30, BPM 캐시 10-27): 대상 356곳. 3곳 시험 = 50초, 신규 후보 49건(A 1 / B 48)
 - 페이지 사이 3~7초, 스크롤은 사람 속도
 - **봇 확인**(지마켓 Cloudflare) → 그 플랫폼만 멈추고 사람 클릭을 기다림 → 통과하면 재개, 시간 초과면 그날 건너뜀. **자동 클릭 없음.**
 - **차단 화면**("접속 제한" 문구, 상품 안 뜸) → 같은 주소 다시 열기 최대 3회 → 그래도면 그 플랫폼 중단 + 증거 저장. 상태코드(403/418)만으로는 판정하지 않음
