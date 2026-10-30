@@ -86,6 +86,16 @@ run_patrol.bat --platforms auction --limit 2 --pages 1 --dry   시험
   - 매장 주소 `minishop.gmarket.co.kr/{아이디}/List?keyword=..&page=N&pageSize=60` — Cloudflare 확인 없음. 이미 본 상품(seen.json)·BPM 등록·판정은 ①② 와 같은 규칙
   - 설정 `"stores"` 로 조절: `enabled` / `per_day` / `interval_days` / `recent_days` / `min_violations` / `max_violations` / `max_types` / `max_pages` / `max_minutes` / `exclude`(판매자 아이디) / `terms`(Model Type → 검색어). 옵션 `--no-stores`, `--stores-only`(시험)
   - 실측(10-30, BPM 캐시 10-27): 대상 356곳. 3곳 시험 = 50초, 신규 후보 49건(A 1 / B 48)
+
+## 키워드 점검 리포트 (`keyword_review.py`, 2026-10-30)
+허브 판정 결과로 검색 키워드를 손볼 근거를 뽑는다 (이 PC 에서 실행, `admin-scripts/.env` 의 Supabase 키로 **읽기만**).
+```
+py -3.13 keyword_review.py                    # 전체 기간
+py -3.13 keyword_review.py --since 2026-11-01 # 이 날 이후 처음 본 상품만 (키워드 바꾼 뒤 효과 보기)
+```
+- 확정 = BPM 전송 완료 또는 BPM 등록됨 / 상세 확인 / 제외 = 사람이 '아님' 처리. 미판정·자동 제외·판매자 매장 순회 결과는 계산에서 뺌
+- 시트: ① 키워드 성적표(키워드×플랫폼 적중률 + 끄기·좁히기·늘리기 판단, 판정 20건 미만은 보류) ② 제외어 후보(제외 상품명에만 자꾸 나오는 단어) ③ 새 키워드 후보(확정·상세 상품명에 자꾸 나오고 유형 평균보다 1.5배 잘 맞는 단어·두 단어 묶음) ④ 가격 상한(확정 가격 분포 ↔ max_price) ⑤ 확정·상세 상품명 원문 ⑥ 현재 설정
+- 결과 = `output/keyword_review_날짜.xlsx`. 후보는 판단 재료일 뿐 — 사람이 보고 `keywords.local.json` 에 반영 (노트북 설정도 같이)
 - 페이지 사이 3~7초, 스크롤은 사람 속도
 - **봇 확인**(지마켓 Cloudflare) → 그 플랫폼만 멈추고 사람 클릭을 기다림 → 통과하면 재개, 시간 초과면 그날 건너뜀. **자동 클릭 없음.**
 - **차단 화면**("접속 제한" 문구, 상품 안 뜸) → 같은 주소 다시 열기 최대 3회 → 그래도면 그 플랫폼 중단 + 증거 저장. 상태코드(403/418)만으로는 판정하지 않음
