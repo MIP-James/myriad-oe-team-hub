@@ -65,6 +65,14 @@ def find_chrome():
     sys.exit("설치된 Chrome 을 찾지 못했습니다.")
 
 
+# 원격 창을 닫아(연결 끊김) 화면을 아무도 안 봐도 크롬이 스스로 느려지지 않게 (ucpage.open_uc 와 같은 설정)
+NO_THROTTLE_ARGS = [
+    "--disable-backgrounding-occluded-windows",
+    "--disable-renderer-backgrounding",
+    "--disable-background-timer-throttling",
+]
+
+
 @contextmanager
 def open_browser(p, attach):
     """attach=True: 크롬을 평소처럼 실행해 두고 연결만 함 (Playwright 가 띄우면 지마켓 봇 확인이 안 풀림).
@@ -72,7 +80,7 @@ def open_browser(p, attach):
     if not attach:
         ctx = p.chromium.launch_persistent_context(
             str(PROFILE_DIR), channel="chrome", headless=False,
-            viewport={"width": 1366, "height": 900}, locale="ko-KR")
+            viewport={"width": 1366, "height": 900}, locale="ko-KR", args=NO_THROTTLE_ARGS)
         try:
             yield ctx
         finally:
@@ -81,7 +89,8 @@ def open_browser(p, attach):
     PROFILE_DIR.mkdir(parents=True, exist_ok=True)
     proc = subprocess.Popen([
         find_chrome(), f"--user-data-dir={PROFILE_DIR}", f"--remote-debugging-port={CDP_PORT}",
-        "--no-first-run", "--no-default-browser-check", "--window-size=1366,900", "about:blank",
+        "--no-first-run", "--no-default-browser-check", "--window-size=1366,900", *NO_THROTTLE_ARGS,
+        "about:blank",
     ])
     endpoint = f"http://127.0.0.1:{CDP_PORT}"
     for _ in range(40):
