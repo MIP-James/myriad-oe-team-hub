@@ -419,6 +419,27 @@ def finish(label, cfg, args, rules, bag, summary, started, seen, deep):
                    db.product_type_of if db else (lambda m: None), log)
 
 
+MAX_BLOCKS = 2  # 매일 수집에서 한 플랫폼이 하루에 차단되면 다시 시도하는 횟수 상한 (계속 두드리면 차단이 길어짐)
+
+
+def daily_slots(platforms, keywords, split=True):
+    """① 매일 수집 순서 → [(플랫폼, 키워드 목록)].
+    split 이면 쿠팡 키워드를 다른 플랫폼 수만큼 나눠 각 플랫폼 뒤에 끼움
+    (지마켓 → 쿠팡 1/4 → 옥션 → 쿠팡 2/4 → …). 한 번에 몰아 돌면 도중 차단이 잦아서 (11-04)"""
+    cp = PLATFORMS["coupang"]
+    others = [p for p in platforms if p is not cp]
+    if not split or cp not in platforms or not others:
+        return [(p, keywords) for p in platforms]
+    size = -(-len(keywords) // len(others))  # 올림 — 38개 / 4 → 10·10·10·8
+    slots = []
+    for n, p in enumerate(others):
+        slots.append((p, keywords))
+        chunk = keywords[n * size:(n + 1) * size]
+        if chunk:
+            slots.append((cp, chunk))
+    return slots
+
+
 def run(args):
     cfg = load_json(args.config, None)
     if cfg is None:
@@ -457,36 +478,55 @@ def run(args):
         # 이미 본 상품만 있는 페이지에서 멈추는 규칙 때문에, 훑기 전엔 4페이지 이후를 영영 못 봄 (10-28)
         if not args.deep_only and not args.stores_only:
             started, bag, summary = datetime.now(), bag_of(), []
-            for pf in platforms:
+            # 플랫폼별 진행 상태 — 쿠팡은 여러 차례로 나눠 돌므로 차례 사이에 이어받음
+            states = {}
+            for pf, kws in daily_slots(platforms, keywords, cfg.get("coupang_split", True)):
                 pf_seen = seen.setdefault(pf.key, {})
-                had_history = bool(pf_seen)
-                log(f"=== {pf.name} 시작 (키워드 {len(keywords)}개 × 최대 {pages}페이지)")
+                st = states.setdefault(pf.key, {"had_history": bool(pf_seen), "budget": sweep_per_day,
+                                                "carry": [], "blocks": 0, "off": False})
+                if st["off"]:
+                    continue
+                kws, st["carry"] = st["carry"] + kws, []  # 지난 차례에 차단으로 못 본 키워드부터
+                log(f"=== {pf.name} 시작 (키워드 {len(kws)}개 × 최대 {pages}페이지)")
                 skip = pf.prepare(page)
                 if skip:
                     log(f"⚠ {pf.name}: {skip} → 건너뜀")
                     dump_evidence(page, pf, args.out, "skip")
                     summary.append({"platform": pf.name, "keyword": "-", "found": 0, "new": 0, "note": skip})
+                    if "차단" in skip:  # 다음 차례(쿠팡)에 다시 시도
+                        st["carry"], st["blocks"] = kws, st["blocks"] + 1
+                        st["off"] = st["blocks"] >= MAX_BLOCKS
+                    else:  # 로그인 필요 등은 다시 해도 같음
+                        st["off"] = True
                     continue
                 pf_sweep = sweep.setdefault(pf.key, {})
-                budget = sweep_per_day
-                for kw in keywords:
-                    full = kw["keyword"] not in pf_sweep and budget > 0
+                for i, kw in enumerate(kws):
+                    full = kw["keyword"] not in pf_sweep and st["budget"] > 0
                     if full:
-                        budget -= 1
+                        st["budget"] -= 1
                     last = pages if (full or kw["keyword"] in pf_sweep) else min(pages, UNSWEPT_PAGES)
                     found, fresh, note, stop, resume = scan(pf, page, kw, 1, last, args.bot_wait, pf_seen, today, bag,
-                                                            early_stop=had_history and not full)
+                                                            early_stop=st["had_history"] and not full)
                     if full and resume is None and not stop:
                         pf_sweep[kw["keyword"]] = today
                         note = f"전체 훑기 완료 (1~{pages}p)" + (f" / {note}" if note else "")
                     summary.append({"platform": pf.name, "keyword": kw["keyword"], "found": found, "new": fresh, "note": note})
                     if stop:
                         log(f"{pf.name}: {stop}")
+                        if stop.startswith("차단"):  # 멈춘 키워드부터 다음 차례로 넘김 (본 상품은 seen 이 걸러 줌)
+                            st["carry"], st["blocks"] = kws[i:], st["blocks"] + 1
+                            st["budget"] += full
+                        st["off"] = not stop.startswith("차단") or st["blocks"] >= MAX_BLOCKS
                         break
                     human_pause(2, 5)
+                if st["off"] and st["blocks"] >= MAX_BLOCKS:
+                    log(f"{pf.name}: 오늘 차단 {st['blocks']}번 → 남은 키워드는 내일")
                 if not args.dry:
                     save_json(SEEN_PATH, seen)
                     save_json(SWEEP_PATH, sweep)
+            for key, st in states.items():
+                if st["carry"] and not st["off"]:  # 마지막 차례에 차단돼 넘길 곳이 없음
+                    log(f"{PLATFORMS[key].name}: 차단으로 못 본 키워드 {len(st['carry'])}개는 내일")
             finish("", cfg, args, rules, bag, summary, started, seen, deep)
 
         # ② 깊게 보기 — 지마켓·옥션, 오늘 차례 키워드만 pages+1 ~ 마지막 페이지
