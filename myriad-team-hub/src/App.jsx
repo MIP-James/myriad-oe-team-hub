@@ -19,7 +19,6 @@ import Projects from './pages/Projects'
 import ProjectDetail from './pages/ProjectDetail'
 import CaseDetail from './pages/CaseDetail'
 import Targets from './pages/Targets'
-import AutoCollect from './pages/AutoCollect'
 import Vero from './pages/Vero'
 import WhitelistGuard from './pages/WhitelistGuard'
 import Admin from './pages/Admin'
@@ -55,7 +54,6 @@ export default function App() {
         <Route path="reports/groups" element={<ReportGroups />} />
         <Route path="reports/groups/:id" element={<ReportGroupDetail />} />
         <Route path="targets" element={<Targets />} />
-        <Route path="auto-collect" element={<AutoCollect />} />
         <Route path="vero" element={<Vero />} />
         <Route path="whitelist-guard" element={<WhitelistGuard />} />
         <Route path="projects" element={<Projects />} />
