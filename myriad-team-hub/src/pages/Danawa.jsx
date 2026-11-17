@@ -532,7 +532,7 @@ function ListingRow({ l }) {
         {s.storeUrl && (
           <a href={s.storeUrl} target="_blank" rel="noreferrer"
             className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-600 hover:text-slate-900 border border-slate-200 rounded px-2 py-0.5">
-            <Store size={11} /> 판매자 매장
+            <Store size={11} /> 판매자 스토어
           </a>
         )}
       </div>

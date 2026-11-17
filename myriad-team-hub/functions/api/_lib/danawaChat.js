@@ -31,7 +31,7 @@ function sellerLine(l) {
   return `<b>${esc(name)}</b>${extra ? ` (${esc(extra)})` : ''}`
 }
 
-function listingSection(l, i) {
+function listingSection(l, i, extraButtons = []) {
   const s = l.seller || {}
   const widgets = [
     {
@@ -68,7 +68,8 @@ function listingSection(l, i) {
   }
   const buttons = []
   if (l.productUrl) buttons.push({ text: '상품 보기', onClick: { openLink: { url: l.productUrl } } })
-  if (s.storeUrl) buttons.push({ text: '판매자 매장', onClick: { openLink: { url: s.storeUrl } } })
+  if (s.storeUrl) buttons.push({ text: '판매자 스토어', onClick: { openLink: { url: s.storeUrl } } })
+  buttons.push(...extraButtons)
   if (buttons.length) widgets.push({ buttonList: { buttons } })
   return { header: `${i + 1}. ${l.mallName}`, widgets }
 }
@@ -86,17 +87,13 @@ export function buildChangeMessage({ product, listings, prevPrice, firstCheck, h
   const names = listings.map((l) => `${l.mallName} ${l.seller?.sellerName || ''}`.trim()).join(', ')
   const overseas = listings.some((l) => l.seller?.overseas)
 
-  const sections = listings.map(listingSection)
-  sections.push({
-    widgets: [{
-      buttonList: {
-        buttons: [
-          { text: '다나와에서 보기', onClick: { openLink: { url: danawaUrl(product.pcode) } } },
-          { text: '허브에서 보기', onClick: { openLink: { url: hubUrl } } }
-        ]
-      }
-    }]
-  })
+  // '다나와에서 보기'·'허브에서 보기' 는 마지막 판매처의 '판매자 스토어' 버튼 옆에 붙임 (카드당 1번)
+  const linkButtons = [
+    { text: '다나와에서 보기', onClick: { openLink: { url: danawaUrl(product.pcode) } } },
+    { text: '허브에서 보기', onClick: { openLink: { url: hubUrl } } }
+  ]
+  const sections = listings.map((l, i) => listingSection(l, i, i === listings.length - 1 ? linkButtons : []))
+  if (!listings.length) sections.push({ widgets: [{ buttonList: { buttons: linkButtons } }] })
 
   const card = {
     header: {
