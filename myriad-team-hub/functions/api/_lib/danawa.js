@@ -263,7 +263,7 @@ export async function resolveBridge(bridgeUrl) {
 function isBlockedError(e) {
   if (e?.blocked) return true
   const m = String(e?.message || e || '')
-  return /blocked|차단|WAF|NetFunnel|firewall|did not render|abort|timeout|timed out|HTTP (4dd|5dd)|응답 (4dd|5dd)/i.test(m)
+  return /blocked|차단|WAF|NetFunnel|firewall|did not render|abort|timeout|timed out|HTTP (4\d\d|5\d\d)|응답 (4\d\d|5\d\d)/i.test(m)
 }
 
 /** 줄 하나 조회에 최대 15초 */

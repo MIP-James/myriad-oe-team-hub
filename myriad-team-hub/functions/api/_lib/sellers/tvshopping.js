@@ -157,8 +157,21 @@ export const handlers = {
         });
       }
     }
-    // 위탁 판매자 표가 없으면 쇼핑몰 직접 판매 (모바일 하단은 구조가 달라 고정값 사용)
-    return result({ ...SELF.TRB03, productUrl, source: 'mall_self', vendorCode });
+    // Cloudflare 서버가 받는 모바일 페이지는 상세 영역이 빠진 축약본(표 없음) — 스크립트 변수의 업체명으로 대체
+    const entpName = [...html.matchAll(/prd_entpName\s*=\s*'([^']+)'/g)].map((m) => clean(m[1])).find(Boolean)
+    const entpCode = [...html.matchAll(/prd_entpCode\s*=\s*'(\d+)'/g)].map((m) => m[1]).find(Boolean) || vendorCode
+    if (entpName && !/신세계라이브쇼핑/.test(entpName)) {
+      return result({
+        sellerName: entpName, company: entpName,
+        storeUrl: entpCode ? `https://www.shinsegaetvshopping.com/plan/entpGoodsList?entpCode=${entpCode}&entpName=${encodeURIComponent(entpName)}` : null,
+        productUrl, source: 'ssglive_entpName', vendorCode: entpCode,
+      });
+    }
+    // 상세 영역까지 다 받았는데 위탁 판매자 표가 없을 때만 '쇼핑몰 직접 판매'
+    if (html.includes('desc_stit') || entpName) {
+      return result({ ...SELF.TRB03, productUrl, source: 'mall_self', vendorCode });
+    }
+    throw new Error('TRB03: 상세 영역이 없는 축약 페이지 — 판매자 확인 불가');
   },
 
   // W쇼핑: no partner-seller section; vendor code in getOrderObject() -> mall_self (footer).
