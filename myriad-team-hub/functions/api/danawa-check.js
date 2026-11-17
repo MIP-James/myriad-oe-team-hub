@@ -13,7 +13,7 @@
  * 환경변수: SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY / INBOUND_CRON_SECRET
  */
 import { createClient } from '@supabase/supabase-js'
-import { checkDanawaProduct } from './_lib/danawa.js'
+import { checkDanawaProduct, enrichListing } from './_lib/danawa.js'
 import { postChat, buildChangeMessage, buildSummaryMessage } from './_lib/danawaChat.js'
 
 const KEEP_DAYS = 90
@@ -58,6 +58,38 @@ export async function onRequestPost(context) {
         text: '✅ 다나와 최저가 모니터링 봇이 연결되었습니다. 최저가 판매자가 바뀌면 이 스페이스로 알려드립니다.'
       })
       return json({ ok: true })
+    }
+
+    // ── 판매자 조회 점검 (관리자/예약 전용) — 서버(Cloudflare)에서 몰별 조회가 되는지 확인용 ──
+    //   { mode: 'probe', rows: [{ bridgeUrl, mallCode, mallName, danawaSeller? }] }  (최대 8줄)
+    if (body.mode === 'probe') {
+      if (!isCron && !isAdmin) return json({ error: '관리자 권한 필요' }, 403)
+      const rows = (Array.isArray(body.rows) ? body.rows : []).slice(0, 8)
+      const results = []
+      for (const r of rows) {
+        const linkPcode = (String(r.bridgeUrl || '').match(/[?&]link_pcode=([^&]+)/) || [])[1] || ''
+        const t0 = Date.now()
+        const out = await enrichListing({
+          key: `${r.mallCode}:${linkPcode}`,
+          mallCode: r.mallCode,
+          mallName: r.mallName,
+          isMarketSeller: !!r.danawaSeller,
+          danawaSeller: r.danawaSeller || null,
+          bridgeUrl: r.bridgeUrl,
+          linkPcode
+        })
+        results.push({
+          mallCode: r.mallCode,
+          mallName: r.mallName,
+          ms: Date.now() - t0,
+          sellerStatus: out.sellerStatus,
+          sellerVia: out.sellerVia || null,
+          sellerError: out.sellerError || null,
+          seller: out.seller,
+          productUrl: out.productUrl
+        })
+      }
+      return json({ ok: true, results })
     }
 
     // ── 하루 요약 ─────────────────────────────────────────

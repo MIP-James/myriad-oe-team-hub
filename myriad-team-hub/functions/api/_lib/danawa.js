@@ -12,6 +12,8 @@
  * 다나와는 2026 개편 후 서버 렌더링(Next.js) — 판매처 목록이 HTML 에 그대로 들어 있음 (브라우저 불필요).
  */
 
+import { pickSellerHandler, sellerStatusOf } from './danawaSellers.js'
+
 export const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36'
 
@@ -247,7 +249,7 @@ async function fetchText(url, extraHeaders = {}) {
 }
 
 /** 다나와 연결(bridge) 페이지 → 실제 쇼핑몰 주소 */
-async function resolveBridge(bridgeUrl) {
+export async function resolveBridge(bridgeUrl) {
   try {
     const { text } = await fetchText(bridgeUrl, { Referer: 'https://prod.danawa.com/' })
     return decodeEntities((text.match(/goLink\(["']([^"']+)["']\)/) || [])[1] || '') || null
@@ -256,24 +258,71 @@ async function resolveBridge(bridgeUrl) {
   }
 }
 
+function cleanSeller(s) {
+  const out = {}
+  for (const k of ['sellerName', 'sellerId', 'company', 'ceo', 'bizNo', 'address', 'storeUrl', 'phone', 'sellerType', 'note']) {
+    const v = s?.[k]
+    if (v != null && String(v).trim() !== '') out[k] = String(v).trim().slice(0, 200)
+  }
+  out.overseas = s?.overseas === true || isOverseas(out.address)
+  return out
+}
+
 /**
  * 최저가 줄 하나 → 판매자 정보가 붙은 결과
- * @returns {{ ...row, productUrl, seller: {...}, sellerStatus: 'ok'|'danawa'|'mall_only'|'error', sellerError? }}
+ * sellerStatus:
+ *   ok        = 쇼핑몰에서 판매자 정보 확인
+ *   mall_self = 쇼핑몰(홈쇼핑·브랜드몰·자사몰 등) 자체가 판매자
+ *   danawa    = 다나와에 표시된 판매자명만 (네이버 스마트스토어 — 네이버가 서버 조회 차단)
+ *   blocked   = 쇼핑몰이 서버 조회를 막음 → 판매자 상세는 상품 페이지에서 확인
+ *   error     = 조회 시도했지만 실패 (구조 변경 가능)
+ *   mall_only = 판매자 조회 방법 없음
  */
 export async function enrichListing(row) {
   const base = { ...row, productUrl: null, seller: null, sellerStatus: 'mall_only' }
 
-  if (row.isMarketSeller) {
-    // 네이버 쇼핑 입점 판매자 — 다나와 표시명이 판매자명
-    return {
-      ...base,
-      productUrl: row.bridgeUrl,
-      seller: { sellerName: row.danawaSeller },
-      sellerStatus: 'danawa'
+  const direct = mallProductUrl(row)
+  if (!direct) {
+    // G마켓·옥션·11번가 외 — 다나와 연결 페이지에서 실제 상품 주소를 먼저 확보
+    const goUrl = await resolveBridge(row.bridgeUrl)
+    const productUrl = goUrl || row.bridgeUrl
+    const plan = pickSellerHandler(row, goUrl)
+
+    if (plan.kind === 'handler' && goUrl) {
+      try {
+        const s = await plan.fn(goUrl)
+        const seller = cleanSeller(s)
+        if (!seller.sellerName) seller.sellerName = row.danawaSeller || row.mallName
+        const status = sellerStatusOf(row.mallCode, s)
+        return { ...base, productUrl: s?.productUrl || productUrl, seller, sellerStatus: status, sellerVia: plan.key }
+      } catch (e) {
+        // 네이버처럼 다나와 표시명이 있으면 그거라도 남김
+        const blocked = e?.blocked || /blocked|차단|403|429|WAF|NetFunnel/i.test(String(e?.message || ''))
+        return {
+          ...base,
+          productUrl,
+          seller: { sellerName: row.danawaSeller || (blocked ? row.mallName : null) },
+          sellerStatus: row.danawaSeller ? 'danawa' : blocked ? 'blocked' : 'error',
+          sellerError: String(e.message || e).slice(0, 200),
+          sellerVia: plan.key
+        }
+      }
     }
+    if (plan.kind === 'blocked' || row.isMarketSeller) {
+      return {
+        ...base,
+        productUrl,
+        seller: { sellerName: row.danawaSeller || row.mallName },
+        sellerStatus: row.danawaSeller ? 'danawa' : 'blocked',
+        sellerVia: plan.key || null
+      }
+    }
+    return { ...base, productUrl, seller: { sellerName: row.mallName }, sellerStatus: 'mall_only' }
   }
 
-  const direct = mallProductUrl(row)
+  if (row.isMarketSeller) {
+    return { ...base, productUrl: row.bridgeUrl, seller: { sellerName: row.danawaSeller }, sellerStatus: 'danawa' }
+  }
   if (direct) {
     try {
       const { status, text } = await fetchText(direct)
@@ -287,15 +336,7 @@ export async function enrichListing(row) {
       return { ...base, productUrl: direct, seller: { sellerName: null }, sellerStatus: 'error', sellerError: String(e.message || e) }
     }
   }
-
-  // 그 외 쇼핑몰 — 실제 상품 주소만 확보
-  const target = await resolveBridge(row.bridgeUrl)
-  return {
-    ...base,
-    productUrl: target || row.bridgeUrl,
-    seller: { sellerName: row.mallName },
-    sellerStatus: 'mall_only'
-  }
+  return base
 }
 
 /** 다나와 상품 1개 전체 확인 */
@@ -322,10 +363,11 @@ export async function checkDanawaProduct(pcode, { previousListings = [] } = {}) 
   // 직전 확인에서 이미 판매자 정보를 받아 둔 줄은 재사용 (쇼핑몰 요청 절약)
   const prevByKey = new Map(previousListings.map((l) => [l.key, l]))
   const listings = []
-  for (const row of lowest.slice(0, 10)) {
+  // 쇼핑몰 조회는 줄당 최대 4회 → 8줄까지 (Cloudflare 무료: 요청 1건당 외부 접속 50회 한도)
+  for (const row of lowest.slice(0, 8)) {
     const prev = prevByKey.get(row.key)
-    if (prev && prev.sellerStatus === 'ok' && prev.seller?.sellerName) {
-      listings.push({ ...row, productUrl: prev.productUrl, seller: prev.seller, sellerStatus: 'ok' })
+    if (prev && ['ok', 'mall_self', 'undisclosed'].includes(prev.sellerStatus) && prev.seller?.sellerName) {
+      listings.push({ ...row, productUrl: prev.productUrl, seller: prev.seller, sellerStatus: prev.sellerStatus, sellerVia: prev.sellerVia })
     } else {
       listings.push(await enrichListing(row))
     }

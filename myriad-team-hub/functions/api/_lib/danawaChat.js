@@ -63,9 +63,21 @@ function listingSection(l, i, extraButtons = []) {
   if (s.bizNo) {
     widgets.push({ decoratedText: { topLabel: '사업자등록번호', text: esc(s.bizNo) } })
   }
-  if (l.sellerStatus === 'error') {
-    widgets.push({ textParagraph: { text: `<i>판매자 정보 조회 실패 — 상품 페이지에서 확인 필요</i>` } })
+  if (s.note && /외국인|해외|overseas/i.test(s.note)) {
+    widgets.push({ textParagraph: { text: `🚩 ${esc(s.note)}` } })
   }
+  if (s.overseas && !s.address) {
+    widgets.push({ textParagraph: { text: '🚩 <b>쇼핑몰 표시: 해외 판매자</b>' } })
+  }
+  const note = {
+    error: '판매자 정보 조회 실패 — 상품 페이지에서 확인 필요',
+    blocked: '이 쇼핑몰은 서버 조회를 막음 — 상호·주소는 상품 페이지에서 확인',
+    danawa: '다나와 표시 판매자명 — 상호·주소는 상품 페이지에서 확인',
+    mall_only: '판매자 정보 자동 확인 불가 — 상품 페이지에서 확인',
+    mall_self: '쇼핑몰 직접 판매',
+    undisclosed: '쇼핑몰이 판매자 비공개 — 쇼핑몰 고객센터 문의 필요'
+  }[l.sellerStatus]
+  if (note) widgets.push({ textParagraph: { text: `<i>${note}</i>` } })
   const buttons = []
   if (l.productUrl) buttons.push({ text: '상품 보기', onClick: { openLink: { url: l.productUrl } } })
   if (s.storeUrl) buttons.push({ text: '판매자 스토어', onClick: { openLink: { url: s.storeUrl } } })

@@ -513,8 +513,21 @@ function ListingRow({ l }) {
           {l.sellerStatus === 'error' && (
             <div className="text-xs text-amber-700 mt-0.5">판매자 정보를 못 읽었습니다 — 상품 페이지에서 확인해주세요.</div>
           )}
+          {s.note && <div className="text-[11px] text-slate-400 mt-0.5 break-all">{s.note}</div>}
+          {l.sellerStatus === 'mall_self' && (
+            <div className="text-xs text-slate-400 mt-0.5">쇼핑몰이 직접 판매하는 상품입니다.</div>
+          )}
+          {l.sellerStatus === 'undisclosed' && (
+            <div className="text-xs text-amber-700 mt-0.5">쇼핑몰이 이 상품의 판매자를 공개하지 않습니다 (쇼핑몰 고객센터 문의 필요).</div>
+          )}
+          {(l.sellerStatus === 'danawa' || l.sellerStatus === 'blocked') && (
+            <div className="text-xs text-slate-400 mt-0.5">
+              {l.sellerStatus === 'danawa' ? '다나와 표시 판매자명입니다. ' : ''}
+              이 쇼핑몰은 서버 조회를 막아 상호·주소는 상품 페이지에서 확인해주세요.
+            </div>
+          )}
           {l.sellerStatus === 'mall_only' && (
-            <div className="text-xs text-slate-400 mt-0.5">이 쇼핑몰은 판매자명을 자동으로 읽지 않습니다.</div>
+            <div className="text-xs text-slate-400 mt-0.5">이 쇼핑몰은 판매자 정보를 자동으로 읽지 못했습니다 — 상품 페이지에서 확인해주세요.</div>
           )}
         </div>
         <div className="text-right shrink-0">
