@@ -9,6 +9,9 @@ import {
   getSettings, saveSettings, sendTestMessage, sendSummaryNow, danawaUrl
 } from '../lib/danawa'
 
+// 판매자를 못 읽은 줄 — 쇼핑몰명을 판매자처럼 보이지 않게 함
+const UNKNOWN_SELLER = new Set(['blocked', 'error', 'mall_only'])
+
 const won = (n) => (n == null ? '-' : `${Number(n).toLocaleString('ko-KR')}원`)
 
 function ago(iso) {
@@ -487,7 +490,8 @@ function IconBtn({ children, onClick, disabled, title, danger, active }) {
 
 function ListingRow({ l }) {
   const s = l.seller || {}
-  const name = s.sellerName || l.mallName
+  const unknown = UNKNOWN_SELLER.has(l.sellerStatus) || !s.sellerName
+  const name = unknown ? '판매자 확인 필요' : s.sellerName
   const sub = [s.company && s.company !== name ? s.company : null, s.ceo].filter(Boolean).join(' · ')
   return (
     <div className={`rounded-xl border p-3 ${s.overseas ? 'border-rose-200 bg-rose-50/40' : 'border-slate-200'}`}>
@@ -496,7 +500,7 @@ function ListingRow({ l }) {
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5 flex-wrap">
             <Store size={13} className="text-slate-400" />
-            <span className="text-sm font-bold text-slate-900">{name}</span>
+            <span className={`text-sm font-bold ${unknown ? 'text-amber-700' : 'text-slate-900'}`}>{name}</span>
             {l.isNew && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-myriad-primary text-myriad-ink">NEW</span>}
             {s.overseas && (
               <span className="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded bg-rose-600 text-white">
@@ -575,7 +579,7 @@ function HistoryList({ productId }) {
             ) : (
               <span className="text-slate-700">
                 <b className="tabular-nums">{won(r.lowest_price)}</b>{' '}
-                {(r.listings || []).map((l) => `${l.mallName} ${l.seller?.sellerName || ''}`.trim()).join(', ')}
+                {(r.listings || []).map((l) => `${l.mallName} ${UNKNOWN_SELLER.has(l.sellerStatus) || !l.seller?.sellerName ? '(판매자 확인 필요)' : l.seller.sellerName}`).join(', ')}
                 {r.notified && <span className="ml-1 text-emerald-600">· 챗 알림</span>}
               </span>
             )}

@@ -24,9 +24,17 @@ function esc(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
+// 판매자를 못 읽은 줄(서버 차단·조회 실패)은 쇼핑몰명을 판매자처럼 보이지 않게 '판매자 확인 필요'
+const UNKNOWN_SELLER = new Set(['blocked', 'error', 'mall_only'])
+export function displaySellerName(l) {
+  if (UNKNOWN_SELLER.has(l.sellerStatus)) return '판매자 확인 필요'
+  return l.seller?.sellerName || '판매자 확인 필요'
+}
+
 function sellerLine(l) {
   const s = l.seller || {}
-  const name = s.sellerName || l.mallName
+  const name = displaySellerName(l)
+  if (UNKNOWN_SELLER.has(l.sellerStatus)) return `<b>${esc(name)}</b>`
   const extra = [s.company && s.company !== name ? s.company : null, s.ceo].filter(Boolean).join(' · ')
   return `<b>${esc(name)}</b>${extra ? ` (${esc(extra)})` : ''}`
 }
@@ -96,7 +104,7 @@ export function buildChangeMessage({ product, listings, prevPrice, firstCheck, h
     headline = `🔺 ${label}다나와 최저가 상승 ${won(prevPrice)} → ${won(product.last_lowest_price)}`
   } else headline = `🔄 ${label}다나와 최저가 판매처 변경 — ${won(product.last_lowest_price)}`
 
-  const names = listings.map((l) => `${l.mallName} ${l.seller?.sellerName || ''}`.trim()).join(', ')
+  const names = listings.map((l) => `${l.mallName} ${displaySellerName(l)}`).join(', ')
   const overseas = listings.some((l) => l.seller?.overseas)
 
   // '다나와에서 보기'·'허브에서 보기' 는 마지막 판매처의 '판매자 스토어' 버튼 옆에 붙임 (카드당 1번)
