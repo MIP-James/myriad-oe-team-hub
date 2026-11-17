@@ -112,6 +112,10 @@ export async function saveSettings({ enabled, intervalHours, dailySummary, webho
   }
   const wh = (webhookUrl || '').trim()
   if (wh) {
+    // 구글 챗 웹훅 화면은 key 일부를 •••• 로 가려 보여줌 → 그대로 복사하면 'API key not valid' (400)
+    if (/[•●*…]/.test(wh) || !/[?&]key=[A-Za-z0-9_-]{30,}/.test(wh) || !/[?&]token=[A-Za-z0-9_\-=%]{20,}/.test(wh)) {
+      throw new Error('웹훅 주소 일부가 가려진(••••) 상태로 복사됐습니다. 구글 챗 웹훅 관리 화면에서 주소 옆 "복사" 버튼으로 전체 주소를 복사해 주세요.')
+    }
     if (!/^https:\/\/chat\.googleapis\.com\/v1\/spaces\/[^/]+\/messages\?/.test(wh)) {
       throw new Error('구글 챗 웹훅 주소(https://chat.googleapis.com/v1/spaces/…) 형식이 아닙니다.')
     }

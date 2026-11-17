@@ -11,6 +11,9 @@ export async function postChat(webhook, message) {
   })
   if (!res.ok) {
     const t = await res.text().catch(() => '')
+    if (/API key not valid/i.test(t)) {
+      throw new Error('구글 챗 웹훅 주소의 key 가 올바르지 않습니다 (가려진 •••• 상태로 복사됐을 수 있음). 설정에서 전체 주소를 다시 붙여넣어 주세요.')
+    }
     throw new Error(`구글 챗 응답 ${res.status} ${t.slice(0, 200)}`)
   }
 }
