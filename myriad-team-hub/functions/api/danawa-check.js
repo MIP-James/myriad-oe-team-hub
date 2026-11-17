@@ -92,6 +92,42 @@ export async function onRequestPost(context) {
       return json({ ok: true, results })
     }
 
+    // ── 주소 응답 점검 (관리자/예약 전용) — 서버(Cloudflare)에서 특정 주소가 열리는지 확인용 ──
+    //   { mode: 'fetchtest', tests: [{ url, needle?, headers? }] }  (최대 10개, https 만)
+    if (body.mode === 'fetchtest') {
+      if (!isCron && !isAdmin) return json({ error: '관리자 권한 필요' }, 403)
+      const tests = (Array.isArray(body.tests) ? body.tests : []).slice(0, 10)
+      const results = []
+      for (const t of tests) {
+        const t0 = Date.now()
+        try {
+          if (!/^https:\/\//.test(String(t.url || ''))) throw new Error('https 주소만')
+          const ctl = new AbortController()
+          const timer = setTimeout(() => ctl.abort(), 12000)
+          const res = await fetch(t.url, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36',
+              'Accept': 'text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8',
+              'Accept-Language': 'ko-KR,ko;q=0.9',
+              ...(t.headers || {})
+            },
+            redirect: 'follow',
+            signal: ctl.signal
+          })
+          clearTimeout(timer)
+          const text = await res.text()
+          results.push({
+            url: t.url, status: res.status, finalUrl: res.url, len: text.length, ms: Date.now() - t0,
+            hasNeedle: t.needle ? text.includes(t.needle) : null,
+            server: res.headers.get('server'), head: text.slice(0, 200)
+          })
+        } catch (e) {
+          results.push({ url: t.url, error: String(e.message || e), ms: Date.now() - t0 })
+        }
+      }
+      return json({ ok: true, results })
+    }
+
     // ── 하루 요약 ─────────────────────────────────────────
     if (body.mode === 'summary') {
       if (!isCron && !isAdmin) return json({ error: '관리자 권한 필요' }, 403)
