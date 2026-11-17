@@ -171,7 +171,9 @@ export const handlers = {
     if (html.includes('desc_stit') || entpName) {
       return result({ ...SELF.TRB03, productUrl, source: 'mall_self', vendorCode });
     }
-    throw new Error('TRB03: 상세 영역이 없는 축약 페이지 — 판매자 확인 불가');
+    const err = new Error('TRB03 blocked: 서버에는 상세 영역이 빠진 축약 페이지만 옴 — 판매자 확인 불가');
+    err.blocked = true;
+    throw err;
   },
 
   // W쇼핑: no partner-seller section; vendor code in getOrderObject() -> mall_self (footer).
