@@ -136,13 +136,18 @@ export const handlers = {
   async TRB03(goUrl) {
     const id = idFrom(goUrl, [/\/display\/detail\/(\d+)/, /goodsCode=(\d+)/], 'TRB03');
     const productUrl = `https://www.shinsegaetvshopping.com/display/detail/${id}`;
-    const { text: html } = await req(productUrl);
+    // PC 페이지는 Cloudflare 서버에서 417 로 막힘 → 같은 표가 있는 모바일 페이지로 조회 (2026-11-17 서버 확인)
+    const { text: html } = await req(`https://m.shinsegaetvshopping.com/display/detail/${id}`);
     const vendorCode = pick(/'main_vendor_code'\s*:\s*"(\d+)"/, html);
     const vendorName = pick(/'main_vendor_name'\s*:\s*"([^"]+)"/, html);
     const i = html.indexOf('위탁 판매자 정보');
     if (i >= 0) {
-      const block = html.slice(i, html.indexOf('</table>', i) + 8);
-      const cell = (label) => pick(new RegExp(`<th[^>]*>\\s*${label}[^<]*<\\/th>\\s*<td>([\\s\\S]*?)<\\/td>`), block);
+      // PC = <th>업체명</th><td><pre>…</pre></td>, 모바일 = <dt>업체명</dt><dd>…</dd>
+      const block = html.slice(i, i + 4000);
+      const cell = (label) => {
+        const v = pick(new RegExp(`<(?:th|dt)[^>]*>\\s*${label}[^<]*<\\/(?:th|dt)>\\s*<(?:td|dd)[^>]*>([\\s\\S]*?)<\\/(?:td|dd)>`), block);
+        return v ? clean(v.replace(/<[^>]+>/g, ' ')) : null;
+      };
       const name = cell('업체명');
       if (name) {
         return result({
@@ -152,8 +157,8 @@ export const handlers = {
         });
       }
     }
-    const self = footerFrom(toText(html), 'TRB03', { companyRe: /(주식회사\s?신세계라이브쇼핑)/, addrRe: /대표이사\s*:\s*\S+\s+(.+?)\s*사업자등록번호/ });
-    return result({ ...self, productUrl, source: 'mall_self', vendorCode });
+    // 위탁 판매자 표가 없으면 쇼핑몰 직접 판매 (모바일 하단은 구조가 달라 고정값 사용)
+    return result({ ...SELF.TRB03, productUrl, source: 'mall_self', vendorCode });
   },
 
   // W쇼핑: no partner-seller section; vendor code in getOrderObject() -> mall_self (footer).

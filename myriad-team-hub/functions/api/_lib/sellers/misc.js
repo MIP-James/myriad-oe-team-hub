@@ -441,8 +441,22 @@ async function artbox(goUrl) {
 
 /** TX1227 몰테일 — 해외 구매대행 자체 판매(Malltail Inc., 미국 법인). 페이지 푸터 주소. 1요청 */
 async function malltail(goUrl) {
-  const r = await fetchText(goUrl)
-  assertOk(r, '몰테일')
+  // Cloudflare 서버에서는 몰테일이 응답하지 않음(2026-11-17 확인) — 몰테일은 항상 자체 해외 구매대행이라 고정값으로 대체
+  let r
+  try {
+    if (globalThis.navigator?.userAgent === 'Cloudflare-Workers') throw new Error('skip on Cloudflare')
+    r = await fetchText(goUrl)
+    assertOk(r, '몰테일')
+  } catch {
+    const out = blank(goUrl, 'malltail:footer(static)')
+    Object.assign(out, {
+      sellerName: '몰테일(해외 구매대행)', company: 'Malltail Inc.',
+      address: '350 S.GRAND AVE. SUITE 3580 LOS ANGELES, CA 90071 United States',
+      storeUrl: 'https://post.malltail.com/', overseas: true,
+      note: '몰테일 샵 상품 = 몰테일이 해외에서 구매·배송(국내 사업자번호 표기 없음)'
+    })
+    return out
+  }
   const out = blank(r.url, 'malltail:footer')
   const i = r.text.indexOf('fnb-info__address')
   const addr = i >= 0 ? clean(htmlToText(r.text.slice(i, i + 600)).split('\n').find((l) => /\d/.test(l) && l.length > 10)) : null

@@ -243,7 +243,8 @@ export function isOverseas(address) {
 }
 
 async function fetchText(url, extraHeaders = {}) {
-  const res = await fetch(url, { headers: { ...HEADERS, ...extraHeaders }, redirect: 'follow' })
+  // 응답 없는 쇼핑몰(예: Cloudflare 서버에서의 11번가)에 오래 묶이지 않게 10초 제한
+  const res = await fetch(url, { headers: { ...HEADERS, ...extraHeaders }, redirect: 'follow', signal: AbortSignal.timeout(10000) })
   const text = await res.text()
   return { status: res.status, url: res.url, text }
 }
@@ -256,6 +257,24 @@ export async function resolveBridge(bridgeUrl) {
   } catch {
     return null
   }
+}
+
+/** 쇼핑몰이 서버 조회를 막거나 응답하지 않은 경우 (구조 변경으로 인한 실패와 구분) */
+function isBlockedError(e) {
+  if (e?.blocked) return true
+  const m = String(e?.message || e || '')
+  return /blocked|차단|WAF|NetFunnel|firewall|did not render|abort|timeout|timed out|HTTP (4dd|5dd)|응답 (4dd|5dd)/i.test(m)
+}
+
+/** 줄 하나 조회에 최대 15초 */
+function withTimeout(promise, ms, row) {
+  return Promise.race([
+    promise,
+    new Promise((resolve) => setTimeout(() => resolve({
+      ...row, productUrl: row.bridgeUrl, seller: { sellerName: row.danawaSeller || row.mallName },
+      sellerStatus: 'blocked', sellerError: `판매자 조회 ${ms / 1000}초 초과`
+    }), ms))
+  ])
 }
 
 function cleanSeller(s) {
@@ -297,7 +316,7 @@ export async function enrichListing(row) {
         return { ...base, productUrl: s?.productUrl || productUrl, seller, sellerStatus: status, sellerVia: plan.key }
       } catch (e) {
         // 네이버처럼 다나와 표시명이 있으면 그거라도 남김
-        const blocked = e?.blocked || /blocked|차단|403|429|WAF|NetFunnel/i.test(String(e?.message || ''))
+        const blocked = isBlockedError(e)
         return {
           ...base,
           productUrl,
@@ -333,7 +352,7 @@ export async function enrichListing(row) {
       seller.overseas = isOverseas(seller.address)
       return { ...base, productUrl: direct, seller, sellerStatus: 'ok' }
     } catch (e) {
-      return { ...base, productUrl: direct, seller: { sellerName: null }, sellerStatus: 'error', sellerError: String(e.message || e) }
+      return { ...base, productUrl: direct, seller: { sellerName: isBlockedError(e) ? row.mallName : null }, sellerStatus: isBlockedError(e) ? 'blocked' : 'error', sellerError: String(e.message || e) }
     }
   }
   return base
@@ -364,12 +383,18 @@ export async function checkDanawaProduct(pcode, { previousListings = [] } = {}) 
   const prevByKey = new Map(previousListings.map((l) => [l.key, l]))
   const listings = []
   // 쇼핑몰 조회는 줄당 최대 4회 → 8줄까지 (Cloudflare 무료: 요청 1건당 외부 접속 50회 한도)
+  // 상품 1개 확인은 40초 안에 끝냄 (예약 호출 대기 60초) — 남은 줄은 다음 확인 때 조회
+  const started = Date.now()
   for (const row of lowest.slice(0, 8)) {
     const prev = prevByKey.get(row.key)
+    if (Date.now() - started > 40000) {
+      listings.push({ ...row, productUrl: row.bridgeUrl, seller: { sellerName: row.danawaSeller || row.mallName }, sellerStatus: 'mall_only', sellerError: '시간 부족 — 다음 확인 때 조회' })
+      continue
+    }
     if (prev && ['ok', 'mall_self', 'undisclosed'].includes(prev.sellerStatus) && prev.seller?.sellerName) {
       listings.push({ ...row, productUrl: prev.productUrl, seller: prev.seller, sellerStatus: prev.sellerStatus, sellerVia: prev.sellerVia })
     } else {
-      listings.push(await enrichListing(row))
+      listings.push(await withTimeout(enrichListing(row), 15000, row))
     }
   }
   return {
